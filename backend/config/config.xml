@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+    <ftpSettings>
+        <add key="FTP1_HOST" value="10.0.0.111" />
+        <add key="FTP1_USER" value="khoa1" />
+        <add key="FTP1_PASS" value="QFR1YmEwMTEwMjE=" />
+        <add key="FTP1_ROOT" value="/" />
+        <add key="FTP2_HOST" value="10.0.0.119" />
+        <add key="FTP2_USER" value="nhansu" />
+        <add key="FTP2_PASS" value="Y2R2QDIwMDA=" />
+        <add key="FTP2_ROOT" value="/" />
+    </ftpSettings>
+    <license>
+        <add key="LicenseKey" value="Q2FuZGhvbmd2YW5nQDIwMDA=" />
+        <add key="ExpirationDate" value="2025-12-4" />
+        <add key="User" value="khoa" />
+        <add key="Email" value="huynhanhkhoa2012@gmail.com" />
+    </license>
+</configuration>

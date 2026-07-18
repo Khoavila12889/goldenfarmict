@@ -1,0 +1,292 @@
+/* ─── Login Page — Nextcloud-style (Dark Green) ───────────── */
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: 12vh;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  position: relative;
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+.login-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+/* ─── Logo ────────────────────────────────────────────────── */
+
+.login-logo {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.login-logo img {
+  height: 72px;
+}
+
+/* ─── Card ────────────────────────────────────────────────── */
+
+.login-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 300px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-radius: 12px;
+  padding: 2rem 1.75rem 1.5rem;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
+.login-title {
+  margin: 0 0 1.25rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #115e3b;
+  text-align: center;
+}
+
+/* ─── Error ───────────────────────────────────────────────── */
+
+.login-error {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  color: #991b1b;
+  font-size: 0.82rem;
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+/* ─── Form Fields ─────────────────────────────────────────── */
+
+.login-field {
+  margin-bottom: 0.75rem;
+}
+
+.login-field input {
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: #1f2937;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+
+.login-field input::placeholder {
+  color: #9ca3af;
+}
+
+.login-field input:focus {
+  border-color: #115e3b;
+  box-shadow: 0 0 0 3px rgba(17, 94, 59, 0.12);
+}
+
+/* ─── Password Toggle ─────────────────────────────────────── */
+
+.login-password-field {
+  position: relative;
+}
+
+.login-password-field input {
+  padding-right: 2.5rem;
+}
+
+.login-password-toggle {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.login-password-toggle:hover {
+  color: #115e3b;
+  background: rgba(17, 94, 59, 0.06);
+}
+
+/* ─── Remember Checkbox ───────────────────────────────────── */
+
+.login-remember {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 1rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #374151;
+  user-select: none;
+}
+
+.login-remember input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #115e3b;
+  cursor: pointer;
+}
+
+/* ─── Submit Button ───────────────────────────────────────── */
+
+.login-submit {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  min-height: 46px;
+  background: #115e3b;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+}
+
+.login-submit:hover:not(:disabled) {
+  background: #0d4a2f;
+}
+
+.login-submit:active:not(:disabled) {
+  background: #0a3d27;
+}
+
+.login-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ─── Forgot Password Steps ────────────────────────────────── */
+
+.login-forgot-step {
+  display: flex;
+  flex-direction: column;
+}
+
+.login-email-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.8rem;
+  color: #4338ca;
+  margin-bottom: 0.75rem;
+}
+
+.login-success {
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  color: #166534;
+}
+
+/* ─── Links Below Button ──────────────────────────────────── */
+
+.login-links {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 1.25rem;
+}
+
+.login-link-btn {
+  background: none;
+  border: none;
+  font-size: 0.8rem;
+  color: #115e3b;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.login-link-btn:hover {
+  color: #0a3d27;
+  background: rgba(17, 94, 59, 0.06);
+}
+
+/* ─── Footer ──────────────────────────────────────────────── */
+
+.login-footer {
+  position: fixed;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 0.45rem 1.25rem;
+  border-radius: 99px;
+  font-size: 0.78rem;
+  color: #1f2937;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+/* ─── Mobile ──────────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .login-page {
+    padding: 0.75rem;
+    justify-content: flex-start;
+    padding-top: 3rem;
+  }
+
+  .login-logo img {
+    height: 56px;
+  }
+
+  .login-card {
+    padding: 1.5rem 1.25rem;
+    border-radius: 10px;
+  }
+
+  .login-title {
+    font-size: 0.95rem;
+  }
+
+  .login-footer {
+    font-size: 0.7rem;
+    padding: 0.35rem 1rem;
+    bottom: 0.6rem;
+    white-space: normal;
+    text-align: center;
+    max-width: calc(100% - 1.5rem);
+  }
+}

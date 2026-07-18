@@ -1,0 +1,48 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: goldenfarm-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount SQLite database directory for data persistence
+      - ./backend/data:/app/data:rw
+      # Mount logs directory
+      - ./backend/logs:/app/logs:rw
+    environment:
+      - APP_ENV=production
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - goldenfarm-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: goldenfarm-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - goldenfarm-network
+
+networks:
+  goldenfarm-network:
+    driver: bridge
+
+volumes:
+  backend-data:
+    driver: local

@@ -1,0 +1,28 @@
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+pandas>=1.5.0
+openpyxl>=3.1.0
+xlsxwriter>=3.1.0
+python-dateutil>=2.8.0
+
+# Phiếu lương PDF generation (từ web_simple)
+docxtpl>=0.16.7
+docx2pdf>=0.1.8
+PyPDF2>=3.0.0
+python-multipart>=0.0.6
+
+# SMB (Windows Share) - smbprotocol supports SMB2/3
+smbprotocol>=1.11.0
+
+# FTP - aioftp supports FTP/TLS
+aioftp>=0.21.0
+
+# Google Drive API (Service Account)
+google-api-python-client>=2.108.0
+google-auth>=2.25.0
+
+# ORM — SQLAlchemy (đã cài sẵn, dùng cho module mới)
+sqlalchemy>=1.4.0
+
+# PostgreSQL driver (chỉ cần khi migrate)
+# asyncpg>=0.29.0
