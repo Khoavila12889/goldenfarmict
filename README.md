@@ -101,6 +101,17 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 - Từ chối: kết thúc phiếu với trạng thái `rejected`
 - SSE realtime: thông báo khi có phiếu mới cần duyệt
 
+### 💰 Quản lý phiếu lương (Salary Slip)
+
+- **Admin — Import Excel**: Upload file Excel (.xlsx/.xls) → tự động parse tất cả cột lương/thuế/phép → lưu JSON vào bảng `salaries` → tạo user account nếu chưa có
+- **Admin — Danh sách NV có lương**: Lọc theo tháng/phòng ban/tìm kiếm, chọn nhân viên để xem/sửa
+- **Admin — Viewer/Editor**: Form chỉnh sửa tất cả trường phiếu lương (thông tin NV, mức lương, thu nhập, khấu trừ, thực nhận, theo dõi phép năm, ghi chú) — lưu thay đổi vào JSON
+- **Admin — Xuất PDF**: Xuất PDF có mật khẩu (dùng template `luong.docx`) cho từng NV hoặc batch toàn bộ phòng ban → file ZIP
+- **Admin — Upload history**: Xem lịch sử import file Excel
+- **Employee — Xem phiếu lương**: Chọn tháng, nhập mật khẩu (nếu có) → xem JSON render dạng HTML đẹp (không cần PDF viewer)
+- **Employee — Tải PDF**: Tải phiếu lương PDF có mật khẩu
+- **Employee — Lịch sử**: Xem danh sách các tháng đã có phiếu lương, chuyển nhanh giữa các tháng
+
 ### 🔑 Quản lý License (admin)
 - Bảng danh sách + search
 - Inline edit (click trực tiếp trên bảng)
@@ -212,7 +223,9 @@ goldenfarm-ict-web/
 │   │   │   ├── licenses.py        # 6 endpoints: list, stats, create, update, delete, bulk, scan
 │   │   │   ├── dashboard.py       # GET /api/dashboard/stats
 │   │   │   ├── approvals.py       # 15 endpoints: workflow templates, steps, requests, approve/reject
-│   │   │   └── documents.py       # 10 endpoints: storage CRUD, test-connection, browse, permissions
+│   │   │   ├── documents.py       # 10 endpoints: storage CRUD, test-connection, browse, permissions
+│   │   │   ├── salary_slips.py    # 13 endpoints: admin quản lý phiếu lương, upload Excel, xuất PDF
+│   │   │   └── salary_user.py     # 3 endpoints: employee xem JSON & tải PDF phiếu lương
 │   │   └── utils/
 │   │       ├── __init__.py
 │   │       └── seed_demo_data.py  # Seed dữ liệu mẫu
@@ -235,6 +248,9 @@ goldenfarm-ict-web/
 │   │   │   ├── WorkflowTemplates.jsx # Quản lý quy trình phê duyệt & bước duyệt
 │   │   │   ├── Documents.jsx      # Storage browser SMB/FTP/GDrive + permissions
 │   │   │   ├── Bookings.jsx       # ⚠️ Legacy — dùng BookingPage thay thế
+│   │   │   ├── SalarySlip.jsx     # Employee: xem phiếu lương JSON dạng HTML
+│   │   │   ├── SalarySlipAdmin.jsx # Admin: import Excel, chỉnh sửa, xuất PDF
+│   │   │   ├── SalarySlip.css     # Styles cho Salary Slip module
 │   │   │   └── booking/
 │   │   │       └── BookingPage.jsx # Scheduler Grid (290 dòng)
 │   │   ├── components/
@@ -257,7 +273,8 @@ goldenfarm-ict-web/
 │   │   ├── hooks/
 │   │   │   ├── useScheduler.js    # Hook điều phối (resources, filter, SSE)
 │   │   │   ├── useBookings.js     # Hook CRUD bookings + overlap check
-│   │   │   └── useCurrentTime.js  # Hook thời gian thực (update 30s)
+│   │   │   ├── useCurrentTime.js  # Hook thời gian thực (update 30s)
+│   │   │   └── useSalarySlip.js   # Hook xem & tải PDF phiếu lương
 │   │   ├── services/
 │   │   │   └── api.js             # Axios instance + 30+ API functions
 │   │   ├── styles/
@@ -342,6 +359,30 @@ goldenfarm-ict-web/
 | `POST` | `/api/licenses/bulk` | Bulk import (danh sách key) |
 | `POST` | `/api/licenses/scan` | Auto scan license từ specs/os_info |
 
+### Salary Slips (Admin — `/api/salary-slips/admin`)
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `GET` | `/admin/list` | Danh sách phiếu lương (filter: `month`, `employee_code`, `department`) |
+| `GET` | `/admin/employees` | Danh sách NV để tạo phiếu (filter `department`) |
+| `POST` | `/admin/create` | Tạo/cập nhật phiếu lương |
+| `DELETE` | `/admin/{slip_id}` | Xoá phiếu lương |
+| `POST` | `/admin/bulk-generate` | Tạo hàng loạt phiếu theo tháng |
+| `POST` | `/admin/upload-salaries` | Upload Excel → parse `create_salary_context` → lưu JSON vào `salaries` |
+| `GET` | `/admin/upload-history` | Lịch sử upload Excel |
+| `POST` | `/admin/import-from-excel` | Import dữ liệu từ Excel vào `salary_slips` |
+| `GET` | `/admin/view/{employee_code}` | Xem JSON phiếu lương NV |
+| `GET` | `/admin/with-salary` | DS NV đã có phiếu trong tháng |
+| `PUT` | `/admin/update-fields` | Cập nhật field trong JSON |
+| `POST` | `/admin/export-pdf` | Xuất PDF có mật khẩu |
+| `POST` | `/admin/batch-export-pdf` | Xuất hàng loạt PDF → ZIP |
+
+### Salary (User — `/api/salary`)
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `POST` | `/verify-and-view` | Xem phiếu lương JSON (cần password nếu có) |
+| `GET` | `/available-months` | Danh sách tháng đã có phiếu |
+| `POST` | `/export-pdf` | Tải PDF phiếu lương (có mật khẩu) |
+
 ### Approvals
 | Method | Endpoint | Mô tả |
 |--------|----------|-------|
@@ -406,6 +447,9 @@ goldenfarm-ict-web/
 | `approval_logs` | Nhật ký phê duyệt | request_id, step_order, approver_code, action, comment |
 | `storage_config` | Cấu hình storage SMB/FTP/GDrive | type, host, port, username, password, remote_path, domain, is_active |
 | `storage_permissions` | Phân quyền thư mục storage | storage_id, folder_path, role, employee_code, department, permission |
+| `salary_slips` | Phiếu lương (dạng cột) | employee_code, month, basic_salary, allowances, bonus, deductions, net_salary |
+| `salaries` | Phiếu lương (dạng JSON) | employee_code, month, password, data_json — `ON CONFLICT(employee_code, month) DO UPDATE` |
+| `salary_upload_logs` | Lịch sử upload Excel | month, filename, uploaded_by, record_count |
 
 > Schema không dùng FOREIGN KEY constraints — xử lý integrity ở application layer.
 

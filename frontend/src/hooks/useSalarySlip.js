@@ -11,6 +11,9 @@ export default function useSalarySlip() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
   const [needPassword, setNeedPassword] = useState(false)
+  const [availableMonths, setAvailableMonths] = useState([])
+  const [monthsLoading, setMonthsLoading] = useState(false)
+  const [pdfExporting, setPdfExporting] = useState(false)
 
   const fetchSalarySlip = useCallback(async (month, password) => {
     setIsLoading(true)
@@ -47,6 +50,55 @@ export default function useSalarySlip() {
     }
   }, [])
 
+  const fetchAvailableMonths = useCallback(async () => {
+    const userCode = sessionStorage.getItem('user_code')
+    const token = sessionStorage.getItem('token') || ''
+    const role = sessionStorage.getItem('user_role') || 'user'
+    setMonthsLoading(true)
+    try {
+      const res = await fetch(`/api/salary/available-months?employee_code=${userCode}&token=${token}&role=${role}`)
+      const data = await res.json()
+      if (res.ok) setAvailableMonths(data.data || [])
+    } catch (_) {} finally {
+      setMonthsLoading(false)
+    }
+  }, [])
+
+  const downloadPdf = useCallback(async (month, password) => {
+    const userCode = sessionStorage.getItem('user_code')
+    const token = sessionStorage.getItem('token') || ''
+    const role = sessionStorage.getItem('user_role') || 'user'
+    setPdfExporting(true)
+    try {
+      const res = await fetch('/api/salary/export-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employee_code: userCode,
+          month,
+          password: password || '',
+          token,
+          role
+        })
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.detail || 'Lỗi xuất PDF')
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `luong_${userCode}_${month}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      throw err
+    } finally {
+      setPdfExporting(false)
+    }
+  }, [])
+
   const changeMonth = useCallback((month) => {
     setSelectedMonth(month)
     setSalaryData(null)
@@ -60,7 +112,12 @@ export default function useSalarySlip() {
     isLoading,
     error,
     needPassword,
+    availableMonths,
+    monthsLoading,
+    pdfExporting,
     fetchSalarySlip,
+    fetchAvailableMonths,
+    downloadPdf,
     changeMonth,
   }
 }
