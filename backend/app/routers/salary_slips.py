@@ -232,7 +232,13 @@ async def bulk_generate_salary_slips(body: dict, admin_code: str = None, token: 
 
 # ─── Admin: Upload Excel → Store Full JSON ────────────────────────────
 
-from ..utils.pdf_generator import create_salary_context
+from ..utils.pdf_generator import create_salary_context, generate_single_pdf_from_json
+
+TEMPLATE_PATHS = [
+    Path(__file__).parent.parent.parent.parent / 'frontend' / 'src' / 'template' / 'luong.docx',
+    Path(__file__).parent.parent.parent / 'frontend' / 'src' / 'template' / 'luong.docx',
+]
+TEMPLATE_PATH = next((p for p in TEMPLATE_PATHS if p.exists()), None)
 
 @router.post("/admin/upload-salaries")
 async def upload_salaries_excel(
@@ -470,3 +476,176 @@ async def import_salary_from_excel(
     conn.commit(); conn.close()
     return {"success": True, "month": month, "pdf_type": pdf_type, "imported": imported,
             "skipped": skipped, "total": imported + skipped, "new_users": new_users, "errors": errors}
+
+
+# ─── Admin: View Employee Salary Slip JSON ──────────────────────────
+
+@router.get("/admin/view/{employee_code}")
+async def admin_view_salary_slip(
+    employee_code: str,
+    month: str = "",
+    admin_code: str = None,
+    token: str = None,
+    role: str = None
+):
+    """Admin xem phiếu lương của nhân viên dạng JSON."""
+    require_admin(admin_code, token, role)
+    if not month:
+        raise HTTPException(status_code=400, detail="Missing month parameter")
+    conn = get_conn()
+    record = conn.execute(
+        "SELECT data_json, password FROM salaries WHERE employee_code=? AND month=?",
+        (employee_code, month)
+    ).fetchone()
+    conn.close()
+    if not record:
+        raise HTTPException(status_code=404, detail="Chưa có phiếu lương cho tháng này")
+    return {"success": True, "data": json.loads(record["data_json"]), "has_password": bool(record["password"])}
+
+
+# ─── Admin: Get Employees with Salary for Month ─────────────────────
+
+@router.get("/admin/with-salary")
+async def admin_get_employees_with_salary(
+    month: str = "",
+    department: str = "",
+    search: str = "",
+    admin_code: str = None,
+    token: str = None,
+    role: str = None
+):
+    """
+    Lấy danh sách nhân viên đã có phiếu lương trong tháng.
+    Dùng cho admin chọn nhân viên để xem/sửa.
+    """
+    require_admin(admin_code, token, role)
+    if not month:
+        raise HTTPException(status_code=400, detail="Missing month parameter")
+    conn = get_conn()
+    sql = """
+        SELECT s.employee_code, e.full_name, e.department, e.position,
+               s.month, s.basic_salary, s.net_salary
+        FROM salaries s
+        LEFT JOIN employees e ON e.employee_code = s.employee_code
+        WHERE s.month = ?
+    """
+    params = [month]
+    if department and department != "Tất cả":
+        sql += " AND e.department = ?"; params.append(department)
+    if search:
+        sql += " AND (e.full_name LIKE ? OR s.employee_code LIKE ?)"
+        params.extend([f"%{search}%", f"%{search}%"])
+    sql += " ORDER BY e.department, e.full_name"
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+    return {"data": [dict(r) for r in rows], "total": len(rows)}
+
+
+# ─── Admin: Update Fields in Salary JSON ────────────────────────────
+
+@router.put("/admin/update-fields")
+async def admin_update_salary_fields(
+    body: dict,
+    admin_code: str = None,
+    token: str = None,
+    role: str = None
+):
+    """
+    Admin cập nhật các trường trong phiếu lương của nhân viên.
+    Body: { employee_code, month, fields: { "NAME": "xxx", "PB": "yyy", ... } }
+    """
+    require_admin(admin_code, token, role)
+    employee_code = body.get("employee_code")
+    month = body.get("month")
+    fields = body.get("fields", {})
+
+    if not employee_code or not month:
+        raise HTTPException(status_code=400, detail="Missing employee_code or month")
+    if not fields:
+        raise HTTPException(status_code=400, detail="Missing fields to update")
+
+    conn = get_conn()
+    record = conn.execute(
+        "SELECT data_json FROM salaries WHERE employee_code=? AND month=?",
+        (employee_code, month)
+    ).fetchone()
+    if not record:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Chưa có phiếu lương")
+
+    data = json.loads(record["data_json"])
+    for key, value in fields.items():
+        data[key] = str(value) if value is not None else ""
+
+    updated_json = json.dumps(data, ensure_ascii=False)
+    conn.execute(
+        "UPDATE salaries SET data_json=?, updated_at=datetime('now','localtime') WHERE employee_code=? AND month=?",
+        (updated_json, employee_code, month)
+    )
+    conn.commit()
+    conn.close()
+    return {"success": True, "data": data}
+
+
+# ─── Admin: Export Salary Slip to PDF (with password) ───────────────
+
+from fastapi.responses import FileResponse
+
+@router.post("/admin/export-pdf")
+async def admin_export_salary_pdf(
+    body: dict,
+    admin_code: str = None,
+    token: str = None,
+    role: str = None
+):
+    """
+    Xuất phiếu lương PDF có mật khẩu.
+    Body: { employee_code, month, password: "xxx", fields: { ... } (tùy chọn) }
+    Trả về file PDF để download.
+    """
+    require_admin(admin_code, token, role)
+    employee_code = body.get("employee_code")
+    month = body.get("month")
+    password = body.get("password", "")
+    field_overrides = body.get("fields", {})
+
+    if not employee_code or not month:
+        raise HTTPException(status_code=400, detail="Missing employee_code or month")
+
+    if not TEMPLATE_PATH or not TEMPLATE_PATH.exists():
+        raise HTTPException(status_code=500, detail="Template file luong.docx not found")
+
+    conn = get_conn()
+    record = conn.execute(
+        "SELECT data_json FROM salaries WHERE employee_code=? AND month=?",
+        (employee_code, month)
+    ).fetchone()
+    conn.close()
+    if not record:
+        raise HTTPException(status_code=404, detail="Chưa có phiếu lương")
+
+    data = json.loads(record["data_json"])
+
+    # Apply any field overrides
+    for key, value in field_overrides.items():
+        data[key] = str(value) if value is not None else ""
+
+    # Generate PDF in temp directory
+    output_dir = Path("temp_pdf_gen")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    safe_code = employee_code.replace('/', '_').replace('\\', '_')
+    output_path = output_dir / f"{safe_code}_{month}.pdf"
+
+    try:
+        generate_single_pdf_from_json(data, str(TEMPLATE_PATH), str(output_path), password)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi tạo PDF: {str(e)}")
+
+    if not output_path.exists():
+        raise HTTPException(status_code=500, detail="Không thể tạo file PDF")
+
+    return FileResponse(
+        str(output_path),
+        media_type="application/pdf",
+        filename=f"luong_{safe_code}_{month}.pdf"
+    )

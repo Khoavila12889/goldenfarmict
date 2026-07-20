@@ -12,6 +12,7 @@ from dateutil.relativedelta import relativedelta
 import os
 import shutil
 import logging
+import tempfile
 
 from .ftp_utils import upload_file_to_ftp, upload_excel_to_ftp
 from config.config_manager import read_xml_info
@@ -424,3 +425,41 @@ async def generate_salary_pdfs_from_excel(
             "errors": [str(e)],
             "ftp_uploaded": False
         }
+
+
+def generate_single_pdf_from_json(salary_context: dict, template_path: str, output_path: str, password: str = ""):
+    """
+    Generate a single salary slip PDF from a salary context dict (JSON).
+    Renders DOCX template, converts to PDF, and optionally encrypts with password.
+    """
+    temp_docx = None
+    try:
+        doc = DocxTemplate(template_path)
+        doc.render(salary_context)
+
+        temp_docx = output_path + '.docx'
+        doc.save(temp_docx)
+
+        convert(temp_docx, output_path)
+
+        if password:
+            pdf_writer = PdfWriter()
+            pdf_reader = PdfReader(output_path)
+            for page in pdf_reader.pages:
+                pdf_writer.add_page(page)
+            pdf_writer.encrypt(password)
+            with open(output_path, 'wb') as f:
+                pdf_writer.write(f)
+
+        logger.info(f"PDF generated: {output_path}")
+        return output_path
+
+    except Exception as e:
+        logger.error(f"PDF generation error: {str(e)}", exc_info=True)
+        raise
+    finally:
+        if temp_docx and os.path.exists(temp_docx):
+            try:
+                os.unlink(temp_docx)
+            except Exception:
+                pass
