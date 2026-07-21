@@ -5,7 +5,7 @@ import {
   User, Building, Edit3, X, Eye, EyeOff, Printer, FileDown, Trash2
 } from 'lucide-react'
 import {
-  getEmployees, getSalaryView, updateSalaryFields,
+  searchAllEmployees, getSalaryView, updateSalaryFields,
   exportSalaryPdf, batchExportSalaryPdf, uploadSalaryExcel,
   getSalaryUploadHistory, deleteSalarySlip,
   getDepartments
@@ -127,14 +127,14 @@ export default function SalarySlipAdmin() {
     setEmpLoading(true)
     ;(async () => {
       try {
-        const res = await getEmployees(searchTerm, departmentFilter, 'active')
+        const res = await searchAllEmployees(departmentFilter, searchTerm, userCode, token, role)
         if (!cancelled) setEmployees(res.data.data || [])
       } catch (_) {} finally {
         if (!cancelled) setEmpLoading(false)
       }
     })()
     return () => { cancelled = true }
-  }, [departmentFilter, searchTerm])
+  }, [departmentFilter, searchTerm, userCode, token, role])
 
   function navigate(dir) {
     const [y, m] = selectedMonth.split('-').map(Number)
