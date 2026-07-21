@@ -642,6 +642,9 @@ async def admin_update_salary_fields(
     Admin cập nhật các trường trong phiếu lương của nhân viên.
     Body: { employee_code, month, fields: { "NAME": "xxx", "PB": "yyy", ... } }
     """
+    if not admin_code: admin_code = body.get("admin_code")
+    if not token: token = body.get("token")
+    if not role: role = body.get("role")
     require_admin(admin_code, token, role)
     employee_code = body.get("employee_code")
     month = body.get("month")
@@ -692,6 +695,9 @@ async def admin_export_salary_pdf(
     Body: { employee_code, month, password: "xxx", fields: { ... } (tùy chọn) }
     Trả về file PDF để download.
     """
+    if not admin_code: admin_code = body.get("admin_code")
+    if not token: token = body.get("token")
+    if not role: role = body.get("role")
     require_admin(admin_code, token, role)
     employee_code = body.get("employee_code")
     month = body.get("month")
@@ -756,6 +762,9 @@ async def admin_batch_export_pdf(
     Body: { month, department: "" (tùy chọn), employee_codes: [] (tùy chọn) }
     Trả về file ZIP để download.
     """
+    if not admin_code: admin_code = body.get("admin_code")
+    if not token: token = body.get("token")
+    if not role: role = body.get("role")
     require_admin(admin_code, token, role)
     month = body.get("month")
     if not month:
