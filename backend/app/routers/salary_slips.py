@@ -101,10 +101,12 @@ async def list_salary_slips(
 @router.get("/admin/employees")
 async def get_employees_for_salary(
     department: str = "",
+    search: str = "",
     admin_code: str = None,
     token: str = None,
     role: str = None
 ):
+    """Tìm kiếm nhân viên (có/ chưa có lương) để admin chọn làm việc."""
     require_admin(admin_code, token, role)
     conn = get_conn()
     sql = """
@@ -114,6 +116,9 @@ async def get_employees_for_salary(
     params = []
     if department and department != "Tất cả":
         sql += " AND department = ?"; params.append(department)
+    if search:
+        sql += " AND (full_name LIKE ? OR employee_code LIKE ?)"
+        params.extend([f"%{search}%", f"%{search}%"])
     sql += " ORDER BY department, full_name"
     rows = conn.execute(sql, params).fetchall()
     conn.close()

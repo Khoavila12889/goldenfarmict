@@ -447,6 +447,12 @@ export function getSalaryEmployees(month, department, search, admin_code, token,
   })
 }
 
+export function searchAllEmployees(department, search, admin_code, token, role) {
+  return api.get('/salary-slips/admin/employees', {
+    params: { department, search, admin_code, token, role }
+  })
+}
+
 export function getSalaryView(employee_code, month, admin_code, token, role) {
   return api.get(`/salary-slips/admin/view/${employee_code}`, {
     params: { month, admin_code, token, role }

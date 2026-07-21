@@ -5,7 +5,7 @@ import {
   User, Building, Edit3, X, Eye, EyeOff, Printer, FileDown, Trash2
 } from 'lucide-react'
 import {
-  getSalaryEmployees, getSalaryView, updateSalaryFields,
+  searchAllEmployees, getSalaryView, updateSalaryFields,
   exportSalaryPdf, batchExportSalaryPdf, uploadSalaryExcel,
   getSalaryUploadHistory, deleteSalarySlip,
   getDepartments
@@ -137,14 +137,14 @@ export default function SalarySlipAdmin() {
     setEmpLoading(true)
     ;(async () => {
       try {
-        const res = await getSalaryEmployees(selectedMonth, departmentFilter, searchTerm, userCode, token, role)
+        const res = await searchAllEmployees(departmentFilter, searchTerm, userCode, token, role)
         if (!cancelled) setEmployees(res.data.data || [])
       } catch (_) {} finally {
         if (!cancelled) setEmpLoading(false)
       }
     })()
     return () => { cancelled = true }
-  }, [selectedMonth, departmentFilter, searchTerm, userCode, token, role])
+  }, [departmentFilter, searchTerm, userCode, token, role])
 
   function navigate(dir) {
     const [y, m] = selectedMonth.split('-').map(Number)
@@ -408,8 +408,8 @@ export default function SalarySlipAdmin() {
               ) : employees.length === 0 ? (
                 <div className="sa-emp-empty">
                   <User size={24} />
-                  <p>Chưa có phiếu lương tháng này</p>
-                  <p className="sa-emp-hint">Import Excel ở tab "Import Excel"</p>
+                  <p>Không tìm thấy nhân viên</p>
+                  <p className="sa-emp-hint">Thử tìm kiếm với từ khóa khác</p>
                 </div>
               ) : (
                 employees.map(emp => (
