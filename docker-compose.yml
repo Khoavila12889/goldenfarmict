@@ -7,6 +7,9 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      # Backend code for hot-reload (docker compose restart backend)
+      - ./backend/app:/app/app:rw
+      - ./backend/main.py:/app/main.py:rw
       # Mount SQLite database directory for data persistence
       - ./backend/data:/app/data:rw
       # Mount logs directory
