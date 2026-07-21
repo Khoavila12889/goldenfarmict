@@ -477,6 +477,12 @@ export function batchExportSalaryPdf(month, department, admin_code, token, role)
   }, { responseType: 'blob' })
 }
 
+export function downloadSalaryTemplate() {
+  return api.get('/salary-slips/admin/download-template', {
+    responseType: 'blob',
+  })
+}
+
 export function uploadSalaryExcel(file, month, admin_code, token, role, force = false) {
   const fd = new FormData()
   fd.append('excel_file', file)

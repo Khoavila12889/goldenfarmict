@@ -5,6 +5,7 @@ Employee: xem qua salary_user.py (/api/salary/verify-and-view)
 Đã xoá toàn bộ PDF generator, FTP upload, generator job cũ.
 """
 from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from pathlib import Path
 import os
 import io
@@ -254,6 +255,53 @@ TEMPLATE_PATHS = [
     Path(__file__).parent.parent.parent / 'frontend' / 'src' / 'template' / 'luong.docx',
 ]
 TEMPLATE_PATH = next((p for p in TEMPLATE_PATHS if p.exists()), None)
+
+@router.get("/admin/download-template")
+async def download_template():
+    """Tải file Excel mẫu để nhập dữ liệu lương."""
+    columns = [
+        'ID', 'NAME', 'PASSWORD',
+        'Chức vụ', 'Phòng Ban', 'Ngày vào làm',
+        'Mức lương', 'Mức trợ cấp tiền ăn', 'Mức trợ cấp tiền điện thoại',
+        'Mức trợ cấp xăng xe', 'Mức hiệu quả tuân thủ', 'Mức trợ cấp Phụ cấp khác',
+        'Ngày công chuẩn trong tháng', 'Ngày công hưởng lương', 'Ngày công ca đêm ',
+        'Giờ chờ Di chuyển', 'Giờ tăng ca ngày thường', 'Giờ tăng ca ngày nghỉ ',
+        'Tỷ lệ đánh giá HQ TT', 'Tiền lương',
+        'Trợ cấp tiền ăn', 'Trợ cấp điện thoại', 'Trợ cấp xăng xe',
+        'Hiệu quả và tuân thủ', 'Trợ cấp Phụ cấp khác', 'Trợ cấp ca đêm',
+        'Lương tăng ca', 'Truy lĩnh cộng', 'Truy thu', 'Khác',
+        'BHXH, YT,TN (10.5%)', 'Thuế TNCN', 'Đoàn phí', 'Thực nhận (A-B)',
+        'Phép năm tồn đầu kỳ', 'Phép năm phát sinh có', 'Phép năm sử dụng', 'Phép năm tồn cuối kỳ',
+        'Tồn đầu kỳ', 'Phát sinh có', 'Sử dụng', 'Tồn cuối kỳ',
+        'Số người phụ thuộc', 'Ghi Chú',
+    ]
+    sample = {
+        'ID': 'NV001', 'NAME': 'Nguyễn Văn A', 'PASSWORD': '123456',
+        'Chức vụ': 'Nhân viên', 'Phòng Ban': 'Kỹ thuật', 'Ngày vào làm': '2020-01-15',
+        'Mức lương': 10000000, 'Mức trợ cấp tiền ăn': 500000, 'Mức trợ cấp tiền điện thoại': 200000,
+        'Mức trợ cấp xăng xe': 300000, 'Mức hiệu quả tuân thủ': 1000000, 'Mức trợ cấp Phụ cấp khác': 0,
+        'Ngày công chuẩn trong tháng': 26, 'Ngày công hưởng lương': 26, 'Ngày công ca đêm ': 0,
+        'Giờ chờ Di chuyển': 0, 'Giờ tăng ca ngày thường': 10, 'Giờ tăng ca ngày nghỉ ': 0,
+        'Tỷ lệ đánh giá HQ TT': 0.95, 'Tiền lương': 10000000,
+        'Trợ cấp tiền ăn': 500000, 'Trợ cấp điện thoại': 200000, 'Trợ cấp xăng xe': 300000,
+        'Hiệu quả và tuân thủ': 1000000, 'Trợ cấp Phụ cấp khác': 0, 'Trợ cấp ca đêm': 0,
+        'Lương tăng ca': 500000, 'Truy lĩnh cộng': 0, 'Truy thu': 0, 'Khác': 0,
+        'BHXH, YT,TN (10.5%)': 1050000, 'Thuế TNCN': 0, 'Đoàn phí': 20000, 'Thực nhận (A-B)': 11500000,
+        'Phép năm tồn đầu kỳ': 6, 'Phép năm phát sinh có': 1, 'Phép năm sử dụng': 0, 'Phép năm tồn cuối kỳ': 7,
+        'Tồn đầu kỳ': 0, 'Phát sinh có': 0, 'Sử dụng': 0, 'Tồn cuối kỳ': 0,
+        'Số người phụ thuộc': 1, 'Ghi Chú': '',
+    }
+    df = pd.DataFrame([sample], columns=columns)
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Mẫu lương')
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': 'attachment; filename=template_luong.xlsx'}
+    )
+
 
 @router.post("/admin/upload-salaries")
 async def upload_salaries_excel(

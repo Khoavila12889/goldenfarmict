@@ -7,7 +7,7 @@ import {
 import {
   searchAllEmployees, getSalaryView, updateSalaryFields,
   exportSalaryPdf, batchExportSalaryPdf, uploadSalaryExcel,
-  getSalaryUploadHistory, deleteSalarySlip,
+  getSalaryUploadHistory, deleteSalarySlip, downloadSalaryTemplate,
   getDepartments
 } from '../services/api'
 import '../styles/booking.css'
@@ -169,6 +169,20 @@ export default function SalarySlipAdmin() {
     setSalaryData(null)
     setEditedFields({})
     setSaveMsg(null)
+  }
+
+  async function handleDownloadTemplate() {
+    try {
+      const res = await downloadSalaryTemplate()
+      const url = URL.createObjectURL(new Blob([res.data]))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'template_luong.xlsx'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (_) {
+      alert('Không thể tải file mẫu')
+    }
   }
 
   async function handleUpload(force = false) {
@@ -574,6 +588,11 @@ export default function SalarySlipAdmin() {
       {activeTab === 'upload' && (
         <div className="sa-upload-tab">
           <div className="bk-card" style={{ padding: '1.25rem', maxWidth: 600 }}>
+            <div className="bk-form-group" style={{ marginBottom: '1rem' }}>
+              <button className="bk-btn" style={{ width: '100%', height: '36px' }} onClick={handleDownloadTemplate}>
+                <Download size={16} /> Tải file mẫu Excel
+              </button>
+            </div>
             <div className="bk-form-group">
               <label className="bk-form-label">
                 File Excel dữ liệu lương — tháng {parseMonthLabel(selectedMonth)}
