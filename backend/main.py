@@ -3,6 +3,7 @@ GOLDENFARM ICT Management - Backend API (FastAPI)
 Run: uvicorn main:app --host 127.0.0.1 --port 8080 --reload
 """
 import asyncio
+import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -14,9 +15,10 @@ from app.routers import auth, employees, equipment, tickets, bookings, dashboard
 
 app = FastAPI(title="GOLDENFARM ICT API", version="1.0.0")
 
+_CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173').split(',')
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

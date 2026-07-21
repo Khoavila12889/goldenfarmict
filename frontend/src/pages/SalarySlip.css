@@ -79,6 +79,43 @@
 .salary-btn-primary:hover:not(:disabled) { background: var(--bk-primary-dark, #003670); }
 .salary-btn-secondary { background: var(--bk-surface-alt, #f8fafc); color: var(--bk-text-secondary, #475569); border: 1px solid var(--bk-border, #e2e8f0); }
 .salary-btn-secondary:hover:not(:disabled) { background: var(--bk-surface-hover, #eef2f7); }
+.salary-btn-pdf { background: #dc2626; color: #fff; }
+.salary-btn-pdf:hover:not(:disabled) { background: #b91c1c; }
+.salary-btn-pdf.disabled { opacity: 0.35; cursor: not-allowed; }
+
+.salary-pdf-msg {
+  display: flex; align-items: center; gap: 0.35rem;
+  padding: 0.4rem 0.75rem; font-size: 0.78rem; font-weight: 500;
+}
+.salary-pdf-msg.success { background: #dcfce7; color: #166534; }
+.salary-pdf-msg.error { background: #fee2e2; color: #991b1b; }
+
+/* ─── Months history bar ─── */
+.salary-months-bar {
+  border-bottom: 1px solid var(--bk-border, #e2e8f0);
+  background: var(--bk-surface-alt, #f8fafc);
+}
+.salary-months-toggle {
+  display: flex; align-items: center; gap: 0.35rem;
+  width: 100%; padding: 0.4rem 0.75rem;
+  background: transparent; border: none;
+  font-size: 0.78rem; font-weight: 600; font-family: inherit;
+  color: var(--bk-primary, #00468C); cursor: pointer;
+}
+.salary-months-toggle:hover { background: var(--bk-surface-hover, #eef2f7); }
+.salary-months-list {
+  display: flex; flex-wrap: wrap; gap: 0.3rem;
+  padding: 0.35rem 0.75rem 0.6rem;
+}
+.salary-month-chip {
+  padding: 0.2rem 0.55rem; border: 1px solid var(--bk-border, #e2e8f0);
+  border-radius: 12px; background: var(--bk-surface, #fff);
+  font-size: 0.75rem; font-weight: 500; font-family: inherit;
+  color: var(--bk-text-secondary, #475569); cursor: pointer;
+  transition: all 0.15s;
+}
+.salary-month-chip:hover { border-color: var(--bk-primary, #00468C); color: var(--bk-primary, #00468C); }
+.salary-month-chip.active { background: var(--bk-primary, #00468C); color: #fff; border-color: var(--bk-primary, #00468C); }
 
 .salary-content { flex: 1; display: block; background: var(--bk-bg, #f8fafc); overflow: hidden; }
 .salary-viewer { width: 100%; height: 100%; display: block; background: var(--bk-bg, #f8fafc); overflow-y: auto; overflow-x: hidden; }
@@ -539,6 +576,8 @@
 .sa-btn-primary:hover:not(:disabled) { background: var(--bk-primary-dark, #003670); }
 .sa-btn-success { background: #16a34a; color: #fff; }
 .sa-btn-success:hover:not(:disabled) { background: #15803d; }
+.sa-btn-danger { background: #dc2626; color: #fff; }
+.sa-btn-danger:hover:not(:disabled) { background: #b91c1c; }
 
 .sa-save-msg {
   display: flex; align-items: center; gap: 0.35rem;

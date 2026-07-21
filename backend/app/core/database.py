@@ -1,7 +1,8 @@
 import os
 import sqlite3
 
-DB_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'company.db')
+DB_DIR = os.environ.get('DB_DIR') or os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+DB_FILE = os.path.join(DB_DIR, 'company.db')
 
 
 def get_conn():

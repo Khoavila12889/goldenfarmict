@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   FileText, Upload, Check, Loader, AlertCircle, TriangleAlert, Clock,
   ChevronLeft, ChevronRight, Calendar, Search, Download, Lock, Save,
-  User, Building, Edit3, X, Eye, EyeOff, Printer
+  User, Building, Edit3, X, Eye, EyeOff, Printer, FileDown
 } from 'lucide-react'
 import '../styles/booking.css'
 import './SalarySlip.css'
@@ -79,6 +79,8 @@ export default function SalarySlipAdmin() {
   const [pdfPassword, setPdfPassword] = useState('')
   const [exportingPdf, setExportingPdf] = useState(false)
   const [showPwdField, setShowPwdField] = useState(false)
+  const [batchExporting, setBatchExporting] = useState(false)
+  const [batchExportMsg, setBatchExportMsg] = useState(null)
 
   const [activeTab, setActiveTab] = useState('employees')
 
@@ -232,6 +234,39 @@ export default function SalarySlipAdmin() {
     } catch (err) { setSaveMsg({ type: 'error', text: err.message }) } finally { setSaving(false) }
   }
 
+  async function handleBatchExport() {
+    setBatchExporting(true)
+    setBatchExportMsg(null)
+    try {
+      const res = await fetch(`${apiBase}/batch-export-pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          admin_code: userCode, token, role,
+          month: selectedMonth,
+          department: departmentFilter !== 'Tất cả' ? departmentFilter : '',
+        })
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.detail || 'Lỗi xuất PDF')
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `luong_${selectedMonth}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+      setBatchExportMsg({ type: 'success', text: `Đã xuất PDF cho tháng ${parseMonthLabel(selectedMonth)}` })
+    } catch (err) {
+      setBatchExportMsg({ type: 'error', text: err.message })
+    } finally {
+      setBatchExporting(false)
+      setTimeout(() => setBatchExportMsg(null), 4000)
+    }
+  }
+
   async function exportPdf() {
     if (!selectedEmp) return
     setExportingPdf(true)
@@ -309,8 +344,19 @@ export default function SalarySlipAdmin() {
               <ChevronRight size={16} />
             </button>
           </div>
+          <button className="sa-btn sa-btn-danger" onClick={handleBatchExport} disabled={batchExporting || employees.length === 0}
+            title="Xuất tất cả phiếu lương tháng này thành PDF">
+            {batchExporting ? <><Loader size={14} className="spin" /> Đang xuất...</> : <><Download size={14} /> Xuất tất cả PDF</>}
+          </button>
         </div>
       </div>
+
+      {batchExportMsg && (
+        <div className={`sa-save-msg ${batchExportMsg.type}`} style={{ margin: '0.5rem 1rem 0' }}>
+          {batchExportMsg.type === 'success' ? <Check size={14} /> : <AlertCircle size={14} />}
+          {batchExportMsg.text}
+        </div>
+      )}
 
       { /* ─── Tab Navigation ─── */ }
       <div className="sa-tabs">

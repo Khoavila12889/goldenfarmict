@@ -25,8 +25,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create data directory for SQLite (will be mounted as volume in production)
-RUN mkdir -p /app/data
+# Create directories for data, logs, templates, temp PDFs
+RUN mkdir -p /app/data /app/logs /app/templates /app/temp_pdf_gen
+
+# Set ownership for writable directories
+RUN chown -R nobody:nogroup /app/data /app/logs /app/temp_pdf_gen
 
 # Switch to non-root user for security
 USER nobody
