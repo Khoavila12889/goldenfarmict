@@ -4,7 +4,6 @@ Tạo phiếu lương PDF từ Excel + Template DOCX
 """
 import pandas as pd
 from docxtpl import DocxTemplate
-from docx2pdf import convert
 from PyPDF2 import PdfReader, PdfWriter
 from pathlib import Path
 from datetime import datetime
@@ -13,6 +12,7 @@ import os
 import shutil
 import logging
 import tempfile
+import subprocess
 
 from .ftp_utils import upload_file_to_ftp, upload_excel_to_ftp
 from config.config_manager import read_xml_info
@@ -317,7 +317,11 @@ async def generate_salary_pdfs_from_excel(
                 doc.save(str(temp_docx))
                 
                 # Convert to PDF
-                convert(str(temp_docx), str(pdf_path))
+                subprocess.run(
+                    ['libreoffice', '--headless', '--convert-to', 'pdf',
+                     '--outdir', str(pdf_path.parent), str(temp_docx)],
+                    capture_output=True, text=True, timeout=60, check=True
+                )
                 
                 # Encrypt với password nếu có
                 if 'PASSWORD' in row and not pd.isnull(row['PASSWORD']):
@@ -440,7 +444,13 @@ def generate_single_pdf_from_json(salary_context: dict, template_path: str, outp
         temp_docx = output_path + '.docx'
         doc.save(temp_docx)
 
-        convert(temp_docx, output_path)
+        result = subprocess.run(
+            ['libreoffice', '--headless', '--convert-to', 'pdf',
+             '--outdir', str(Path(output_path).parent), str(temp_docx)],
+            capture_output=True, text=True, timeout=60
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"LibreOffice failed: {result.stderr or result.stdout}")
 
         if password:
             pdf_writer = PdfWriter()
