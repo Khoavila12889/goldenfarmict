@@ -110,20 +110,39 @@ async def get_employees_for_salary(
     """Tìm kiếm nhân viên (có/ chưa có lương) để admin chọn làm việc."""
     require_admin(admin_code, token, role)
     conn = get_conn()
-    sql = """
+    # Lấy nhân viên từ employees table...
+    rows = conn.execute("""
         SELECT employee_code, full_name, department, position, phone, email
         FROM employees WHERE status='active' AND employee_code != ''
-    """
-    params = []
+    """).fetchall()
+    # ...kết hợp với nhân viên chỉ có trong salaries (import Excel trước đây không tạo employees record)
+    salary_rows = conn.execute("""
+        SELECT DISTINCT s.employee_code,
+               COALESCE(json_extract(s.data_json, '$.NAME'), '') AS full_name,
+               COALESCE(json_extract(s.data_json, '$.PB'), '') AS department,
+               COALESCE(json_extract(s.data_json, '$.CHUCVU'), '') AS position,
+               '' AS phone,
+               '' AS email
+        FROM salaries s
+        WHERE s.employee_code NOT IN (
+            SELECT employee_code FROM employees WHERE status='active' AND employee_code != ''
+        )
+    """).fetchall()
+    combined = {}
+    for r in rows:
+        combined[r['employee_code']] = dict(r)
+    for r in salary_rows:
+        if r['employee_code'] not in combined:
+            combined[r['employee_code']] = dict(r)
+    result = list(combined.values())
     if department and department != "Tất cả":
-        sql += " AND department = ?"; params.append(department)
+        result = [e for e in result if e['department'] == department]
     if search:
-        sql += " AND (full_name LIKE ? OR employee_code LIKE ?)"
-        params.extend([f"%{search}%", f"%{search}%"])
-    sql += " ORDER BY department, full_name"
-    rows = conn.execute(sql, params).fetchall()
+        kw = search.lower()
+        result = [e for e in result if kw in e['full_name'].lower() or kw in e['employee_code'].lower()]
+    result.sort(key=lambda e: (e['department'] or '', e['full_name'] or ''))
     conn.close()
-    return {"data": [dict(r) for r in rows], "total": len(rows)}
+    return {"data": result, "total": len(result)}
 
 
 # ─── Admin: Create/Update Salary Slip ─────────────────────────────────
@@ -394,6 +413,13 @@ async def upload_salaries_excel(
                     "INSERT OR IGNORE INTO users (employee_code, password_hash, role) VALUES (?, ?, ?)",
                     (emp_id, hashlib.sha256(emp_id.encode()).hexdigest(), 'user')
                 )
+            # Tự động tạo employee record nếu chưa có (để tìm kiếm được trên tab Nhân viên)
+            emp_row = conn.execute("SELECT id FROM employees WHERE employee_code=?", (emp_id,)).fetchone()
+            if not emp_row:
+                conn.execute("""
+                    INSERT INTO employees (employee_code, full_name, department, position, handover_date, status, created_at)
+                    VALUES (?, ?, ?, ?, ?, 'active', datetime('now','localtime'))
+                """, (context['ID'], context['NAME'], context.get('PB', ''), context.get('CHUCVU', ''), context.get('NVL', '')))
             success += 1
         except Exception as e:
             errors.append(f"Dòng {idx+2}: {str(e)}")
