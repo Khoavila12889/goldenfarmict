@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react'
-import { Loader, Lock, ChevronLeft, ChevronRight, Download, Check, AlertCircle } from 'lucide-react'
+import { Loader, Lock, ChevronLeft, ChevronRight } from 'lucide-react'
 import useSalarySlip from '../hooks/useSalarySlip'
 import './SalarySlip.css'
 
@@ -13,16 +13,13 @@ function parseMonth(monthStr) {
 export default function SalarySlip() {
   const {
     selectedMonth, salaryData, isLoading, error, needPassword,
-    availableMonths, monthsLoading, pdfExporting,
-    fetchSalarySlip, fetchAvailableMonths, downloadPdf, changeMonth,
+    fetchSalarySlip, changeMonth,
   } = useSalarySlip()
 
   const [pwd, setPwd] = useState('')
   const [pwdError, setPwdError] = useState('')
-  const [pdfMsg, setPdfMsg] = useState(null)
-  const [showMonths, setShowMonths] = useState(false)
 
-  useEffect(() => { fetchSalarySlip(selectedMonth); fetchAvailableMonths() }, [])
+  useEffect(() => { fetchSalarySlip(selectedMonth) }, [])
 
   /* ── Month navigation ── */
   const monthInputRef = useRef(null)
@@ -76,83 +73,36 @@ export default function SalarySlip() {
     fetchSalarySlip(selectedMonth)
   }
 
-  const handleDownloadPdf = async () => {
-    setPdfMsg(null)
-    try {
-      await downloadPdf(selectedMonth, pwd)
-      setPdfMsg({ type: 'success', text: 'Đã tải PDF' })
-    } catch (err) {
-      setPdfMsg({ type: 'error', text: err.message })
-    }
-    setTimeout(() => setPdfMsg(null), 3000)
-  }
-
   const d = salaryData   // shorthand
 
   /* ────────────── RENDER ────────────── */
   return (
     <div className="salary-container">
 
-      {/* Top bar */}
+      {/* Top bar: chỉ có tháng/năm */}
       <div className="salary-header">
-        <div className="salary-controls">
-          <div className="salary-month-selector">
-            <button className="salary-month-nav-btn" onClick={() => navigate(-1)} title="Tháng trước">
-              <ChevronLeft size={16} />
-            </button>
-            
-            <button className="salary-month-display" onClick={openMonthPicker} title="Chọn tháng">
-              Tháng {parseMonth(selectedMonth)[0]}/{parseMonth(selectedMonth)[1]}
-            </button>
-            <input
-              ref={monthInputRef}
-              type="month"
-              className="salary-month-hidden"
-              value={selectedMonth}
-              max={capMonth}
-              onChange={handleMonthChange}
-            />
-            
-            <button className="salary-month-nav-btn" onClick={() => navigate(1)} disabled={nextDisabled} title="Tháng sau">
-              <ChevronRight size={16} />
-            </button>
-          </div>
-
-          <button className={`salary-btn salary-btn-pdf${!salaryData ? ' disabled' : ''}`}
-            onClick={handleDownloadPdf}
-            disabled={!salaryData || pdfExporting}
-            title="Tải PDF phiếu lương">
-            {pdfExporting ? <><Loader size={14} className="spin" /> Đang xuất...</> : <><Download size={14} /> PDF</>}
+        <div className="salary-controls salary-month-selector">
+          <button className="salary-month-nav-btn" onClick={() => navigate(-1)} title="Tháng trước">
+            <ChevronLeft size={16} />
+          </button>
+          
+          <button className="salary-month-display" onClick={openMonthPicker} title="Chọn tháng">
+            Tháng {parseMonth(selectedMonth)[0]}/{parseMonth(selectedMonth)[1]} 📅
+          </button>
+          <input
+            ref={monthInputRef}
+            type="month"
+            className="salary-month-hidden"
+            value={selectedMonth}
+            max={capMonth}
+            onChange={handleMonthChange}
+          />
+          
+          <button className="salary-month-nav-btn" onClick={() => navigate(1)} disabled={nextDisabled} title="Tháng sau">
+            <ChevronRight size={16} />
           </button>
         </div>
       </div>
-
-      {pdfMsg && (
-        <div className={`salary-pdf-msg ${pdfMsg.type}`}>
-          {pdfMsg.type === 'success' ? <Check size={14} /> : <AlertCircle size={14} />}
-          {pdfMsg.text}
-        </div>
-      )}
-
-      {/* Available months bar */}
-      {availableMonths.length > 0 && (
-        <div className="salary-months-bar">
-          <button className="salary-months-toggle" onClick={() => setShowMonths(s => !s)}>
-            {showMonths ? '▲' : '▼'} Lịch sử phiếu lương ({availableMonths.length} tháng)
-          </button>
-          {showMonths && (
-            <div className="salary-months-list">
-              {availableMonths.map(m => (
-                <button key={m.month}
-                  className={`salary-month-chip${m.month === selectedMonth ? ' active' : ''}`}
-                  onClick={() => { changeMonth(m.month); fetchSalarySlip(m.month); setShowMonths(false) }}>
-                  Tháng {parseMonth(m.month)[0]}/{parseMonth(m.month)[1]}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Body */}
       <div className="salary-content">

@@ -11,8 +11,6 @@ import io
 import hashlib
 import json
 import logging
-import zipfile
-import shutil
 from datetime import datetime
 from ..core.database import get_conn
 from ..core.auth import verify_token
@@ -650,95 +648,4 @@ async def admin_export_salary_pdf(
         str(output_path),
         media_type="application/pdf",
         filename=f"luong_{safe_code}_{month}.pdf"
-    )
-
-
-# ─── Admin: Batch Export PDFs as ZIP ──────────────────────────
-
-@router.post("/admin/batch-export-pdf")
-async def admin_batch_export_pdf(
-    body: dict,
-    admin_code: str = None,
-    token: str = None,
-    role: str = None
-):
-    """
-    Xuất hàng loạt phiếu lương PDF và đóng gói ZIP.
-    Body: { month, department: "" (tùy chọn), employee_codes: [] (tùy chọn) }
-    Trả về file ZIP để download.
-    """
-    require_admin(admin_code, token, role)
-    month = body.get("month")
-    if not month:
-        raise HTTPException(status_code=400, detail="Missing month")
-
-    if not TEMPLATE_PATH or not TEMPLATE_PATH.exists():
-        raise HTTPException(status_code=500, detail="Template file luong.docx not found")
-
-    conn = get_conn()
-    sql = """
-        SELECT s.employee_code, s.data_json, e.full_name
-        FROM salaries s
-        LEFT JOIN employees e ON e.employee_code = s.employee_code
-        WHERE s.month = ?
-    """
-    params = [month]
-
-    emp_codes = body.get("employee_codes", [])
-    if emp_codes:
-        placeholders = ",".join("?" for _ in emp_codes)
-        sql += f" AND s.employee_code IN ({placeholders})"
-        params.extend(emp_codes)
-
-    department = body.get("department", "")
-    if department and department != "Tất cả":
-        sql += " AND e.department = ?"
-        params.append(department)
-
-    rows = conn.execute(sql, params).fetchall()
-    conn.close()
-
-    if not rows:
-        raise HTTPException(status_code=404, detail="Không có dữ liệu phiếu lương cho tháng này")
-
-    export_dir = Path("temp_pdf_gen") / f"batch_{month}"
-    if export_dir.exists():
-        shutil.rmtree(str(export_dir))
-    export_dir.mkdir(parents=True, exist_ok=True)
-
-    errors = []
-    success_count = 0
-
-    for row in rows:
-        try:
-            data = json.loads(row["data_json"])
-            emp_code = row["employee_code"]
-            safe_code = emp_code.replace('/', '_').replace('\\', '_')
-            pdf_path = export_dir / f"{safe_code}_{month}.pdf"
-
-            generate_single_pdf_from_json(data, str(TEMPLATE_PATH), str(pdf_path), "")
-            success_count += 1
-        except Exception as e:
-            errors.append(f"{row.get('employee_code', '?')}: {str(e)}")
-
-    # Create ZIP
-    zip_path = export_dir.parent / f"luong_{month}.zip"
-    with zipfile.ZipFile(str(zip_path), 'w', zipfile.ZIP_DEFLATED) as zf:
-        for pdf_file in export_dir.glob("*.pdf"):
-            zf.write(str(pdf_file), pdf_file.name)
-
-    # Cleanup PDF files
-    shutil.rmtree(str(export_dir))
-
-    if not zip_path.exists():
-        raise HTTPException(status_code=500, detail="Không thể tạo file ZIP")
-
-    return FileResponse(
-        str(zip_path),
-        media_type="application/zip",
-        filename=f"luong_{month}.zip",
-        headers={
-            "X-Total-Count": str(success_count),
-            "X-Error-Count": str(len(errors)),
-        }
     )
