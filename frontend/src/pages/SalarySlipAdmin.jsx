@@ -112,6 +112,16 @@ export default function SalarySlipAdmin() {
     }
   }
 
+  async function fetchEmployees() {
+    setEmpLoading(true)
+    try {
+      const res = await searchAllEmployees(departmentFilter, searchTerm, userCode, token, role)
+      setEmployees(res.data.data || [])
+    } catch (_) {} finally {
+      setEmpLoading(false)
+    }
+  }
+
   useEffect(() => {
     fetchHistory()
     ;(async () => {
