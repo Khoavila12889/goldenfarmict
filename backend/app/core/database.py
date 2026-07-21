@@ -3,20 +3,21 @@ import re
 import sqlite3
 from pathlib import Path
 
+_PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+
 try:
     from dotenv import load_dotenv
-    _dotenv_path = Path(__file__).parent.parent.parent.parent / '.env'
-    if _dotenv_path.exists():
-        load_dotenv(str(_dotenv_path))
+    _dotenv = _PROJECT_ROOT / '.env'
+    if _dotenv.exists():
+        load_dotenv(str(_dotenv))
 except Exception:
     pass
-
-_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+_BASE_DIR = str(_PROJECT_ROOT / 'backend')
 
 _DATABASE_URL = os.environ.get('DATABASE_URL', '')
 if _DATABASE_URL:
     m = re.match(r'sqlite:///(.+)', _DATABASE_URL)
-    DB_FILE = str(Path(_BASE_DIR) / m.group(1)) if m else _DATABASE_URL
+    DB_FILE = str(_PROJECT_ROOT / m.group(1)) if m else _DATABASE_URL
 else:
     DB_DIR = os.environ.get('DB_DIR') or _BASE_DIR
     DB_FILE = os.path.join(DB_DIR, 'company.db')
