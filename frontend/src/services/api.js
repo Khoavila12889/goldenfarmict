@@ -461,20 +461,28 @@ export function getSalaryView(employee_code, month, admin_code, token, role) {
 
 export function updateSalaryFields(employee_code, month, fields, admin_code, token, role) {
   return api.put('/salary-slips/admin/update-fields', {
-    admin_code, token, role, employee_code, month, fields
+    employee_code, month, fields
+  }, {
+    params: { admin_code, token, role }
   })
 }
 
 export function exportSalaryPdf(employee_code, month, password, admin_code, token, role, fields) {
   return api.post('/salary-slips/admin/export-pdf', {
-    admin_code, token, role, employee_code, month, password, fields
-  }, { responseType: 'blob' })
+    employee_code, month, password, fields
+  }, {
+    params: { admin_code, token, role },
+    responseType: 'blob'
+  })
 }
 
 export function batchExportSalaryPdf(month, department, admin_code, token, role) {
   return api.post('/salary-slips/admin/batch-export-pdf', {
-    admin_code, token, role, month, department
-  }, { responseType: 'blob' })
+    month, department
+  }, {
+    params: { admin_code, token, role },
+    responseType: 'blob'
+  })
 }
 
 export function downloadSalaryTemplate() {

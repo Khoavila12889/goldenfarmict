@@ -612,8 +612,7 @@ async def admin_get_employees_with_salary(
         raise HTTPException(status_code=400, detail="Missing month parameter")
     conn = get_conn()
     sql = """
-        SELECT s.employee_code, e.full_name, e.department, e.position,
-               s.month, s.basic_salary, s.net_salary
+        SELECT s.employee_code, e.full_name, e.department, e.position, s.month
         FROM salaries s
         LEFT JOIN employees e ON e.employee_code = s.employee_code
         WHERE s.month = ?

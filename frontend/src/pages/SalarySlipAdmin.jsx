@@ -362,10 +362,6 @@ export default function SalarySlipAdmin() {
               <ChevronRight size={16} />
             </button>
           </div>
-          <button className="sa-btn sa-btn-danger" onClick={handleBatchExport} disabled={batchExporting || employees.length === 0}
-            title="Xuất tất cả phiếu lương tháng này thành PDF">
-            {batchExporting ? <><Loader size={14} className="spin" /> Đang xuất...</> : <><Download size={14} /> Xuất tất cả PDF</>}
-          </button>
         </div>
       </div>
 
