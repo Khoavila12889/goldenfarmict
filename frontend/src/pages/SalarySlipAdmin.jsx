@@ -2,8 +2,14 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   FileText, Upload, Check, Loader, AlertCircle, TriangleAlert, Clock,
   ChevronLeft, ChevronRight, Calendar, Search, Download, Lock, Save,
-  User, Building, Edit3, X, Eye, EyeOff, Printer, FileDown
+  User, Building, Edit3, X, Eye, EyeOff, Printer, FileDown, Trash2
 } from 'lucide-react'
+import {
+  getSalaryEmployees, getSalaryView, updateSalaryFields,
+  exportSalaryPdf, batchExportSalaryPdf, uploadSalaryExcel,
+  getSalaryUploadHistory, deleteSalarySlip,
+  getDepartments
+} from '../services/api'
 import '../styles/booking.css'
 import './SalarySlip.css'
 
@@ -80,6 +86,7 @@ export default function SalarySlipAdmin() {
   const [exportingPdf, setExportingPdf] = useState(false)
   const [showPwdField, setShowPwdField] = useState(false)
   const [batchExporting, setBatchExporting] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [batchExportMsg, setBatchExportMsg] = useState(null)
 
   const [activeTab, setActiveTab] = useState('employees')
@@ -98,10 +105,8 @@ export default function SalarySlipAdmin() {
   async function fetchHistory() {
     setHistoryLoading(true)
     try {
-      const params = new URLSearchParams({ admin_code: userCode, token, role })
-      const res = await fetch(`${apiBase}/upload-history?${params}`)
-      const data = await res.json()
-      if (res.ok) setUploadHistory(data.data || [])
+      const res = await getSalaryUploadHistory(userCode, token, role)
+      setUploadHistory(res.data.data || [])
     } catch (_) {} finally {
       setHistoryLoading(false)
     }
@@ -110,15 +115,8 @@ export default function SalarySlipAdmin() {
   const fetchEmployees = useCallback(async () => {
     setEmpLoading(true)
     try {
-      const params = new URLSearchParams({
-        admin_code: userCode, token, role,
-        month: selectedMonth,
-        department: departmentFilter,
-        search: searchTerm,
-      })
-      const res = await fetch(`${apiBase}/with-salary?${params}`)
-      const data = await res.json()
-      if (res.ok) setEmployees(data.data || [])
+      const res = await getSalaryEmployees(selectedMonth, departmentFilter, searchTerm, userCode, token, role)
+      setEmployees(res.data.data || [])
     } catch (_) {} finally {
       setEmpLoading(false)
     }
@@ -126,11 +124,10 @@ export default function SalarySlipAdmin() {
 
   const fetchDepartments = useCallback(async () => {
     try {
-      const res = await fetch(`/api/employees/departments/list?admin_code=${userCode}&token=${token}&role=${role}`)
-      const data = await res.json()
-      if (res.ok) setDepartments(data.data || [])
+      const res = await getDepartments()
+      setDepartments(res.data.data || [])
     } catch (_) {}
-  }, [userCode, token, role])
+  }, [])
 
   useEffect(() => { fetchHistory(); fetchDepartments() }, [])
   useEffect(() => { fetchEmployees() }, [fetchEmployees])
@@ -166,19 +163,18 @@ export default function SalarySlipAdmin() {
     setUploadError(null)
     setUploadResult(null)
     setPendingMonth(null)
-    const fd = new FormData()
-    fd.append('excel_file', file)
-    const params = new URLSearchParams({ admin_code: userCode, token, role, month: selectedMonth })
-    if (force) params.set('force', 'true')
     try {
-      const res = await fetch(`${apiBase}/upload-salaries?${params}`, { method: 'POST', body: fd })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.detail || 'Upload thất bại')
+      const res = await uploadSalaryExcel(file, selectedMonth, userCode, token, role, force)
+      const data = res.data
       if (data.has_existing) { setPendingMonth(data); setUploading(false); return }
       setUploadResult(data)
       fetchHistory()
       fetchEmployees()
-    } catch (err) { setUploadError(err.message) } finally { if (!pendingMonth) setUploading(false) }
+    } catch (err) {
+      setUploadError(err.response?.data?.detail || 'Upload thất bại')
+    } finally {
+      if (!pendingMonth) setUploading(false)
+    }
   }
 
   function confirmOverwrite() { handleUpload(true) }
@@ -193,12 +189,13 @@ export default function SalarySlipAdmin() {
     setEditedFields({})
     setSaveMsg(null)
     try {
-      const params = new URLSearchParams({ admin_code: userCode, token, role, month: selectedMonth })
-      const res = await fetch(`${apiBase}/view/${emp.employee_code}?${params}`)
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.detail || 'Lỗi tải dữ liệu')
-      setSalaryData(data.data)
-    } catch (err) { setSalaryError(err.message) } finally { setSalaryLoading(false) }
+      const res = await getSalaryView(emp.employee_code, selectedMonth, userCode, token, role)
+      setSalaryData(res.data.data)
+    } catch (err) {
+      setSalaryError(err.response?.data?.detail || 'Lỗi tải dữ liệu')
+    } finally {
+      setSalaryLoading(false)
+    }
   }
 
   function handleFieldChange(field, value) {
@@ -215,43 +212,44 @@ export default function SalarySlipAdmin() {
     setSaving(true)
     setSaveMsg(null)
     try {
-      const res = await fetch(`${apiBase}/update-fields`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          admin_code: userCode, token, role,
-          employee_code: selectedEmp.employee_code,
-          month: selectedMonth,
-          fields: editedFields,
-        })
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.detail || 'Lỗi lưu')
-      setSalaryData(data.data)
+      const res = await updateSalaryFields(selectedEmp.employee_code, selectedMonth, editedFields, userCode, token, role)
+      setSalaryData(res.data.data)
       setEditedFields({})
       setSaveMsg({ type: 'success', text: 'Đã lưu thay đổi' })
       setTimeout(() => setSaveMsg(null), 3000)
-    } catch (err) { setSaveMsg({ type: 'error', text: err.message }) } finally { setSaving(false) }
+    } catch (err) {
+      setSaveMsg({ type: 'error', text: err.response?.data?.detail || 'Lỗi lưu' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!selectedEmp || !window.confirm(`Xóa phiếu lương của ${selectedEmp.full_name} tháng ${parseMonthLabel(selectedMonth)}?`)) return
+    setDeleting(true)
+    try {
+      await deleteSalarySlip(selectedEmp.employee_code, selectedMonth, userCode, token, role)
+      setSelectedEmp(null)
+      setSalaryData(null)
+      setEditedFields({})
+      setSaveMsg({ type: 'success', text: 'Đã xóa phiếu lương' })
+      fetchEmployees()
+      setTimeout(() => setSaveMsg(null), 3000)
+    } catch (err) {
+      setSaveMsg({ type: 'error', text: err.response?.data?.detail || 'Lỗi xóa' })
+    } finally {
+      setDeleting(false)
+    }
   }
 
   async function handleBatchExport() {
     setBatchExporting(true)
     setBatchExportMsg(null)
     try {
-      const res = await fetch(`${apiBase}/batch-export-pdf`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          admin_code: userCode, token, role,
-          month: selectedMonth,
-          department: departmentFilter !== 'Tất cả' ? departmentFilter : '',
-        })
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.detail || 'Lỗi xuất PDF')
-      }
-      const blob = await res.blob()
+      const res = await batchExportSalaryPdf(selectedMonth,
+        departmentFilter !== 'Tất cả' ? departmentFilter : '',
+        userCode, token, role)
+      const blob = new Blob([res.data], { type: 'application/zip' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -260,7 +258,7 @@ export default function SalarySlipAdmin() {
       URL.revokeObjectURL(url)
       setBatchExportMsg({ type: 'success', text: `Đã xuất PDF cho tháng ${parseMonthLabel(selectedMonth)}` })
     } catch (err) {
-      setBatchExportMsg({ type: 'error', text: err.message })
+      setBatchExportMsg({ type: 'error', text: err.response?.data?.detail || 'Lỗi xuất PDF' })
     } finally {
       setBatchExporting(false)
       setTimeout(() => setBatchExportMsg(null), 4000)
@@ -271,29 +269,21 @@ export default function SalarySlipAdmin() {
     if (!selectedEmp) return
     setExportingPdf(true)
     try {
-      const res = await fetch(`${apiBase}/export-pdf`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          admin_code: userCode, token, role,
-          employee_code: selectedEmp.employee_code,
-          month: selectedMonth,
-          password: pdfPassword,
-          fields: Object.keys(editedFields).length > 0 ? editedFields : undefined,
-        })
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.detail || 'Lỗi xuất PDF')
-      }
-      const blob = await res.blob()
+      const res = await exportSalaryPdf(selectedEmp.employee_code, selectedMonth, pdfPassword,
+        userCode, token, role,
+        Object.keys(editedFields).length > 0 ? editedFields : undefined)
+      const blob = new Blob([res.data], { type: 'application/pdf' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
       a.download = `luong_${selectedEmp.employee_code}_${selectedMonth}.pdf`
       a.click()
       URL.revokeObjectURL(url)
-    } catch (err) { setSaveMsg({ type: 'error', text: err.message }) } finally { setExportingPdf(false) }
+    } catch (err) {
+      setSaveMsg({ type: 'error', text: err.response?.data?.detail || 'Lỗi xuất PDF' })
+    } finally {
+      setExportingPdf(false)
+    }
   }
 
   function renderField(field, options = {}) {
@@ -459,6 +449,10 @@ export default function SalarySlipAdmin() {
                     <button className="sa-btn sa-btn-success" onClick={saveChanges}
                       disabled={!hasEdits || saving}>
                       {saving ? <><Loader size={14} className="spin" /> Đang lưu...</> : <><Save size={14} /> Lưu</>}
+                    </button>
+                    <button className="sa-btn sa-btn-danger" onClick={handleDelete} disabled={deleting}
+                      style={{ borderColor: '#ef4444', color: '#ef4444' }}>
+                      {deleting ? <><Loader size={14} className="spin" /> Đang xóa...</> : <><Trash2 size={14} /> Xóa</>}
                     </button>
                   </div>
                 </div>

@@ -4,7 +4,7 @@ Admin: upload Excel → store JSON + salary_slips table
 Employee: xem qua salary_user.py (/api/salary/verify-and-view)
 Đã xoá toàn bộ PDF generator, FTP upload, generator job cũ.
 """
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
 from pathlib import Path
 import os
 import io
@@ -24,8 +24,8 @@ router = APIRouter(prefix="/api/salary-slips", tags=["Salary Slips"])
 
 
 def require_admin(employee_code: str, token: str, role: str):
-    if role != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
+    if role not in ("admin", "head"):
+        raise HTTPException(status_code=403, detail="Admin/Head access required")
     if not verify_token(employee_code, token, role):
         raise HTTPException(status_code=401, detail="Invalid token")
     return employee_code
@@ -131,8 +131,8 @@ async def create_salary_slip(body: dict, admin_code: str = None, token: str = No
             raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
 
     conn = get_conn()
-    conn.execute("SELECT id FROM employees WHERE employee_code=? AND status='active'", (body["employee_code"],)).fetchone()
-    if not conn:
+    emp = conn.execute("SELECT id FROM employees WHERE employee_code=? AND status='active'", (body["employee_code"],)).fetchone()
+    if not emp:
         conn.close()
         raise HTTPException(status_code=404, detail="Employee not found or inactive")
 
@@ -170,17 +170,23 @@ async def create_salary_slip(body: dict, admin_code: str = None, token: str = No
 
 # ─── Admin: Delete Salary Slip ────────────────────────────────────────
 
-@router.delete("/admin/{slip_id}")
-async def delete_salary_slip(slip_id: int, admin_code: str = None, token: str = None, role: str = None):
+@router.delete("/admin/{employee_code}")
+async def delete_salary_slip(
+    employee_code: str,
+    month: str = "",
+    admin_code: str = None,
+    token: str = None,
+    role: str = None
+):
+    """Xóa phiếu lương theo employee_code + month (xóa cả 2 bảng salary_slips và salaries)."""
     require_admin(admin_code, token, role)
+    if not month:
+        raise HTTPException(status_code=400, detail="Missing month parameter")
     conn = get_conn()
-    slip = conn.execute("SELECT employee_code, month FROM salary_slips WHERE id=?", (slip_id,)).fetchone()
-    if not slip:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Salary slip not found")
-    conn.execute("DELETE FROM salary_slips WHERE id=?", (slip_id,))
+    conn.execute("DELETE FROM salary_slips WHERE employee_code=? AND month=?", (employee_code, month))
+    conn.execute("DELETE FROM salaries WHERE employee_code=? AND month=?", (employee_code, month))
     conn.commit(); conn.close()
-    return {"success": True, "message": "Deleted"}
+    return {"success": True, "message": f"Đã xóa phiếu lương của {employee_code} tháng {month}"}
 
 
 # ─── Admin: Bulk Generate Salary Slips ────────────────────────────────
@@ -598,6 +604,7 @@ from fastapi.responses import FileResponse
 @router.post("/admin/export-pdf")
 async def admin_export_salary_pdf(
     body: dict,
+    background_tasks: BackgroundTasks,
     admin_code: str = None,
     token: str = None,
     role: str = None
@@ -647,6 +654,8 @@ async def admin_export_salary_pdf(
 
     if not output_path.exists():
         raise HTTPException(status_code=500, detail="Không thể tạo file PDF")
+
+    background_tasks.add_task(os.unlink, str(output_path))
 
     return FileResponse(
         str(output_path),

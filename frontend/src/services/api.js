@@ -440,4 +440,77 @@ export function uploadSoftwareContract(itemId, file) {
   })
 }
 
+// ─── Salary Slip Admin ─────────────────────────────────────────
+export function getSalaryEmployees(month, department, search, admin_code, token, role) {
+  return api.get('/salary-slips/admin/with-salary', {
+    params: { month, department, search, admin_code, token, role }
+  })
+}
+
+export function getSalaryView(employee_code, month, admin_code, token, role) {
+  return api.get(`/salary-slips/admin/view/${employee_code}`, {
+    params: { month, admin_code, token, role }
+  })
+}
+
+export function updateSalaryFields(employee_code, month, fields, admin_code, token, role) {
+  return api.put('/salary-slips/admin/update-fields', {
+    admin_code, token, role, employee_code, month, fields
+  })
+}
+
+export function exportSalaryPdf(employee_code, month, password, admin_code, token, role, fields) {
+  return api.post('/salary-slips/admin/export-pdf', {
+    admin_code, token, role, employee_code, month, password, fields
+  }, { responseType: 'blob' })
+}
+
+export function batchExportSalaryPdf(month, department, admin_code, token, role) {
+  return api.post('/salary-slips/admin/batch-export-pdf', {
+    admin_code, token, role, month, department
+  }, { responseType: 'blob' })
+}
+
+export function uploadSalaryExcel(file, month, admin_code, token, role, force = false) {
+  const fd = new FormData()
+  fd.append('excel_file', file)
+  const params = { admin_code, token, role, month }
+  if (force) params.force = 'true'
+  return api.post('/salary-slips/admin/upload-salaries', fd, {
+    params,
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
+export function getSalaryUploadHistory(admin_code, token, role) {
+  return api.get('/salary-slips/admin/upload-history', {
+    params: { admin_code, token, role }
+  })
+}
+
+export function deleteSalarySlip(employee_code, month, admin_code, token, role) {
+  return api.delete(`/salary-slips/admin/${employee_code}`, {
+    params: { month, admin_code, token, role }
+  })
+}
+
+// ─── Salary Slip Employee ───────────────────────────────────────
+export function verifySalaryView(employee_code, month, password, token, role) {
+  return api.post('/salary/verify-and-view', {
+    employee_code, month, password, token, role
+  })
+}
+
+export function getAvailableMonths(employee_code, token, role) {
+  return api.get('/salary/available-months', {
+    params: { employee_code, token, role }
+  })
+}
+
+export function downloadSalaryPdf(employee_code, month, password, token, role) {
+  return api.post('/salary/export-pdf', {
+    employee_code, month, password, token, role
+  }, { responseType: 'blob' })
+}
+
 export default api

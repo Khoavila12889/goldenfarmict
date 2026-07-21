@@ -2,7 +2,7 @@
 Salary User Router
 Cho phép employee xem phiếu lương dạng JSON, tải PDF.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from pathlib import Path
@@ -115,7 +115,7 @@ class ExportPdfReq(BaseModel):
     role: str = ""
 
 @router.post("/export-pdf")
-def employee_export_pdf(req: ExportPdfReq):
+def employee_export_pdf(req: ExportPdfReq, background_tasks: BackgroundTasks):
     """Employee tải phiếu lương PDF (có thể có mật khẩu)."""
     if not req.employee_code or not req.month:
         raise HTTPException(status_code=400, detail="Thiếu employee_code hoặc month")
@@ -156,6 +156,8 @@ def employee_export_pdf(req: ExportPdfReq):
 
     if not output_path.exists():
         raise HTTPException(status_code=500, detail="Không thể tạo file PDF")
+
+    background_tasks.add_task(os.unlink, str(output_path))
 
     return FileResponse(
         str(output_path),
