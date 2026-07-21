@@ -8,12 +8,10 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
+# ĐÂY LÀ ĐOẠN CHUẨN DÀNH CHO DOCKER
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "sqlite:///" + os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-        "company.db"
-    )
+    "sqlite:////app/data/company.db"
 )
 
 _connect_args = {}
