@@ -441,7 +441,9 @@ def generate_single_pdf_from_json(salary_context: dict, template_path: str, outp
         doc = DocxTemplate(template_path)
         doc.render(salary_context)
 
-        temp_docx = output_path + '.docx'
+        # Tên file tạm .docx (bỏ .pdf để libreoffice tạo đúng tên output)
+        base = output_path[:-4] if output_path.endswith('.pdf') else output_path
+        temp_docx = base + '.docx'
         doc.save(temp_docx)
 
         result = subprocess.run(
