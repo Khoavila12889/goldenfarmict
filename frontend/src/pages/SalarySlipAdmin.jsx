@@ -308,7 +308,18 @@ export default function SalarySlipAdmin() {
       a.click()
       URL.revokeObjectURL(url)
     } catch (err) {
-      setSaveMsg({ type: 'error', text: err.response?.data?.detail || 'Lỗi xuất PDF' })
+      let msg = 'Lỗi xuất PDF'
+      try {
+        const blob = err.response?.data
+        if (blob instanceof Blob) {
+          const text = await blob.text()
+          const json = JSON.parse(text)
+          msg = json.detail || msg
+        } else {
+          msg = err.response?.data?.detail || err.message || msg
+        }
+      } catch (_) {}
+      setSaveMsg({ type: 'error', text: msg })
     } finally {
       setExportingPdf(false)
     }
