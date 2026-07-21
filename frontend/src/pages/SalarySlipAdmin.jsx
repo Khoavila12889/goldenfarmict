@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import {
   FileText, Upload, Check, Loader, AlertCircle, TriangleAlert, Clock,
   ChevronLeft, ChevronRight, Calendar, Search, Download, Lock, Save,
@@ -122,15 +122,29 @@ export default function SalarySlipAdmin() {
     }
   }, [selectedMonth, departmentFilter, searchTerm, userCode, token, role])
 
-  const fetchDepartments = useCallback(async () => {
-    try {
-      const res = await getDepartments()
-      setDepartments(res.data.data || [])
-    } catch (_) {}
+  useEffect(() => {
+    fetchHistory()
+    ;(async () => {
+      try {
+        const res = await getDepartments()
+        setDepartments(res.data.data || [])
+      } catch (_) {}
+    })()
   }, [])
 
-  useEffect(() => { fetchHistory(); fetchDepartments() }, [])
-  useEffect(() => { fetchEmployees() }, [fetchEmployees])
+  useEffect(() => {
+    let cancelled = false
+    setEmpLoading(true)
+    ;(async () => {
+      try {
+        const res = await getSalaryEmployees(selectedMonth, departmentFilter, searchTerm, userCode, token, role)
+        if (!cancelled) setEmployees(res.data.data || [])
+      } catch (_) {} finally {
+        if (!cancelled) setEmpLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [selectedMonth, departmentFilter, searchTerm, userCode, token, role])
 
   function navigate(dir) {
     const [y, m] = selectedMonth.split('-').map(Number)
