@@ -533,4 +533,28 @@ export function downloadSalaryPdf(employee_code, month, password, token, role) {
   }, { responseType: 'blob' })
 }
 
+// ─── Permissions ─────────────────────────────────────────────────
+export function getUsers(adminCode, token, role) {
+  return api.get('/auth/users', { params: { admin_code: adminCode, token, role } })
+}
+export function searchUsers(q, dept, adminCode, token, role) {
+  return api.get('/auth/users/search', { params: { q, department: dept, admin_code: adminCode, token, role } })
+}
+export function getUserPermissions(targetCode, adminCode, token, role) {
+  return api.get(`/auth/permissions/${targetCode}`, { params: { admin_code: adminCode, token, role } })
+}
+export function updateUserPermissions(targetCode, perms, adminCode, token, role) {
+  return api.put(`/auth/permissions/${targetCode}`, perms, { params: { admin_code: adminCode, token, role } })
+}
+export function updateUserRole(targetCode, newRole, adminCode, token, role) {
+  return api.put(`/auth/role/${targetCode}`, { role: newRole }, { params: { admin_code: adminCode, token, role } })
+}
+export function getPermissionModules() {
+  return api.get('/auth/permissions/modules')
+}
+// ─── Document Permissions ────────────────────────────────────────
+export function createDepartmentPermission(data, adminCode, token, role) {
+  return api.post('/documents/permissions/department', data, { params: { admin_code: adminCode, token, role } })
+}
+
 export default api

@@ -3,8 +3,18 @@ import os
 import json
 from datetime import datetime
 from urllib.parse import unquote
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Body
+from pydantic import BaseModel
 from ..core.database import get_conn
+from ..core.auth import verify_token
+
+
+def _require_auth(admin_code: str, token: str, role: str):
+    if role not in ("admin", "head"):
+        raise HTTPException(403, "Admin/Head access required")
+    if not verify_token(admin_code, token, role):
+        raise HTTPException(401, "Invalid token")
+    return True
 
 try:
     from google.oauth2 import service_account
@@ -53,7 +63,13 @@ def get_config(config_id: int):
     return {"data": r}
 
 @router.post("/config")
-def create_config(body: dict):
+def create_config(
+    body: dict,
+    admin_code: str = Query(''),
+    token: str = Query(''),
+    role: str = Query('')
+):
+    _require_auth(admin_code, token, role)
     conn = get_conn()
     conn.execute("""
         INSERT INTO storage_config (name, type, host, port, username, password, remote_path, domain)
@@ -74,7 +90,14 @@ def create_config(body: dict):
     return {"success": True, "id": new_id}
 
 @router.put("/config/{config_id}")
-def update_config(config_id: int, body: dict):
+def update_config(
+    config_id: int,
+    body: dict,
+    admin_code: str = Query(''),
+    token: str = Query(''),
+    role: str = Query('')
+):
+    _require_auth(admin_code, token, role)
     conn = get_conn()
     existing = conn.execute("SELECT * FROM storage_config WHERE id=?", (config_id,)).fetchone()
     if not existing:
@@ -96,7 +119,13 @@ def update_config(config_id: int, body: dict):
     return {"success": True}
 
 @router.delete("/config/{config_id}")
-def delete_config(config_id: int):
+def delete_config(
+    config_id: int,
+    admin_code: str = Query(''),
+    token: str = Query(''),
+    role: str = Query('')
+):
+    _require_auth(admin_code, token, role)
     conn = get_conn()
     conn.execute("DELETE FROM storage_permissions WHERE storage_id=?", (config_id,))
     conn.execute("DELETE FROM storage_config WHERE id=?", (config_id,))
@@ -347,14 +376,31 @@ def list_departments():
     return {"data": rows}
 
 @router.get("/permissions/{config_id}")
-def list_permissions(config_id: int):
+def list_permissions(
+    config_id: int,
+    admin_code: str = Query(''),
+    token: str = Query(''),
+    role: str = Query('')
+):
+    _require_auth(admin_code, token, role)
     conn = get_conn()
-    rows = [dict(r) for r in conn.execute("SELECT * FROM storage_permissions WHERE storage_id=? ORDER BY folder_path", (config_id,)).fetchall()]
+    rows = [dict(r) for r in conn.execute("""
+        SELECT sp.*, COALESCE(d.name, sp.department) AS department_name
+        FROM storage_permissions sp
+        LEFT JOIN departments d ON d.name = sp.department
+        WHERE sp.storage_id=? ORDER BY sp.folder_path
+    """, (config_id,)).fetchall()]
     conn.close()
     return {"data": rows}
 
 @router.post("/permissions")
-def create_permission(body: dict):
+def create_permission(
+    body: dict,
+    admin_code: str = Query(''),
+    token: str = Query(''),
+    role: str = Query('')
+):
+    _require_auth(admin_code, token, role)
     conn = get_conn()
     conn.execute("""
         INSERT INTO storage_permissions (storage_id, folder_path, role, employee_code, department, permission)
@@ -372,8 +418,45 @@ def create_permission(body: dict):
     conn.close()
     return {"success": True, "id": new_id}
 
+@router.post("/permissions/department")
+def create_department_permission(
+    body: dict = Body(...),
+    admin_code: str = Query(''),
+    token: str = Query(''),
+    role: str = Query('')
+):
+    """Set department-level permission for a storage folder"""
+    _require_auth(admin_code, token, role)
+    storage_id = body.get('storage_id')
+    folder_path = body.get('folder_path', '/')
+    department = body.get('department', '')
+    permission = body.get('permission', 'read')
+    if not storage_id or not department:
+        raise HTTPException(400, "Missing storage_id or department")
+    conn = get_conn()
+    existing = conn.execute("""
+        SELECT id FROM storage_permissions
+        WHERE storage_id=? AND folder_path=? AND department=? AND role='' AND employee_code=''
+    """, (storage_id, folder_path, department)).fetchone()
+    if existing:
+        conn.execute("UPDATE storage_permissions SET permission=? WHERE id=?", (permission, existing['id']))
+    else:
+        conn.execute("""
+            INSERT INTO storage_permissions (storage_id, folder_path, role, employee_code, department, permission)
+            VALUES (?, ?, '', '', ?, ?)
+        """, (storage_id, folder_path, department, permission))
+    conn.commit()
+    conn.close()
+    return {"success": True, "message": f"Đã cập nhật quyền cho phòng {department}"}
+
 @router.delete("/permissions/{perm_id}")
-def delete_permission(perm_id: int):
+def delete_permission(
+    perm_id: int,
+    admin_code: str = Query(''),
+    token: str = Query(''),
+    role: str = Query('')
+):
+    _require_auth(admin_code, token, role)
     conn = get_conn()
     conn.execute("DELETE FROM storage_permissions WHERE id=?", (perm_id,))
     conn.commit()
@@ -384,6 +467,9 @@ def delete_permission(perm_id: int):
 
 def _check_folder_permission(conn, storage_id, folder_path, user_code, user_role):
     folder_path = folder_path.replace('\\', '/').rstrip('/') or '/'
+    # Admin/head bypass permission check
+    if user_role in ('admin', 'head'):
+        return True
     # If no permissions defined for this storage, allow all
     count = conn.execute("SELECT COUNT(*) FROM storage_permissions WHERE storage_id=?", (storage_id,)).fetchone()[0]
     if count == 0:

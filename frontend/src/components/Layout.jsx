@@ -31,7 +31,7 @@ const allNavItems = [
   { path: '/documents', label: 'Tài liệu', icon: 'documents', roles: ['user', 'head', 'admin'] },
   { path: '/salary-slip', label: 'Phiếu lương', icon: 'salary', roles: ['user', 'head', 'admin'] },
   { path: '/salary-slip-admin', label: 'Quản lý lương', icon: 'salaryAdmin', roles: ['head', 'admin'] },
-  { path: '/permissions', label: 'Phân quyền', icon: 'permissions', roles: ['admin'] },
+  { path: '/permissions', label: 'Phân quyền', icon: 'permissions', roles: ['head', 'admin'] },
 ]
 
 const MODULE_MAP = {

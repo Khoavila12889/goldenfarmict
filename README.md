@@ -112,6 +112,14 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 - **Employee — Tải PDF**: Tải phiếu lương PDF có mật khẩu
 - **Employee — Lịch sử**: Xem danh sách các tháng đã có phiếu lương, chuyển nhanh giữa các tháng
 
+### 🔐 Phân quyền hệ thống (admin/head)
+
+- **Giao diện 3 tab** (`Permissions.jsx`): Phân quyền Module, Chia sẻ Tài liệu, Vai trò người dùng
+- **Phân quyền Module**: Chọn user → grid module theo nhóm Quản trị/Nghiệp vụ → toggle `can_view`/`can_edit`
+- **Chia sẻ Tài liệu**: Chọn kho tài liệu → thêm/xoá phòng ban với quyền Đọc/Ghi → user trong phòng ban tự động thấy dữ liệu
+- **Vai trò người dùng**: Bảng danh sách user với role badges, dropdown đổi role trực tiếp
+- **Server-side enforcement**: Document endpoints kiểm tra `verify_token` + `_check_folder_permission`; admin/head bypass toàn bộ
+
 ### 🔑 Quản lý License (admin)
 - Bảng danh sách + search
 - Inline edit (click trực tiếp trên bảng)
@@ -150,13 +158,31 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
   - ⏰ **Đã hết giờ** (`end_time` đã qua) — opacity thấp, gạch ngang title
 - **Overlap detection**: Client-side (gọi API check) + Server-side (SQL)
 
-## Phân quyền
+## Phân quyền (3 lớp)
 
-| Vai trò | Dashboard | Employees | Equipment | Licenses | Tickets | Bookings | Documents |
-|---------|-----------|-----------|-----------|---------|---------|----------|-----------|
-| **admin** | ✅ Tổng quan | ✅ CRUD | ✅ CRUD | ✅ CRUD | ✅ Xử lý | ✅ Quản lý resource | ✅ Cấu hình + phân quyền |
-| **head** | ✅ Tổng quan | ✅ Xem | ✅ Xem | ✅ Xem | ✅ Xử lý | ✅ Quản lý resource | ✅ Cấu hình + phân quyền |
-| **user** | ✅ Cá nhân | ❌ | ❌ | ❌ | ✅ Xem/tạo | ✅ Đặt lịch | ✅ Duyệt tài liệu
+### Lớp 1 — Vai trò người dùng (`users.role`)
+
+| Vai trò | Dashboard | Employees | Equipment | Licenses | Tickets | Bookings | Documents | Phân quyền |
+|---------|-----------|-----------|-----------|---------|---------|----------|-----------|------------|
+| **admin** | ✅ Tổng quan | ✅ CRUD | ✅ CRUD | ✅ CRUD | ✅ Xử lý | ✅ Quản lý resource | ✅ Cấu hình + phân quyền | ✅ Quản lý toàn bộ |
+| **head** | ✅ Tổng quan | ✅ Xem | ✅ Xem | ✅ Xem | ✅ Xử lý | ✅ Quản lý resource | ✅ Cấu hình + phân quyền | ✅ Chia sẻ tài liệu |
+| **user** | ✅ Cá nhân | ❌ | ❌ | ❌ | ✅ Xem/tạo | ✅ Đặt lịch | ✅ Duyệt tài liệu | ❌ |
+
+### Lớp 2 — Module permissions (`user_permissions`)
+
+Phân quyền chi tiết theo module cho từng user (admin quản lý qua giao diện **Phân quyền → Phân quyền Module**):
+
+- **Quản trị** (admin-only modules): Nhân viên, Thiết bị, License Keys, Quy trình, Quản lý lương — chỉ `can_view`, `can_edit` luôn disabled cho non-admin
+- **Nghiệp vụ**: Tickets, Phê duyệt, Lịch, Tài liệu, Phiếu lương — có thể bật/tắt `can_view` và `can_edit`
+
+### Lớp 3 — Document permissions (`storage_permissions`)
+
+Chia sẻ tài liệu theo phòng ban (quản lý qua giao diện **Phân quyền → Chia sẻ Tài liệu**):
+
+- Admin/head cấp quyền **Đọc** hoặc **Ghi** cho từng phòng ban trên mỗi kho tài liệu
+- User thuộc phòng ban được cấp quyền sẽ tự động thấy dữ liệu
+- Quyền được kiểm tra ở server-side khi browse/download
+- Admin/head **luôn bypass** mọi kiểm tra quyền — thấy toàn bộ dữ liệu
 
 ## Installation
 

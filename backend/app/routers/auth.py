@@ -224,9 +224,19 @@ def admin_reset_password(req: AdminResetRequest):
 # ─── Permission Management ─────────────────────────────────────────────
 
 ALL_MODULES = [
-    "employees", "equipment", "licenses", "tickets", "approvals",
-    "workflows", "bookings", "documents", "salary", "salary-admin",
+    {"key": "employees", "label": "Nhân viên", "group": "admin"},
+    {"key": "equipment", "label": "Thiết bị", "group": "admin"},
+    {"key": "licenses", "label": "License Keys", "group": "admin"},
+    {"key": "tickets", "label": "Tickets", "group": "support"},
+    {"key": "approvals", "label": "Phê duyệt", "group": "support"},
+    {"key": "workflows", "label": "Quy trình", "group": "admin"},
+    {"key": "bookings", "label": "Lịch", "group": "support"},
+    {"key": "documents", "label": "Tài liệu", "group": "support"},
+    {"key": "salary", "label": "Phiếu lương", "group": "support"},
+    {"key": "salary-admin", "label": "Quản lý lương", "group": "admin"},
 ]
+
+ADMIN_MODULES = {m["key"] for m in ALL_MODULES if m["group"] == "admin"}
 
 
 @router.get("/users")
@@ -246,6 +256,46 @@ def list_users(admin_code: str = None, token: str = None, role: str = None):
     """).fetchall()
     conn.close()
     return {"data": [dict(r) for r in rows]}
+
+
+@router.get("/users/search")
+def search_users(
+    q: str = "",
+    department: str = "",
+    admin_code: str = None,
+    token: str = None,
+    role: str = None
+):
+    """Search users for permission assignment"""
+    if role not in ("admin", "head"):
+        raise HTTPException(403, "Admin/Head access required")
+    if not verify_token(admin_code, token, role):
+        raise HTTPException(401, "Invalid token")
+    conn = get_conn()
+    sql = """
+        SELECT u.employee_code, u.role,
+               e.full_name, e.department, e.position
+        FROM users u
+        LEFT JOIN employees e ON e.employee_code = u.employee_code
+        WHERE 1=1
+    """
+    params = []
+    if q:
+        sql += " AND (u.employee_code LIKE ? OR e.full_name LIKE ? OR e.department LIKE ?)"
+        params.extend([f"%{q}%", f"%{q}%", f"%{q}%"])
+    if department:
+        sql += " AND e.department = ?"
+        params.append(department)
+    sql += " ORDER BY u.role, e.department, e.full_name LIMIT 50"
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.get("/permissions/modules")
+def list_modules():
+    """List all permission modules with metadata"""
+    return {"data": ALL_MODULES}
 
 
 @router.get("/permissions")
@@ -271,18 +321,22 @@ def get_user_permissions(
     role: str = None
 ):
     """Admin: get permissions for a specific user"""
-    if role != "admin":
+    if role not in ("admin", "head"):
         raise HTTPException(403, "Admin access required")
     if not verify_token(admin_code, token, role):
         raise HTTPException(401, "Invalid token")
     conn = get_conn()
+    user_info = conn.execute(
+        "SELECT u.role, e.full_name, e.department, e.position FROM users u LEFT JOIN employees e ON e.employee_code=u.employee_code WHERE u.employee_code=?",
+        (target_code.strip(),)
+    ).fetchone()
     rows = conn.execute(
         "SELECT module, can_view, can_edit FROM user_permissions WHERE employee_code=?",
         (target_code.strip(),)
     ).fetchall()
     conn.close()
     perms = {r["module"]: {"can_view": bool(r["can_view"]), "can_edit": bool(r["can_edit"])} for r in rows}
-    return {"data": perms, "employee_code": target_code}
+    return {"data": perms, "employee_code": target_code, "user": dict(user_info) if user_info else None}
 
 
 class PermissionUpdate(BaseModel):
@@ -300,7 +354,7 @@ def update_user_permissions(
     role: str = None
 ):
     """Admin: update permissions for a user"""
-    if role != "admin":
+    if role not in ("admin", "head"):
         raise HTTPException(403, "Admin access required")
     if not verify_token(admin_code, token, role):
         raise HTTPException(401, "Invalid token")
@@ -317,3 +371,31 @@ def update_user_permissions(
     conn.commit()
     conn.close()
     return {"success": True, "message": f"Đã cập nhật phân quyền cho {target_code}"}
+
+
+class RoleUpdate(BaseModel):
+    role: str  # 'user', 'head', 'admin'
+
+
+@router.put("/role/{target_code}")
+def update_user_role(
+    target_code: str,
+    body: RoleUpdate,
+    admin_code: str = None,
+    token: str = None,
+    role: str = None
+):
+    """Admin: change user role"""
+    if role != "admin":
+        raise HTTPException(403, "Admin access required")
+    if not verify_token(admin_code, token, role):
+        raise HTTPException(401, "Invalid token")
+    if body.role not in ("user", "head", "admin"):
+        raise HTTPException(400, "Invalid role")
+    if target_code == admin_code:
+        raise HTTPException(400, "Không thể thay đổi role của chính mình")
+    conn = get_conn()
+    conn.execute("UPDATE users SET role=? WHERE employee_code=?", (body.role, target_code.strip()))
+    conn.commit()
+    conn.close()
+    return {"success": True, "message": f"Đã đổi role của {target_code} thành {body.role}"}
