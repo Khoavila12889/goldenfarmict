@@ -103,12 +103,12 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 
 ### 💰 Quản lý phiếu lương (Salary Slip)
 
-- **Admin — Import Excel**: Upload file Excel (.xlsx/.xls) → tự động parse tất cả cột lương/thuế/phép → lưu JSON vào bảng `salaries` → tạo user account nếu chưa có
-- **Admin — Danh sách NV có lương**: Lọc theo tháng/phòng ban/tìm kiếm, chọn nhân viên để xem/sửa
-- **Admin — Viewer/Editor**: Form chỉnh sửa tất cả trường phiếu lương (thông tin NV, mức lương, thu nhập, khấu trừ, thực nhận, theo dõi phép năm, ghi chú) — lưu thay đổi vào JSON
-- **Admin — Xuất PDF**: Xuất PDF có mật khẩu (dùng template `luong.docx`) cho từng NV hoặc batch toàn bộ phòng ban → file ZIP
-- **Admin — Upload history**: Xem lịch sử import file Excel
-- **Employee — Xem phiếu lương**: Chọn tháng, nhập mật khẩu (nếu có) → xem JSON render dạng HTML đẹp (không cần PDF viewer)
+- **Admin — 3 Tab UI** (`SalarySlipAdmin.jsx`):
+  1. **Nhân viên (Employees)**: Sidebar danh sách NV (search + filter phòng ban) → chọn NV → form chỉnh sửa ở panel phải. Các field chia theo section: Thông tin NV, Mức lương & Công, Thu nhập (A), Khấu trừ (B) & Thực nhận, Theo dõi phép năm & Giờ tích lũy, Ghi chú. Nút Lưu (save vào JSON), Xuất PDF (có password), Xóa.
+  2. **Import Excel**: Tải file mẫu → chọn file .xlsx/.xls → tự động parse cột lương/thuế/phép → lưu JSON vào `salaries` → tạo user account nếu chưa có. Hỗ trợ ghi đè nếu tháng đã tồn tại.
+  3. **Lịch sử (History)**: Danh sách các lần upload Excel (tháng, filename, số NV, người upload, thời gian).
+- **Admin — Xuất PDF**: Xuất PDF có mật khẩu (dùng template `luong.docx` qua LibreOffice headless) cho từng NV hoặc batch toàn bộ phòng ban → file ZIP
+- **Employee — Xem phiếu lương**: Chọn tháng, nhập mật khẩu (nếu có) → xem JSON render dạng HTML (`.pdf-a4-portrait`) — giao diện giống phiếu lương giấy
 - **Employee — Tải PDF**: Tải phiếu lương PDF có mật khẩu
 - **Employee — Lịch sử**: Xem danh sách các tháng đã có phiếu lương, chuyển nhanh giữa các tháng
 

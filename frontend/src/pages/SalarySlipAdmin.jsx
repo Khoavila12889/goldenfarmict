@@ -415,13 +415,6 @@ export default function SalarySlipAdmin() {
                   </button>
                 )}
               </div>
-              <select className="sa-dept-select" value={departmentFilter}
-                onChange={e => { setDepartmentFilter(e.target.value); setSelectedEmp(null); setSalaryData(null) }}>
-                <option value="Tất cả">Tất cả phòng ban</option>
-                {departments.map(d => (
-                  <option key={d.id || d.name} value={d.name}>{d.name}</option>
-                ))}
-              </select>
             </div>
             <div className="sa-emp-list">
               {empLoading ? (

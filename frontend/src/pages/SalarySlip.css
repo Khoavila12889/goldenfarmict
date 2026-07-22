@@ -145,7 +145,10 @@
 .pdf-main-table, .pdf-tracking-table { width: 100%; border-collapse: collapse; font-size: 10pt; margin-bottom: 15px; }
 .pdf-main-table th, .pdf-main-table td,
 .pdf-tracking-table th, .pdf-tracking-table td { border: 1px solid #000; padding: 5px 8px; }
-.pdf-main-table td:last-child, .pdf-tracking-table td:last-child { white-space: nowrap; }
+.pdf-main-table td:last-child, .pdf-tracking-table td:last-child {
+  white-space: nowrap;
+  line-height: 1.5;
+}
 
 
 .pdf-notes { border: 1px solid #000; border-top: none; padding: 10px 8px; min-height: 40px; margin-top: -15px; margin-bottom: 20px; font-size: 10pt; }
@@ -196,7 +199,7 @@
   .pdf-info-table { font-size: 8.5pt; }
   .pdf-main-table, .pdf-tracking-table { font-size: 8pt; }
   .pdf-main-table th, .pdf-main-table td, .pdf-tracking-table th, .pdf-tracking-table td, .pdf-info-table td { padding: 3px 4px !important; white-space: normal !important; word-break: break-word; }
-  .pdf-main-table td:last-child, .pdf-tracking-table td:last-child { width: 18px; font-size: 6.5pt; text-align: center; white-space: nowrap !important; word-break: normal; }
+  .pdf-main-table td:last-child, .pdf-tracking-table td:last-child { width: 18px; font-size: 6.5pt; text-align: center; white-space: nowrap !important; word-break: normal; line-height: 1.4; padding-bottom: 5px !important; }
 }
 
 @media (max-width: 480px) {
@@ -295,6 +298,8 @@
     white-space: nowrap !important; 
     padding-left: 2px !important;
     padding-right: 2px !important;
+    padding-bottom: 4px !important;
+    line-height: 1.4;
   } 
 
   /* ───────────────────────────────────────────────────────── */
