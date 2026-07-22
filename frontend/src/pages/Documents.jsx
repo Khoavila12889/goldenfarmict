@@ -1,10 +1,10 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import {
-  Folder, File, FolderOpen, Settings, Plus, Trash2,
+  Folder, File, FolderOpen, Plus, Trash2,
   Server, Wifi, Cloud, RefreshCw, ChevronRight, Home, Shield,
   MoreVertical, FileText, Archive, Image, Eye,
-  Terminal, FileSpreadsheet, FileCode, Music, Video, FileCog,
-  Download
+  FileSpreadsheet, FileCode, Music, Video, FileCog,
+  Download, LayoutGrid, List, Search, X
 } from 'lucide-react'
 import '../styles/shared.css'
 import './Documents.css'
@@ -64,7 +64,6 @@ function formatDate(dateStr) {
   try {
     const d = new Date(dateStr)
     if (isNaN(d.getTime())) return ''
-    // Format: dd/mm/yyyy
     const day = String(d.getDate()).padStart(2, '0')
     const month = String(d.getMonth() + 1).padStart(2, '0')
     const year = d.getFullYear()
@@ -81,6 +80,20 @@ function SkeletonRows({ count = 5 }) {
           <div className="doc-col-size"><span className="skeleton" style={{ width: 50 }} /></div>
           <div className="doc-col-date"><span className="skeleton" style={{ width: 70 }} /></div>
           <div className="doc-col-actions"><span className="skeleton skeleton-icon" /></div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function SkeletonCards({ count = 8 }) {
+  return (
+    <div className="doc-card-grid">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="doc-card doc-card-skeleton">
+          <div className="skeleton" style={{ width: 48, height: 48, borderRadius: 12 }} />
+          <div className="skeleton" style={{ width: '70%', height: 14, marginTop: 8 }} />
+          <div className="skeleton" style={{ width: '40%', height: 11, marginTop: 4 }} />
         </div>
       ))}
     </div>
@@ -108,12 +121,14 @@ export default function Documents() {
   const [departments, setDepartments] = useState([])
   const [permForm, setPermForm] = useState({ folder_path: '/', role: '', employee_code: '', department: '', permission: 'read' })
 
-  // File Viewer state
   const [viewerFile, setViewerFile] = useState(null)
   const [viewerOpen, setViewerOpen] = useState(false)
-
-  // Context menu state
   const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, file: null })
+
+  // View mode & search
+  const [viewMode, setViewMode] = useState('grid')
+  const [searchQuery, setSearchQuery] = useState('')
+
   const loadConfigs = useCallback(() => {
     getStorageConfigs(userCode, userRole).then(r => setConfigs(r.data?.data || [])).catch(() => {})
   }, [])
@@ -124,9 +139,16 @@ export default function Documents() {
     getStorageDepartments().then(r => setDepartments(r.data?.data || [])).catch(() => {})
   }, [])
 
+  const filteredEntries = useMemo(() => {
+    if (!searchQuery.trim()) return entries
+    const q = searchQuery.toLowerCase()
+    return entries.filter(e => e.name.toLowerCase().includes(q))
+  }, [entries, searchQuery])
+
   function selectConfig(cfg) {
     setActiveConfig(cfg)
     setBrowseError('')
+    setSearchQuery('')
     const isGdrive = cfg?.type === 'gdrive'
     const rootId = isGdrive ? (cfg.remote_path || 'root') : '/'
     setBreadcrumbs([{ id: rootId, name: 'Home' }])
@@ -137,6 +159,7 @@ export default function Documents() {
   function browseFolder(configId, folderId) {
     setLoading(true)
     setBrowseError('')
+    setSearchQuery('')
     browseStorage(configId, folderId, userCode, userRole)
       .then(r => { setEntries(r.data?.data || []) })
       .catch(err => {
@@ -163,15 +186,10 @@ export default function Documents() {
   function canPreviewFile(fileName) {
     const ext = fileName.split('.').pop().toLowerCase()
     const previewable = [
-      // Images
       'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico',
-      // Documents
       'pdf', 'txt', 'log', 'md', 'json', 'xml', 'csv',
-      // Code
       'html', 'css', 'js', 'jsx', 'ts', 'tsx', 'py', 'java', 'c', 'cpp', 'h', 'cs', 'php', 'rb', 'go', 'rs', 'sql',
-      // Media
       'mp4', 'webm', 'ogg', 'mp3', 'wav', 'm4a',
-      // Office (will show download option)
       'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'
     ]
     return previewable.includes(ext)
@@ -179,14 +197,11 @@ export default function Documents() {
 
   async function handlePreviewFile(entry) {
     if (entry.is_dir) return
-
     const currentPath = breadcrumbs.at(-1).id
     const normalizedPath = currentPath === '/'
       ? entry.name
       : `${currentPath.replace(/\/$/, '')}/${entry.name}`
-
     const fileUrl = `/api/documents/download?config_id=${activeConfig.id}&file_path=${encodeURIComponent(normalizedPath)}&user_code=${userCode}&user_role=${userRole}`
-
     setViewerFile({
       name: entry.name,
       url: fileUrl,
@@ -195,8 +210,6 @@ export default function Documents() {
     })
     setViewerOpen(true)
   }
-
-  // ─── Context Menu ───────────────────────────────────────────
 
   useEffect(() => {
     if (!contextMenu.visible) return
@@ -238,6 +251,7 @@ export default function Documents() {
     }
     setContextMenu({ visible: false })
   }
+
   function browseBreadcrumb(idx) {
     const target = breadcrumbs[idx]
     if (!target) return
@@ -389,11 +403,32 @@ export default function Documents() {
               ))}
             </div>
             <div className="doc-toolbar-actions">
+              <div className="doc-search-wrap-mini">
+                <Search size={13} className="doc-search-mini-icon" />
+                <input type="text" className="doc-search-mini-input"
+                  placeholder="Tìm file..."
+                  value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+                {searchQuery && (
+                  <button className="doc-search-mini-clear" onClick={() => setSearchQuery('')}>
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
               {isAdmin && (
                 <button className="doc-btn doc-btn-ghost" onClick={() => loadPerms(activeConfig.id)} title="Phân quyền">
-                  <Shield size={15} /> <span>Phân quyền</span>
+                  <Shield size={15} />
                 </button>
               )}
+              <div className="doc-view-toggle">
+                <button className={`doc-view-btn${viewMode === 'list' ? ' active' : ''}`}
+                  onClick={() => setViewMode('list')} title="Xem dạng danh sách">
+                  <List size={15} />
+                </button>
+                <button className={`doc-view-btn${viewMode === 'grid' ? ' active' : ''}`}
+                  onClick={() => setViewMode('grid')} title="Xem dạng lưới">
+                  <LayoutGrid size={15} />
+                </button>
+              </div>
               <button className="doc-btn doc-btn-ghost doc-btn-icon" onClick={() => browseFolder(activeConfig.id, breadcrumbs.at(-1).id)} title="Làm mới">
                 <RefreshCw size={15} />
               </button>
@@ -410,34 +445,82 @@ export default function Documents() {
           )}
 
           {/* Empty State */}
-          {!loading && !browseError && entries.length === 0 && (
+          {!loading && !browseError && filteredEntries.length === 0 && (
             <div className="doc-grid-state doc-grid-empty">
               <FolderOpen size={48} />
-              <p>Thư mục này đang trống</p>
+              <p>{searchQuery ? 'Không tìm thấy file nào' : 'Thư mục này đang trống'}</p>
             </div>
           )}
 
           {/* Loading Skeleton */}
           {loading && (
-            <div className="doc-grid">
-              <div className="doc-grid-header">
-                <span className="doc-col-name">Tên</span>
-                <span className="doc-col-size">Kích thước</span>
-                <span className="doc-col-date">Cập nhật</span>
-                {isAdmin && <span className="doc-col-actions" />}
+            viewMode === 'grid' ? <SkeletonCards count={8} /> : (
+              <div className="doc-grid">
+                <div className="doc-grid-header">
+                  <span className="doc-col-name">Tên</span>
+                  <span className="doc-col-size">Kích thước</span>
+                  <span className="doc-col-date">Cập nhật</span>
+                  {isAdmin && <span className="doc-col-actions" />}
+                </div>
+                <SkeletonRows count={6} />
               </div>
-              <SkeletonRows count={6} />
+            )
+          )}
+
+          {/* ─── Grid View (Cards) ───────────────────────────── */}
+          {!loading && !browseError && viewMode === 'grid' && filteredEntries.length > 0 && (
+            <div className="doc-card-grid">
+              {breadcrumbs.length > 1 && (
+                <div className="doc-card doc-card-back" onClick={goBack}>
+                  <div className="doc-card-icon"><FolderOpen size={32} color="#94a3b8" /></div>
+                  <div className="doc-card-name">.. / Quay lại</div>
+                </div>
+              )}
+              {filteredEntries.map((e, i) => {
+                const { icon: IconComp, color: iconColor } = getFileIcon(e.name, e.is_dir)
+                return (
+                  <div
+                    key={i}
+                    className={`doc-card${e.is_dir ? ' doc-card-dir' : ''}`}
+                    onClick={() => e.is_dir ? openFolder(e) : handlePreviewFile(e)}
+                    onContextMenu={(ev) => handleContextMenu(ev, e)}
+                  >
+                    <div className="doc-card-icon">
+                      <IconComp size={36} style={{ color: iconColor }} />
+                    </div>
+                    <div className="doc-card-name" title={e.name}>{e.name}</div>
+                    <div className="doc-card-meta">
+                      {e.is_dir ? '' : formatSize(e.size)}
+                      {!e.is_dir && e.modified ? ` · ${formatDate(e.modified)}` : ''}
+                    </div>
+                    {!e.is_dir && canPreviewFile(e.name) && (
+                      <button className="doc-card-preview"
+                        onClick={(ev) => { ev.stopPropagation(); handlePreviewFile(e) }}
+                        title="Xem trước">
+                        <Eye size={14} />
+                      </button>
+                    )}
+                    {!e.is_dir && (
+                      <button className="doc-card-download"
+                        onClick={(ev) => { ev.stopPropagation(); handleDownloadFile(e) }}
+                        title="Tải xuống">
+                        <Download size={14} />
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
 
-          {/* File Grid */}
-          {!loading && !browseError && entries.length > 0 && (
+          {/* ─── List View ───────────────────────────────────── */}
+          {!loading && !browseError && viewMode === 'list' && filteredEntries.length > 0 && (
             <div className="doc-grid">
               <div className="doc-grid-header">
                 <span className="doc-col-name">Tên</span>
                 <span className="doc-col-size">Kích thước</span>
                 <span className="doc-col-date">Cập nhật</span>
-                {isAdmin && <span className="doc-col-actions" />}
+                <span className="doc-col-actions" />
               </div>
               <div className="doc-grid-body">
                 {breadcrumbs.length > 1 && (
@@ -445,10 +528,10 @@ export default function Documents() {
                     <div className="doc-col-name"><span className="doc-back-link">.. / Quay lại</span></div>
                     <div className="doc-col-size" />
                     <div className="doc-col-date" />
-                    {isAdmin && <div className="doc-col-actions" />}
+                    <div className="doc-col-actions" />
                   </div>
                 )}
-                {entries.map((e, i) => {
+                {filteredEntries.map((e, i) => {
                   const { icon: IconComp, color: iconColor } = getFileIcon(e.name, e.is_dir)
                   return (
                     <div
@@ -466,17 +549,15 @@ export default function Documents() {
                       <div className="doc-col-date">{formatDate(e.modified)}</div>
                       <div className="doc-col-actions">
                         {!e.is_dir && canPreviewFile(e.name) && (
-                          <button 
-                            className="doc-row-action" 
-                            title="Xem trước" 
-                            onClick={(ev) => { ev.stopPropagation(); handlePreviewFile(e); }}
-                          >
+                          <button className="doc-row-action" title="Xem trước"
+                            onClick={(ev) => { ev.stopPropagation(); handlePreviewFile(e); }}>
                             <Eye size={14} />
                           </button>
                         )}
-                        {isAdmin && (
-                          <button className="doc-row-action" title="Tùy chọn" onClick={e_ => e_.stopPropagation()}>
-                            <MoreVertical size={14} />
+                        {!e.is_dir && (
+                          <button className="doc-row-action" title="Tải xuống"
+                            onClick={(ev) => { ev.stopPropagation(); handleDownloadFile(e); }}>
+                            <Download size={14} />
                           </button>
                         )}
                       </div>
