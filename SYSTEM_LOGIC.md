@@ -326,17 +326,58 @@ Trả về tổng quan: employees, equipment, pending_tickets, active_bookings, 
 
 Hỗ trợ 3 loại storage: FTP, SMB (Windows Share), Google Drive (Service Account).
 
-| Endpoint | Chức năng |
-|----------|-----------|
-| `GET /api/documents/config` | Danh sách storage configs (phân quyền: admin xem tất cả, user chỉ xem được phân quyền) |
-| `CRUD /api/documents/config` | Quản lý storage config |
-| `POST /api/documents/test-connection` | Test kết nối trực tiếp |
-| `POST /api/documents/config/{id}/test` | Test kết nối config |
-| `GET /api/documents/browse/{id}` | Duyệt thư mục (phân quyền theo folder) |
-| `GET /api/documents/permissions/{id}` | Danh sách permission |
-| `POST /api/documents/permissions` | Tạo permission |
-| `DELETE /api/documents/permissions/{id}` | Xoá permission |
-| `GET /api/documents/download` | Download file (FTP/SMB/GDrive streaming) |
+#### 3.10.1 Storage Config
+| Endpoint | Chức năng | Auth |
+|----------|-----------|------|
+| `GET /api/documents/config` | Danh sách (admin xem tất cả, user chỉ xem được phân quyền) | Role-based filter |
+| `GET /api/documents/config/{id}` | Chi tiết config | None |
+| `POST /api/documents/config` | Tạo config | `_require_auth` (admin/head) |
+| `PUT /api/documents/config/{id}` | Cập nhật | `_require_auth` |
+| `DELETE /api/documents/config/{id}` | Xoá + cascade permissions | `_require_auth` |
+| `POST /api/documents/test-connection` | Test kết nối (body trực tiếp) | None |
+| `POST /api/documents/config/{id}/test` | Test config đã lưu | None |
+| `GET /api/documents/departments` | DS phòng ban (cho dropdown) | None |
+
+#### 3.10.2 File Browsing & Download
+| Endpoint | Chức năng | Auth |
+|----------|-----------|------|
+| `GET /api/documents/browse/{id}` | Duyệt thư mục (path/folder_id) | `_check_folder_permission` |
+| `GET /api/documents/download` | Download file stream (FTP/SMB/GDrive) | `_check_folder_permission` + `_check_download_allowed` |
+
+#### 3.10.3 Permissions (Nextcloud-style)
+Hệ thống phân quyền chi tiết theo hướng Nextcloud, hỗ trợ:
+
+- **Target types**: `EVERYONE` (tất cả nhân viên) hoặc `DEPARTMENT` (theo phòng ban)
+- **Granular permissions matrix**:
+  - `can_read` — Xem nội dung thư mục/tệp
+  - `can_write` — Tạo tệp/thư mục mới
+  - `can_edit` — Sửa nội dung tệp hiện có
+  - `can_delete` — Xoá tệp/thư mục
+  - `allow_download` — Cho phép tải xuống
+  - `can_reshare` — Chia sẻ lại cho người khác
+- **Expiration date**: Mỗi permission có thể đặt ngày hết hạn
+- **Inheritance**: Quyền folder cha áp dụng cho folder con (theo `folder_path` prefix)
+
+| Endpoint | Chức năng | Auth |
+|----------|-----------|------|
+| `GET /api/documents/permissions/{id}` | DS permission (có JOIN department) | `_require_auth` |
+| `POST /api/documents/permissions` | Tạo permission (legacy) | `_require_auth` |
+| `POST /api/documents/permissions/share` | Tạo/Cập nhật granular permission (EVERYONE/DEPARTMENT) | `_require_auth` |
+| `PUT /api/documents/permissions/{perm_id}` | Cập nhật granular permissions (từng field) | `_require_auth` |
+| `DELETE /api/documents/permissions/{perm_id}` | Xoá permission | `_require_auth` |
+
+#### 3.10.4 Permission Check Flow
+```
+admin/head → bypass (full access)
+user → checks storage_permissions:
+  1. target_type='EVERYONE' → granted
+  2. target_type='DEPARTMENT' + match user_dept → granted
+  3. role match → granted
+  4. employee_code match → granted
+  5. Fallback: nếu không có permission nào → DENY
+  6. Expiration: kiểm tra expires_at > now
+  7. Download: kiểm tra riêng allow_download flag
+```
 
 **Cascade**: Xoá storage config → xoá storage_permissions trước.
 
@@ -355,7 +396,7 @@ Hỗ trợ 3 loại storage: FTP, SMB (Windows Share), Google Drive (Service Acc
 
 ## 4. Database
 
-### 4.1 Danh sách bảng (18 tables)
+### 4.1 Danh sách bảng (21 tables)
 
 | Table | Mục đích |
 |-------|----------|
@@ -376,7 +417,7 @@ Hỗ trợ 3 loại storage: FTP, SMB (Windows Share), Google Drive (Service Acc
 | `salary_slips` | Phiếu lương (employee_code, month, basic_salary, allowances, bonus, deductions, net_salary, UNIQUE(emp, month)) |
 | `salaries` | Dữ liệu lương JSON (employee_code, month, password, data_json, UNIQUE(emp, month)) |
 | `storage_config` | Cấu hình storage (name, type=ftp/smb/gdrive, host, port, username, password, remote_path, domain, is_active) |
-| `storage_permissions` | Phân quyền folder (storage_id, folder_path, role, employee_code, department, permission) |
+| `storage_permissions` | Phân quyền folder (storage_id, folder_path, target_type, department, can_read, can_write, can_edit, can_delete, allow_download, can_reshare, expires_at, role, employee_code) |
 
 ### 4.2 KHÔNG có FOREIGN KEY
 Dự án cố tình không sử dụng FOREIGN KEY constraints. Cascade được xử lý ở application layer.

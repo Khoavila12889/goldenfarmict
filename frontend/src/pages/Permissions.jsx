@@ -325,7 +325,44 @@ function renderModuleCard(m, permissions, togglePerm) {
   )
 }
 
-/* ─── Tab 2: Document Permissions ─── */
+/* ─── Tab 2: Document Permissions (Nextcloud-style) ─── */
+
+const PERM_LABELS = {
+  can_read: { label: 'Đọc', desc: 'Xem nội dung thư mục và tệp' },
+  can_write: { label: 'Tạo/Sửa', desc: 'Tạo tệp/thư mục mới' },
+  can_edit: { label: 'Chỉnh sửa', desc: 'Sửa nội dung tệp hiện có' },
+  can_delete: { label: 'Xóa', desc: 'Xóa tệp và thư mục' },
+  can_reshare: { label: 'Chia sẻ lại', desc: 'Cấp quyền cho người khác' },
+}
+const EXTRA_PERMS = {
+  allow_download: { label: 'Cho phép tải xuống', desc: 'Tải tệp về máy' },
+}
+
+function PermissionMatrix({ values, onChange, showDownload }) {
+  const keys = Object.keys(PERM_LABELS)
+  const ext = showDownload ? Object.keys(EXTRA_PERMS) : []
+  const allKeys = [...keys, ...ext]
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+      {allKeys.map(k => {
+        const info = PERM_LABELS[k] || EXTRA_PERMS[k]
+        return (
+          <label key={k} title={info.desc} style={{
+            display: 'flex', alignItems: 'center', gap: '0.25rem',
+            fontSize: '0.76rem', cursor: 'pointer', color: 'var(--bk-text-secondary)',
+            padding: '0.2rem 0.4rem', borderRadius: '4px',
+            background: values[k] ? '#eef2ff' : 'transparent',
+            border: `1px solid ${values[k] ? '#c7d2fe' : 'transparent'}`,
+          }}>
+            <input type="checkbox" checked={!!values[k]}
+              onChange={() => onChange(k)} style={{ accentColor: 'var(--bk-primary)' }} />
+            {info.label}
+          </label>
+        )
+      })}
+    </div>
+  )
+}
 
 function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
   const [storages, setStorages] = useState([])
@@ -334,14 +371,26 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
   const [departments, setDepartments] = useState([])
   const [loading, setLoading] = useState(true)
   const [permLoading, setPermLoading] = useState(false)
-  const [adding, setAdding] = useState(false)
+
+  const [everyonePerms, setEveryonePerms] = useState({ can_read: true, allow_download: true })
+  const [everyoneExpires, setEveryoneExpires] = useState('')
+  const [everyoneExists, setEveryoneExists] = useState(false)
+
+  const [deptSearch, setDeptSearch] = useState('')
   const [newDept, setNewDept] = useState('')
-  const [newPerm, setNewPerm] = useState('read')
+  const [deptPerms, setDeptPerms] = useState({ can_read: true, allow_download: true })
+  const [deptExpires, setDeptExpires] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [expandedPerm, setExpandedPerm] = useState(null)
 
   const userCode = sessionStorage.getItem('user_code') || ''
   const token = sessionStorage.getItem('token') || ''
   const role = sessionStorage.getItem('user_role') || ''
   const adminCode = userCode
+
+  function apiParams() {
+    return new URLSearchParams({ admin_code: adminCode, token, role })
+  }
 
   useEffect(() => {
     Promise.all([
@@ -356,8 +405,7 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
   async function loadPermissions(storageId) {
     setPermLoading(true)
     try {
-      const p = new URLSearchParams({ admin_code: adminCode, token, role })
-      const res = await fetch(`/api/documents/permissions/${storageId}?${p}`)
+      const res = await fetch(`/api/documents/permissions/${storageId}?${apiParams()}`)
       const data = await res.json()
       setPermissions(data.data || [])
     } catch (_) { setPermissions([]) }
@@ -366,51 +414,129 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
 
   function selectStorage(s) {
     setSelectedStorage(s)
+    setEveryoneExists(false)
+    setEveryonePerms({ can_read: true, allow_download: true })
+    setEveryoneExpires('')
+    setDeptSearch('')
     setNewDept('')
+    setDeptPerms({ can_read: true, allow_download: true })
+    setDeptExpires('')
     loadPermissions(s.id)
   }
 
-  async function addDepartmentPerm() {
-    if (!newDept || !selectedStorage) return
-    setAdding(true)
+  useEffect(() => {
+    const everyone = permissions.find(p => p.target_type === 'EVERYONE')
+    if (everyone) {
+      setEveryoneExists(true)
+      setEveryonePerms({
+        can_read: everyone.can_read ?? true,
+        can_write: everyone.can_write ?? false,
+        can_edit: everyone.can_edit ?? false,
+        can_delete: everyone.can_delete ?? false,
+        allow_download: everyone.allow_download ?? true,
+        can_reshare: everyone.can_reshare ?? false,
+      })
+      setEveryoneExpires(everyone.expires_at || '')
+    } else {
+      setEveryoneExists(false)
+      setEveryonePerms({ can_read: true, allow_download: true })
+      setEveryoneExpires('')
+    }
+  }, [permissions])
+
+  const deptPermsList = permissions.filter(p => p.target_type === 'DEPARTMENT' && !p.role && !p.employee_code)
+  const otherPermsList = permissions.filter(p => p.role || p.employee_code)
+  const usedDepts = new Set(deptPermsList.map(p => p.department))
+  const availDepts = departments.filter(d => !usedDepts.has(d.name))
+    .filter(d => !deptSearch || d.name.toLowerCase().includes(deptSearch.toLowerCase()))
+
+  async function saveEveryone() {
+    if (!selectedStorage) return
+    setSaving(true)
     try {
-      const p = new URLSearchParams({ admin_code: adminCode, token, role })
-      const res = await fetch(`/api/documents/permissions/department?${p}`, {
+      const res = await fetch(`/api/documents/permissions/share?${apiParams()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           storage_id: selectedStorage.id,
           folder_path: '/',
-          department: newDept,
-          permission: newPerm,
+          target_type: 'EVERYONE',
+          ...everyonePerms,
+          expires_at: everyoneExpires,
         }),
       })
       if (res.ok) {
-        setSaveMsg({ type: 'success', text: `Đã cấp quyền cho phòng ${newDept}` })
+        setSaveMsg({ type: 'success', text: 'Đã cập nhật quyền cho Tất cả nhân viên' })
         loadPermissions(selectedStorage.id)
-        setNewDept('')
       } else {
         const d = await res.json()
         setSaveMsg({ type: 'error', text: d.detail || 'Lỗi' })
       }
-    } catch (err) {
-      setSaveMsg({ type: 'error', text: 'Lỗi kết nối' })
-    } finally { setAdding(false) }
+    } catch (_) { setSaveMsg({ type: 'error', text: 'Lỗi kết nối' }) }
+    finally { setSaving(false) }
+  }
+
+  async function addDepartmentPerm() {
+    if (!newDept || !selectedStorage) return
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/documents/permissions/share?${apiParams()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storage_id: selectedStorage.id,
+          folder_path: '/',
+          target_type: 'DEPARTMENT',
+          department: newDept,
+          ...deptPerms,
+          expires_at: deptExpires,
+        }),
+      })
+      if (res.ok) {
+        setSaveMsg({ type: 'success', text: `Đã cập nhật quyền cho ${newDept}` })
+        loadPermissions(selectedStorage.id)
+        setNewDept('')
+        setDeptSearch('')
+        setDeptPerms({ can_read: true, allow_download: true })
+        setDeptExpires('')
+      } else {
+        const d = await res.json()
+        setSaveMsg({ type: 'error', text: d.detail || 'Lỗi' })
+      }
+    } catch (_) { setSaveMsg({ type: 'error', text: 'Lỗi kết nối' }) }
+    finally { setSaving(false) }
+  }
+
+  async function updateDeptPerm(perm, field) {
+    const newVal = !perm[field]
+    try {
+      await fetch(`/api/documents/permissions/${perm.id}?${apiParams()}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: newVal }),
+      })
+      loadPermissions(selectedStorage.id)
+    } catch (_) {}
+  }
+
+  async function updateDeptExpires(perm, val) {
+    try {
+      await fetch(`/api/documents/permissions/${perm.id}?${apiParams()}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expires_at: val }),
+      })
+      loadPermissions(selectedStorage.id)
+    } catch (_) {}
   }
 
   async function removePerm(permId) {
     if (!window.confirm('Xóa quyền này?')) return
     try {
-      const p = new URLSearchParams({ admin_code: adminCode, token, role })
-      await fetch(`/api/documents/permissions/${permId}?${p}`, { method: 'DELETE' })
+      await fetch(`/api/documents/permissions/${permId}?${apiParams()}`, { method: 'DELETE' })
       loadPermissions(selectedStorage.id)
     } catch (_) {}
   }
-
-  const deptPerms = permissions.filter(p => p.department && !p.role && !p.employee_code)
-  const otherPerms = permissions.filter(p => p.role || p.employee_code)
-  const usedDepts = new Set(deptPerms.map(p => p.department))
-  const availDepts = departments.filter(d => !usedDepts.has(d.name))
 
   if (loading) {
     return <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--bk-text-muted)' }}>
@@ -420,6 +546,7 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
 
   return (
     <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap' }}>
+      {/* Left: Storage List */}
       <div className="bk-card" style={{ padding: '1rem', flex: '1 1 280px', minWidth: 240, maxWidth: 360 }}>
         <div style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
           <FolderOpen size={16} /> Kho tài liệu
@@ -451,6 +578,7 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
         )}
       </div>
 
+      {/* Right: Permission Management */}
       <div className="bk-card" style={{ padding: '1.25rem', flex: '1 1 500px', minWidth: 320 }}>
         {!selectedStorage ? (
           <div style={{ padding: '2rem 0', textAlign: 'center', color: 'var(--bk-text-muted)', fontSize: '0.9rem' }}>
@@ -471,77 +599,173 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
               </span>
             </div>
 
-            {/* Department permissions */}
+            {/* ── Everyone Section ── */}
+            <div style={{
+              marginBottom: '1rem', padding: '0.75rem', borderRadius: 'var(--bk-radius-sm)',
+              background: everyoneExists ? '#f0fdf4' : 'var(--bk-surface-hover)',
+              border: `1px solid ${everyoneExists ? '#bbf7d0' : 'var(--bk-border)'}`,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 700, fontSize: '0.82rem' }}>
+                  <Users size={14} style={{ color: 'var(--bk-text-secondary)' }} />
+                  Tất cả nhân viên
+                  {everyoneExists && <span style={{ fontSize: '0.65rem', color: '#16a34a' }}>✓ Đã cấp quyền</span>}
+                </div>
+                {everyoneExists && (
+                  <button onClick={() => removePerm(permissions.find(p => p.target_type === 'EVERYONE')?.id)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '2px' }}
+                    title="Xóa quyền Everyone">
+                    <Trash2 size={13} />
+                  </button>
+                )}
+              </div>
+              <PermissionMatrix values={everyonePerms}
+                onChange={k => setEveryonePerms(p => ({ ...p, [k]: !p[k] }))}
+                showDownload />
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.5rem' }}>
+                <input type="date" value={everyoneExpires}
+                  onChange={e => setEveryoneExpires(e.target.value)}
+                  style={{
+                    flex: 1, padding: '0.3rem 0.5rem', borderRadius: '6px', border: '1px solid var(--bk-border)',
+                    fontSize: '0.78rem', fontFamily: 'inherit', background: 'var(--bk-surface)',
+                  }} />
+                <span style={{ fontSize: '0.7rem', color: 'var(--bk-text-muted)' }}>Hết hạn (tùy chọn)</span>
+                <button className="bk-btn bk-btn-primary" style={{ height: '30px', fontSize: '0.78rem', whiteSpace: 'nowrap' }}
+                  onClick={saveEveryone} disabled={saving}>
+                  {everyoneExists ? 'Cập nhật' : 'Áp dụng'}
+                </button>
+              </div>
+            </div>
+
+            {/* ── Department Permission List ── */}
             <h4 style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--bk-primary)', margin: '0 0 0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
               <Building size={14} /> Phòng ban được chia sẻ
             </h4>
 
-            {deptPerms.length === 0 ? (
-              <div style={{ padding: '0.75rem', fontSize: '0.82rem', color: 'var(--bk-text-muted)', background: 'var(--bk-surface-hover)', borderRadius: 'var(--bk-radius-sm)', marginBottom: '0.75rem' }}>
+            {deptPermsList.length === 0 ? (
+              <div style={{ padding: '0.5rem 0.65rem', fontSize: '0.8rem', color: 'var(--bk-text-muted)', background: 'var(--bk-surface-hover)', borderRadius: 'var(--bk-radius-sm)', marginBottom: '0.75rem' }}>
                 Chưa có phòng ban nào được cấp quyền
               </div>
             ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.75rem' }}>
-                {deptPerms.map(p => (
-                  <div key={p.id} style={{
-                    display: 'flex', alignItems: 'center', gap: '0.35rem',
-                    padding: '0.3rem 0.5rem 0.3rem 0.65rem',
-                    background: '#eef2ff', borderRadius: '99px',
-                    border: '1px solid #c7d2fe', fontSize: '0.78rem',
-                    fontWeight: 500, color: '#4338ca',
-                  }}>
-                    <Building size={12} />
-                    {p.department_name || p.department}
-                    <span style={{
-                      fontSize: '0.65rem', fontWeight: 600, marginLeft: '0.15rem',
-                      color: p.permission === 'write' ? '#16a34a' : '#64748b',
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '0.75rem' }}>
+                {deptPermsList.map(p => {
+                  const isExpanded = expandedPerm === p.id
+                  const isExpired = p.expires_at && new Date(p.expires_at) < new Date()
+                  return (
+                    <div key={p.id} style={{
+                      border: `1px solid ${isExpired ? '#fecaca' : 'var(--bk-border)'}`,
+                      borderRadius: 'var(--bk-radius-sm)', overflow: 'hidden',
                     }}>
-                      ({p.permission === 'write' ? 'Ghi' : 'Đọc'})
-                    </span>
-                    <button onClick={() => removePerm(p.id)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '2px', display: 'flex' }}>
-                      <X size={12} />
-                    </button>
-                  </div>
-                ))}
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: '0.4rem',
+                        padding: '0.4rem 0.6rem', cursor: 'pointer',
+                        background: isExpired ? '#fef2f2' : 'var(--bk-surface-hover)',
+                        fontSize: '0.8rem',
+                      }} onClick={() => setExpandedPerm(isExpanded ? null : p.id)}>
+                        <Building size={13} style={{ color: isExpired ? '#ef4444' : 'var(--bk-primary)', flexShrink: 0 }} />
+                        <span style={{ fontWeight: 600, flex: 1 }}>
+                          {p.department_name || p.department}
+                          {isExpired && <span style={{ fontSize: '0.65rem', color: '#ef4444', marginLeft: '0.35rem' }}>(Hết hạn)</span>}
+                        </span>
+                        <div style={{ display: 'flex', gap: '0.2rem' }}>
+                          {Object.entries(PERM_LABELS).map(([k, v]) =>
+                            p[k] ? <span key={k} style={{
+                              fontSize: '0.62rem', padding: '0.1rem 0.35rem', borderRadius: '99px',
+                              background: '#eef2ff', color: '#4338ca', fontWeight: 600,
+                            }}>{v.label}</span> : null
+                          )}
+                          {p.allow_download && <span style={{
+                            fontSize: '0.62rem', padding: '0.1rem 0.35rem', borderRadius: '99px',
+                            background: '#f0fdf4', color: '#16a34a', fontWeight: 600,
+                          }}>Tải xuống</span>}
+                        </div>
+                        <button onClick={e => { e.stopPropagation(); removePerm(p.id) }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '2px' }}>
+                          <X size={12} />
+                        </button>
+                        <ChevronDown size={12} style={{
+                          color: 'var(--bk-text-muted)',
+                          transform: isExpanded ? 'rotate(180deg)' : '',
+                          transition: 'transform 0.15s',
+                        }} />
+                      </div>
+                      {isExpanded && (
+                        <div style={{ padding: '0.5rem 0.6rem', borderTop: '1px solid var(--bk-border)' }}>
+                          <PermissionMatrix values={{
+                            can_read: p.can_read, can_write: p.can_write, can_edit: p.can_edit,
+                            can_delete: p.can_delete, can_reshare: p.can_reshare,
+                          }} onChange={k => updateDeptPerm(p, k)} showDownload />
+                          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginTop: '0.4rem' }}>
+                            <input type="date" value={p.expires_at || ''}
+                              onChange={e => updateDeptExpires(p, e.target.value)}
+                              style={{
+                                flex: 1, padding: '0.25rem 0.4rem', borderRadius: '6px',
+                                border: '1px solid var(--bk-border)', fontSize: '0.75rem',
+                                fontFamily: 'inherit', background: 'var(--bk-surface)',
+                              }} />
+                            <span style={{ fontSize: '0.68rem', color: 'var(--bk-text-muted)' }}>Hết hạn</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             )}
 
-            {/* Add department permission */}
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '1rem' }}>
-              <select value={newDept} onChange={e => setNewDept(e.target.value)}
-                style={{
-                  flex: 1, minWidth: 140, padding: '0.4rem 0.5rem', borderRadius: '6px',
-                  border: '1px solid var(--bk-border)', fontSize: '0.8rem', fontFamily: 'inherit',
-                  background: 'var(--bk-surface)',
-                }}>
-                <option value="">Chọn phòng ban...</option>
-                {availDepts.map(d => <option key={d.id || d.name} value={d.name}>{d.name}</option>)}
-              </select>
-              <select value={newPerm} onChange={e => setNewPerm(e.target.value)}
-                style={{
-                  padding: '0.4rem 0.5rem', borderRadius: '6px',
-                  border: '1px solid var(--bk-border)', fontSize: '0.8rem', fontFamily: 'inherit',
-                  background: 'var(--bk-surface)',
-                }}>
-                <option value="read">Đọc</option>
-                <option value="write">Ghi</option>
-              </select>
-              <button className="bk-btn bk-btn-primary" style={{ height: '32px', whiteSpace: 'nowrap' }}
-                onClick={addDepartmentPerm} disabled={!newDept || adding}>
-                {adding ? <Loader size={14} className="spin" /> : <Plus size={14} />}
-                Thêm
-              </button>
+            {/* ── Add Department Permission ── */}
+            <div style={{
+              padding: '0.75rem', borderRadius: 'var(--bk-radius-sm)',
+              border: '1px dashed var(--bk-border)', marginBottom: '0.75rem',
+            }}>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                <div style={{ position: 'relative', flex: 1, minWidth: 160 }}>
+                  <Search size={13} style={{ position: 'absolute', left: '0.45rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--bk-text-muted)' }} />
+                  <input className="bk-form-input" placeholder="Tìm phòng ban..."
+                    value={deptSearch} onChange={e => setDeptSearch(e.target.value)}
+                    style={{ paddingLeft: '1.6rem', height: '32px', fontSize: '0.8rem' }} />
+                </div>
+                <select value={newDept} onChange={e => setNewDept(e.target.value)}
+                  style={{
+                    flex: 1, minWidth: 140, padding: '0.35rem 0.5rem', borderRadius: '6px',
+                    border: '1px solid var(--bk-border)', fontSize: '0.78rem', fontFamily: 'inherit',
+                    background: 'var(--bk-surface)',
+                  }}>
+                  <option value="">Chọn phòng ban...</option>
+                  {deptSearch && !availDepts.find(d => d.name === deptSearch) && (
+                    <option value={deptSearch}>+ Thêm "{deptSearch}"</option>
+                  )}
+                  {availDepts.map(d => <option key={d.id || d.name} value={d.name}>{d.name}</option>)}
+                </select>
+              </div>
+              <PermissionMatrix values={deptPerms}
+                onChange={k => setDeptPerms(p => ({ ...p, [k]: !p[k] }))}
+                showDownload />
+              <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginTop: '0.5rem' }}>
+                <input type="date" value={deptExpires}
+                  onChange={e => setDeptExpires(e.target.value)}
+                  style={{
+                    flex: 1, padding: '0.3rem 0.5rem', borderRadius: '6px',
+                    border: '1px solid var(--bk-border)', fontSize: '0.78rem',
+                    fontFamily: 'inherit', background: 'var(--bk-surface)',
+                  }} />
+                <span style={{ fontSize: '0.7rem', color: 'var(--bk-text-muted)' }}>Hết hạn (tùy chọn)</span>
+                <button className="bk-btn bk-btn-primary" style={{ height: '30px', whiteSpace: 'nowrap', fontSize: '0.78rem' }}
+                  onClick={addDepartmentPerm} disabled={!newDept || saving}>
+                  {saving ? <Loader size={13} className="spin" /> : <Plus size={13} />}
+                  Thêm
+                </button>
+              </div>
             </div>
 
-            {/* Other permissions */}
-            {otherPerms.length > 0 && (
+            {/* ── Other Permissions ── */}
+            {otherPermsList.length > 0 && (
               <>
                 <h4 style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--bk-text-secondary)', margin: '0 0 0.5rem' }}>
                   Quyền khác
                 </h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-                  {otherPerms.map(p => (
+                  {otherPermsList.map(p => (
                     <div key={p.id} style={{
                       display: 'flex', alignItems: 'center', gap: '0.5rem',
                       padding: '0.4rem 0.6rem', background: 'var(--bk-surface-hover)',
@@ -553,7 +777,7 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
                         {p.employee_code && <span>NV: <strong>{p.employee_code}</strong></span>}
                       </span>
                       <span style={{ fontSize: '0.72rem', color: 'var(--bk-text-muted)' }}>
-                        {p.folder_path} · {p.permission === 'write' ? 'Ghi' : 'Đọc'}
+                        {p.folder_path}
                       </span>
                       <button onClick={() => removePerm(p.id)}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '2px' }}>

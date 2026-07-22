@@ -318,6 +318,21 @@ def init_db():
         conn.execute("ALTER TABLE storage_permissions ADD COLUMN department TEXT DEFAULT ''")
     except sqlite3.OperationalError:
         pass
+    for col in [
+        "target_type TEXT DEFAULT 'DEPARTMENT'",
+        "can_read INTEGER DEFAULT 1",
+        "can_write INTEGER DEFAULT 0",
+        "can_edit INTEGER DEFAULT 0",
+        "can_delete INTEGER DEFAULT 0",
+        "allow_download INTEGER DEFAULT 1",
+        "can_reshare INTEGER DEFAULT 0",
+        "expires_at TEXT DEFAULT ''",
+        "updated_at TEXT DEFAULT (datetime('now','localtime'))",
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE storage_permissions ADD COLUMN {col}")
+        except sqlite3.OperationalError:
+            pass
 
     try:
         conn.execute("ALTER TABLE employees ADD COLUMN personal_email TEXT DEFAULT ''")

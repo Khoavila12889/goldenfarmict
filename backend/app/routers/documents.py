@@ -368,6 +368,8 @@ def _browse_gdrive(cfg, folder_id):
 
 # ─── Folder Permissions CRUD ────────────────────────────────────
 
+from datetime import datetime
+
 @router.get("/departments")
 def list_departments():
     conn = get_conn()
@@ -388,9 +390,13 @@ def list_permissions(
         SELECT sp.*, COALESCE(d.name, sp.department) AS department_name
         FROM storage_permissions sp
         LEFT JOIN departments d ON d.name = sp.department
-        WHERE sp.storage_id=? ORDER BY sp.folder_path
+        WHERE sp.storage_id=? ORDER BY sp.folder_path, sp.target_type DESC, sp.department
     """, (config_id,)).fetchall()]
     conn.close()
+    # Convert 0/1 ints to bools for frontend
+    for r in rows:
+        for k in ('can_read','can_write','can_edit','can_delete','allow_download','can_reshare'):
+            r[k] = bool(r.get(k, 0))
     return {"data": rows}
 
 @router.post("/permissions")
@@ -418,36 +424,118 @@ def create_permission(
     conn.close()
     return {"success": True, "id": new_id}
 
-@router.post("/permissions/department")
-def create_department_permission(
+@router.post("/permissions/share")
+def create_share_permission(
     body: dict = Body(...),
     admin_code: str = Query(''),
     token: str = Query(''),
     role: str = Query('')
 ):
-    """Set department-level permission for a storage folder"""
+    """
+    Create or update a sharing permission with granular controls.
+    Supports target_type: 'EVERYONE' | 'DEPARTMENT'
+    """
     _require_auth(admin_code, token, role)
     storage_id = body.get('storage_id')
     folder_path = body.get('folder_path', '/')
+    target_type = body.get('target_type', 'DEPARTMENT')
     department = body.get('department', '')
-    permission = body.get('permission', 'read')
-    if not storage_id or not department:
-        raise HTTPException(400, "Missing storage_id or department")
+    perm_data = {
+        'can_read': 1 if body.get('can_read', True) else 0,
+        'can_write': 1 if body.get('can_write', False) else 0,
+        'can_edit': 1 if body.get('can_edit', False) else 0,
+        'can_delete': 1 if body.get('can_delete', False) else 0,
+        'allow_download': 1 if body.get('allow_download', True) else 0,
+        'can_reshare': 1 if body.get('can_reshare', False) else 0,
+        'expires_at': body.get('expires_at', ''),
+    }
+    if not storage_id:
+        raise HTTPException(400, "Missing storage_id")
+
     conn = get_conn()
-    existing = conn.execute("""
-        SELECT id FROM storage_permissions
-        WHERE storage_id=? AND folder_path=? AND department=? AND role='' AND employee_code=''
-    """, (storage_id, folder_path, department)).fetchone()
+
+    # Find existing permission row matching this target
+    if target_type == 'EVERYONE':
+        existing = conn.execute("""
+            SELECT id FROM storage_permissions
+            WHERE storage_id=? AND folder_path=? AND target_type='EVERYONE'
+               AND role='' AND employee_code='' AND department=''
+        """, (storage_id, folder_path)).fetchone()
+    else:
+        if not department:
+            conn.close()
+            raise HTTPException(400, "Missing department for DEPARTMENT target")
+        existing = conn.execute("""
+            SELECT id FROM storage_permissions
+            WHERE storage_id=? AND folder_path=? AND target_type='DEPARTMENT'
+               AND department=? AND role='' AND employee_code=''
+        """, (storage_id, folder_path, department)).fetchone()
+
     if existing:
-        conn.execute("UPDATE storage_permissions SET permission=? WHERE id=?", (permission, existing['id']))
+        conn.execute("""
+            UPDATE storage_permissions SET
+                can_read=?, can_write=?, can_edit=?, can_delete=?,
+                allow_download=?, can_reshare=?, expires_at=?,
+                updated_at=datetime('now','localtime')
+            WHERE id=?
+        """, (
+            perm_data['can_read'], perm_data['can_write'], perm_data['can_edit'], perm_data['can_delete'],
+            perm_data['allow_download'], perm_data['can_reshare'], perm_data['expires_at'],
+            existing['id']
+        ))
     else:
         conn.execute("""
-            INSERT INTO storage_permissions (storage_id, folder_path, role, employee_code, department, permission)
-            VALUES (?, ?, '', '', ?, ?)
-        """, (storage_id, folder_path, department, permission))
+            INSERT INTO storage_permissions
+                (storage_id, folder_path, target_type, department,
+                 can_read, can_write, can_edit, can_delete,
+                 allow_download, can_reshare, expires_at,
+                 role, employee_code, permission)
+            VALUES (?, ?, ?, ?,
+                    ?, ?, ?, ?,
+                    ?, ?, ?,
+                    '', '', 'custom')
+        """, (
+            storage_id, folder_path, target_type,
+            department if target_type == 'DEPARTMENT' else '',
+            perm_data['can_read'], perm_data['can_write'], perm_data['can_edit'], perm_data['can_delete'],
+            perm_data['allow_download'], perm_data['can_reshare'], perm_data['expires_at'],
+        ))
     conn.commit()
     conn.close()
-    return {"success": True, "message": f"Đã cập nhật quyền cho phòng {department}"}
+    target_label = department if target_type == 'DEPARTMENT' else 'Tất cả phòng ban'
+    return {"success": True, "message": f"Đã cập nhật quyền cho {target_label}"}
+
+@router.put("/permissions/{perm_id}")
+def update_permission(
+    perm_id: int,
+    body: dict = Body(...),
+    admin_code: str = Query(''),
+    token: str = Query(''),
+    role: str = Query('')
+):
+    """Update granular permissions for an existing permission entry"""
+    _require_auth(admin_code, token, role)
+    conn = get_conn()
+    existing = conn.execute("SELECT id FROM storage_permissions WHERE id=?", (perm_id,)).fetchone()
+    if not existing:
+        conn.close()
+        raise HTTPException(404, "Permission not found")
+    fields = ['can_read','can_write','can_edit','can_delete','allow_download','can_reshare','expires_at','folder_path']
+    updates = {k: body[k] for k in fields if k in body}
+    if not updates:
+        conn.close()
+        raise HTTPException(400, "No fields to update")
+    # Convert boolean fields
+    for k in ('can_read','can_write','can_edit','can_delete','allow_download','can_reshare'):
+        if k in updates:
+            updates[k] = 1 if updates[k] else 0
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    updates['updated_at'] = "datetime('now','localtime')"
+    vals = list(updates.values()) + [perm_id]
+    conn.execute(f"UPDATE storage_permissions SET {set_clause}, updated_at=datetime('now','localtime') WHERE id=?", vals)
+    conn.commit()
+    conn.close()
+    return {"success": True}
 
 @router.delete("/permissions/{perm_id}")
 def delete_permission(
@@ -467,33 +555,65 @@ def delete_permission(
 
 def _check_folder_permission(conn, storage_id, folder_path, user_code, user_role):
     folder_path = folder_path.replace('\\', '/').rstrip('/') or '/'
-    # Admin/head bypass permission check
     if user_role in ('admin', 'head'):
         return True
-    # If no permissions defined for this storage, allow all
     count = conn.execute("SELECT COUNT(*) FROM storage_permissions WHERE storage_id=?", (storage_id,)).fetchone()[0]
     if count == 0:
         return True
-    # Look up user's department
     user_dept = ''
     emp = conn.execute("SELECT department FROM employees WHERE employee_code=?", (user_code,)).fetchone()
     if emp:
         user_dept = emp['department'] or ''
-    # Check if any permission rule matches this folder or ancestor
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     row = conn.execute("""
-        SELECT permission FROM storage_permissions
+        SELECT can_read, allow_download, expires_at FROM storage_permissions
         WHERE storage_id=?
           AND (
-            role=?
-            OR employee_code=?
-            OR (department != '' AND department=?)
+            target_type='EVERYONE'
+            OR (target_type='DEPARTMENT' AND department != '' AND department=?)
+            OR (role=?)
+            OR (employee_code=?)
             OR (department='' AND role='' AND employee_code='')
           )
           AND (? = folder_path OR ? LIKE folder_path || '/%' OR folder_path = '/')
+          AND (expires_at = '' OR expires_at > ?)
+        ORDER BY
+          CASE target_type WHEN 'EVERYONE' THEN 0 ELSE 1 END,
+          length(folder_path) DESC
+        LIMIT 1
+    """, (storage_id, user_dept, user_role, user_code, folder_path, folder_path, now_str)).fetchone()
+    if not row:
+        return False
+    return bool(row['can_read'])
+
+
+def _check_download_allowed(conn, storage_id, folder_path, user_code, user_role):
+    """Check if user is allowed to download files from this folder"""
+    folder_path = folder_path.replace('\\', '/').rstrip('/') or '/'
+    if user_role in ('admin', 'head'):
+        return True
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    user_dept = ''
+    emp = conn.execute("SELECT department FROM employees WHERE employee_code=?", (user_code,)).fetchone()
+    if emp:
+        user_dept = emp['department'] or ''
+    row = conn.execute("""
+        SELECT allow_download FROM storage_permissions
+        WHERE storage_id=?
+          AND (
+            target_type='EVERYONE'
+            OR (target_type='DEPARTMENT' AND department != '' AND department=?)
+            OR (role=?)
+            OR (employee_code=?)
+          )
+          AND (? = folder_path OR ? LIKE folder_path || '/%' OR folder_path = '/')
+          AND (expires_at = '' OR expires_at > ?)
         ORDER BY length(folder_path) DESC
         LIMIT 1
-    """, (storage_id, user_role, user_code, user_dept, folder_path, folder_path)).fetchone()
-    return row is not None
+    """, (storage_id, user_dept, user_role, user_code, folder_path, folder_path, now_str)).fetchone()
+    if not row:
+        return True  # if no permission found, allow (fallback)
+    return bool(row['allow_download'])
 
 
 # ─── Download File ──────────────────────────────────────────────
@@ -530,9 +650,13 @@ async def download_file(
     # Check permission
     conn_perm = get_conn()
     allowed = _check_folder_permission(conn_perm, config_id, folder_path, user_code, user_role)
-    conn_perm.close()
     if not allowed:
+        conn_perm.close()
         raise HTTPException(403, "No permission to access this file")
+    download_allowed = _check_download_allowed(conn_perm, config_id, folder_path, user_code, user_role)
+    conn_perm.close()
+    if not download_allowed:
+        raise HTTPException(403, "Download not allowed for this file")
     
     logging.info(f"[DOWNLOAD] Permission OK, type={cfg['type']}, host={cfg['host']}")
 

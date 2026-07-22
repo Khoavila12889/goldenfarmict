@@ -50,7 +50,7 @@ Hệ thống quản lý ICT nội bộ — Quản lý nhân viên, thiết bị,
 
 ### 📊 Dashboard
 - **Admin**: 6 thẻ thống kê (NV, thiết bị, ticket pending, booking active), biểu đồ ticket theo phòng ban/trạng thái, danh sách booking hôm nay
-- **User**: Kanban ticket cá nhân, lịch đặt của user
+- **User**: Kanban ticket cá nhân, lịch đặt của user, queue position trong ticket
 
 ### 👥 Quản lý nhân viên (admin)
 - Bảng + filter phòng ban + tìm kiếm realtime
@@ -121,13 +121,16 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 - **Server-side enforcement**: Document endpoints kiểm tra `verify_token` + `_check_folder_permission`; admin/head bypass toàn bộ
 
 ### 🔑 Quản lý License (admin)
-- Bảng danh sách + search
-- Inline edit (click trực tiếp trên bảng)
-- Bulk import: chọn NV → thiết bị → paste danh sách key
-- Auto scan license từ specs/os_info (Product ID, Edition)
+- **License Keys**: Bảng danh sách + search, inline edit, bulk import (chọn NV → thiết bị → paste danh sách key), auto scan từ specs/os_info (Product ID, Edition)
+- **License Categories & Items**: Quản lý danh mục license theo tab, mỗi mục có tên, ngày đăng ký/hết hạn, thông tin hợp đồng, upload file PDF hợp đồng
+
+### 📦 Quản lý phần mềm (admin)
+- **Software Categories**: Quản lý danh mục phần mềm dạng tab, có icon và thứ tự sắp xếp
+- **Software Items**: Mỗi mục có tên, ngày đăng ký/hết hạn, thông tin hợp đồng, upload file PDF hợp đồng
+- **Contract Upload**: Upload file PDF hợp đồng trực tiếp cho từng mục
 
 ### 🎫 Ticket hỗ trợ
-- **User**: Form tạo ticket + danh sách ticket của mình (accordion)
+- **User**: Form tạo ticket + danh sách ticket của mình (accordion), xem queue position
 - **Admin**: Filter status/priority/search, card list, panel reply (đổi status, resolution, admin notes)
 - **Realtime**: SSE tự động cập nhật khi có ticket mới/thay đổi
 
@@ -138,8 +141,13 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 - **Cấu hình storage**: SMB (Windows Share), FTP, Google Drive (Service Account)
 - **Test kết nối** trước khi lưu
 - **Duyệt cây thư mục** với breadcrumb navigation
-- **Phân quyền** truy cập thư mục con theo: vai trò (role), mã nhân viên, bộ phận (department), hoặc tất cả user
-- **Permission inheritance**: quyền folder cha áp dụng cho folder con
+- **Phân quyền Nextcloud-style** (`Permissions.jsx`): 
+  - **Everyone**: Cấp quyền cho tất cả nhân viên với granular permissions matrix
+  - **Theo phòng ban**: Cấp quyền chi tiết cho từng phòng ban
+  - **Granular permissions**: Read (xem), Create/Write (tạo), Edit (sửa), Delete (xoá), Allow Download (cho phép tải), Reshare (chia sẻ lại)
+  - **Expiration date**: Đặt ngày hết hạn cho từng permission
+  - **Permission inheritance**: quyền folder cha áp dụng cho folder con
+  - **Server-side enforcement**: Kiểm tra `can_read` khi browse, `allow_download` khi download; admin/head bypass toàn bộ
 
 ### 📅 Đặt lịch — Scheduler Grid (Xe & Phòng họp)
 - **Grid scheduling**: Trục dọc time slots 07:00→19:00 (bước 30 phút), trục ngang resources
@@ -179,9 +187,11 @@ Phân quyền chi tiết theo module cho từng user (admin quản lý qua giao 
 
 Chia sẻ tài liệu theo phòng ban (quản lý qua giao diện **Phân quyền → Chia sẻ Tài liệu**):
 
-- Admin/head cấp quyền **Đọc** hoặc **Ghi** cho từng phòng ban trên mỗi kho tài liệu
-- User thuộc phòng ban được cấp quyền sẽ tự động thấy dữ liệu
-- Quyền được kiểm tra ở server-side khi browse/download
+- **Target types**: `EVERYONE` (tất cả nhân viên) hoặc `DEPARTMENT` (theo phòng ban)
+- **Granular permissions**: Read, Create/Write, Edit, Delete, Allow Download, Reshare — cấu hình dạng checkbox matrix
+- **Expiration**: Mỗi permission có thể đặt ngày hết hạn, tự động vô hiệu khi quá hạn
+- **Permission inheritance**: quyền folder cha áp dụng cho folder con
+- **Kiểm tra server-side**: `_check_folder_permission` (can_read) khi browse, `_check_download_allowed` (allow_download) khi download
 - Admin/head **luôn bypass** mọi kiểm tra quyền — thấy toàn bộ dữ liệu
 
 ## Installation
@@ -270,20 +280,21 @@ goldenfarm-ict-web/
 │   │   │   └── events.py          # SSE event bus (async generator)
 │   │   ├── routers/
 │   │   │   ├── __init__.py
-│   │   │   ├── auth.py            # POST /api/auth/login
-│   │   │   ├── employees.py       # CRUD NV + departments list
-│   │   │   ├── equipment.py       # 9 endpoints: list, create, update, transfer, revoke, allocate, detail, licenses, history
-│   │   │   ├── tickets.py         # 5 endpoints: list, my, stats, create, update, delete (SSE global duy nhất tại /api/events)
-│   │   │   ├── bookings.py        # 5 endpoints: list, create, update, resources, dates, overlap
-│   │   │   ├── licenses.py        # 6 endpoints: list, stats, create, update, delete, bulk, scan
+│   │   │   ├── auth.py            # Login, password, profile, user/permission admin
+│   │   │   ├── employees.py       # CRUD NV + departments + cascade delete
+│   │   │   ├── departments.py     # Department CRUD
+│   │   │   ├── equipment.py       # CRUD + transfer/revoke/allocate + history
+│   │   │   ├── tickets.py         # CRUD + queue position + SSE events
+│   │   │   ├── bookings.py        # CRUD + resources + dates + overlap
+│   │   │   ├── business_trips.py  # CRUD + role-based filtering
 │   │   │   ├── dashboard.py       # GET /api/dashboard/stats
-│   │   │   ├── approvals.py       # 15 endpoints: workflow templates, steps, requests, approve/reject
-│   │   │   ├── documents.py       # 10 endpoints: storage CRUD, test-connection, browse, permissions
-│   │   │   ├── salary_slips.py    # 13 endpoints: admin quản lý phiếu lương, upload Excel, xuất PDF
-│   │   │   └── salary_user.py     # 3 endpoints: employee xem JSON & tải PDF phiếu lương
-│   │   └── utils/
-│   │       ├── __init__.py
-│   │       └── seed_demo_data.py  # Seed dữ liệu mẫu
+│   │   │   ├── licenses.py        # Keys + categories/items + bulk/scan + contract upload
+│   │   │   ├── software.py        # Software categories/items + contract upload
+│   │   │   ├── approvals.py       # Workflows + steps + requests + approve/reject + SSE
+│   │   │   ├── documents.py       # Storage CRUD + browse/download + granular permissions
+│   │   │   ├── salary_slips.py    # Admin salary CRUD + Excel + PDF (single/batch)
+│   │   │   └── salary_user.py     # Employee salary view + PDF download
+│   │   ├── utils/
 │   ├── main.py                    # FastAPI entry point + SSE endpoint
 │   ├── company.db                 # SQLite database
 │   ├── requirements.txt
@@ -293,22 +304,24 @@ goldenfarm-ict-web/
 │   │   ├── main.jsx               # Entry point (BrowserRouter + React.StrictMode)
 │   │   ├── App.jsx                # Routing + ProtectedRoute / AdminRoute guards
 │   │   ├── pages/
-│   │   │   ├── Login.jsx          # Đăng nhập (employee_code + password)
+│   │   │   ├── Login.jsx          # Đăng nhập (employee_code + password/email)
 │   │   │   ├── Dashboard.jsx      # Admin tổng quan / User cá nhân
 │   │   │   ├── Employees.jsx      # CRUD nhân viên (cascade equipment)
 │   │   │   ├── Equipment.jsx      # Enterprise UI: 4 stats, sticky toolbar, sortable grid, 3-dot menu, detail drawer, form modal — lucide-react
-│   │   │   ├── Licenses.jsx       # Inline edit, bulk import, scan
+│   │   │   ├── Licenses.jsx       # Keys + categories/items + bulk import + scan
+│   │   │   ├── SoftwarePage.jsx   # Software categories/items + contract upload
 │   │   │   ├── Tickets.jsx        # User kanban / Admin filter+reply
 │   │   │   ├── Approvals.jsx      # Approval requests: tạo phiếu, duyệt/từ chối, timeline logs
 │   │   │   ├── WorkflowTemplates.jsx # Quản lý quy trình phê duyệt & bước duyệt
-│   │   │   ├── Documents.jsx      # Storage browser SMB/FTP/GDrive + permissions
-│   │   │   ├── Bookings.jsx       # ⚠️ Legacy — dùng BookingPage thay thế
+│   │   │   ├── Documents.jsx      # Storage browser SMB/FTP/GDrive
+│   │   │   ├── Permissions.jsx    # Phân quyền 3 tab: Module + Documents (Nextcloud-style) + Roles
+│   │   │   ├── Profile.jsx        # Hồ sơ cá nhân, đổi mật khẩu
 │   │   │   ├── SalarySlip.jsx     # Employee: xem phiếu lương JSON dạng HTML
 │   │   │   ├── SalarySlipAdmin.jsx # Admin: import Excel, chỉnh sửa, xuất PDF
 │   │   │   ├── SalarySlip.css     # Styles cho Salary Slip module
 │   │   │   └── booking/
-│   │   │       └── BookingPage.jsx # Scheduler Grid (290 dòng)
-│   │   ├── components/
+│   │   │       ├── BookingPage.jsx # Scheduler Grid (drag/drop, resize, context menu)
+│   │   │       └── *.jsx          # 14 booking components
 │   │   │   ├── Layout.jsx         # Sidebar navigation (role-based)
 │   │   │   └── booking/
 │   │   │       ├── BookingGrid.jsx         # Grid chính (time x resource)
@@ -331,9 +344,13 @@ goldenfarm-ict-web/
 │   │   │   ├── useCurrentTime.js  # Hook thời gian thực (update 30s)
 │   │   │   └── useSalarySlip.js   # Hook xem & tải PDF phiếu lương
 │   │   ├── services/
-│   │   │   └── api.js             # Axios instance + 30+ API functions
+│   │   │   └── api.js             # Axios instance + 93+ API functions (all modules)
 │   │   ├── styles/
 │   │   │   ├── booking.css        # Booking module styles (~960 dòng, CSS vars)
+│   │   │   ├── Documents.css      # Document storage styles
+│   │   │   ├── Login.css          # Login page styles
+│   │   │   ├── Profile.css        # Profile page styles
+│   │   │   ├── SalarySlip.css     # Salary slip styles
 │   │   │   └── shared.css         # Shared patterns: .tbl, .side-panel, .panel-overlay
 │   │   └── utils/
 │   │       ├── bookingUtils.js    # Helper: isExpired, isUpcoming, getStatusLabel, getBookingStats, validate
@@ -348,10 +365,23 @@ goldenfarm-ict-web/
 
 ## API Endpoints
 
-### Auth
+### Auth & Profile
 | Method | Endpoint | Mô tả |
 |--------|----------|-------|
-| `POST` | `/api/auth/login` | Đăng nhập → `{token, role, employee_code}` |
+| `POST` | `/api/auth/login` | Đăng nhập (employee_code hoặc email) |
+| `POST` | `/api/auth/change-password` | Đổi mật khẩu |
+| `GET` | `/api/auth/profile` | Lấy profile cá nhân |
+| `PUT` | `/api/auth/profile` | Cập nhật profile (full_name, phone, personal_email) |
+| `POST` | `/api/auth/forgot-password` | Quên mật khẩu → lấy email gợi ý |
+| `POST` | `/api/auth/verify-reset` | Reset mật khẩu qua personal_email |
+| `POST` | `/api/auth/admin-reset-password` | Admin reset mật khẩu người khác |
+| `GET` | `/api/auth/users` | Danh sách users (admin) |
+| `GET` | `/api/auth/users/search` | Tìm kiếm users (admin/head) |
+| `GET` | `/api/auth/permissions/modules` | Danh sách module permissions |
+| `GET` | `/api/auth/permissions` | Permission của user hiện tại |
+| `GET` | `/api/auth/permissions/{target_code}` | Permission của user khác (admin) |
+| `PUT` | `/api/auth/permissions/{target_code}` | Cập nhật permission user (admin) |
+| `PUT` | `/api/auth/role/{target_code}` | Đổi role user (admin) |
 
 ### Dashboard
 | Method | Endpoint | Mô tả |
@@ -413,6 +443,28 @@ goldenfarm-ict-web/
 | `DELETE` | `/api/licenses/{id}` | Xoá |
 | `POST` | `/api/licenses/bulk` | Bulk import (danh sách key) |
 | `POST` | `/api/licenses/scan` | Auto scan license từ specs/os_info |
+| `GET` | `/api/licenses/categories` | Danh sách danh mục license |
+| `POST` | `/api/licenses/categories` | Thêm danh mục license |
+| `PUT` | `/api/licenses/categories/{id}` | Sửa danh mục license |
+| `DELETE` | `/api/licenses/categories/{id}` | Xoá danh mục + items + contracts |
+| `GET` | `/api/licenses/categories/{id}/items` | Danh sách items trong danh mục |
+| `POST` | `/api/licenses/categories/{id}/items` | Thêm item |
+| `PUT` | `/api/licenses/items/{id}` | Sửa item |
+| `DELETE` | `/api/licenses/items/{id}` | Xoá item + contract file |
+| `POST` | `/api/licenses/items/{id}/upload` | Upload PDF contract |
+
+### Software (admin)
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `GET` | `/api/software/categories` | Danh sách danh mục phần mềm |
+| `POST` | `/api/software/categories` | Thêm danh mục |
+| `PUT` | `/api/software/categories/{id}` | Sửa danh mục |
+| `DELETE` | `/api/software/categories/{id}` | Xoá danh mục (nếu rỗng) |
+| `GET` | `/api/software/categories/{id}/items` | Danh sách items |
+| `POST` | `/api/software/categories/{id}/items` | Thêm item |
+| `PUT` | `/api/software/items/{id}` | Sửa item |
+| `DELETE` | `/api/software/items/{id}` | Xoá item + contract |
+| `POST` | `/api/software/items/{id}/upload` | Upload PDF contract |
 
 ### Salary Slips (Admin — `/api/salary-slips/admin`)
 | Method | Endpoint | Mô tả |
@@ -469,16 +521,20 @@ goldenfarm-ict-web/
 | Method | Endpoint | Mô tả |
 |--------|----------|-------|
 | `GET` | `/api/documents/config` | Danh sách storage configs |
+| `GET` | `/api/documents/config/{id}` | Chi tiết storage config |
 | `POST` | `/api/documents/config` | Thêm storage config (SMB/FTP/GDrive) |
 | `PUT` | `/api/documents/config/{id}` | Cập nhật storage config |
-| `DELETE` | `/api/documents/config/{id}` | Xoá storage config |
+| `DELETE` | `/api/documents/config/{id}` | Xoá storage config + cascade permissions |
 | `POST` | `/api/documents/test-connection` | Test kết nối với config data (chưa lưu) |
 | `POST` | `/api/documents/config/{id}/test` | Test kết nối với config đã lưu |
-| `GET` | `/api/documents/browse/{id}` | Duyệt thư mục (path/folder_id) |
-| `GET` | `/api/documents/permissions/{config_id}` | Danh sách phân quyền |
-| `POST` | `/api/documents/permissions` | Thêm phân quyền |
-| `DELETE` | `/api/documents/permissions/{id}` | Xoá phân quyền |
+| `GET` | `/api/documents/browse/{id}` | Duyệt thư mục (path/folder_id) — có permission check |
+| `GET` | `/api/documents/download` | Download file stream (FTP/SMB/GDrive) — có permission check |
 | `GET` | `/api/documents/departments` | Danh sách phòng ban (cho dropdown) |
+| `GET` | `/api/documents/permissions/{config_id}` | Danh sách phân quyền (granular fields) |
+| `POST` | `/api/documents/permissions` | Thêm phân quyền (legacy) |
+| `POST` | `/api/documents/permissions/share` | Tạo/Cập nhật granular permission (EVERYONE/DEPARTMENT) |
+| `PUT` | `/api/documents/permissions/{perm_id}` | Cập nhật granular permissions (từng field) |
+| `DELETE` | `/api/documents/permissions/{perm_id}` | Xoá phân quyền |
 
 ## Database
 
@@ -488,23 +544,30 @@ goldenfarm-ict-web/
 
 | Table | Records | Ghi chú |
 |-------|---------|---------|
-| `employees` | NV | `employee_code` unique, `lifecycle_status` |
-| `equipment` | Thiết bị | `asset_code` (TS-XXXXX), `storage` (in_stock/issued) |
-| `licenses` | License key | `license_key` UNIQUE, gán theo equipment |
-| `equipment_history` | Lịch sử bàn giao | handover_date, return_date |
+| `employees` | Nhân viên | `employee_code` unique, `status` (active/inactive) |
+| `equipment` | Thiết bị CNTT | `asset_code` (TS-XXXXX), `lifecycle_status`, `storage` (in_stock/issued) |
+| `licenses` | License key | `license_key` UNIQUE, gán theo equipment_id |
+| `lic_categories` | Danh mục license | name, icon, order_index |
+| `lic_items` | Mục license | category_id, name, registered_date, expiration_date, contract_info, contract_file |
+| `equipment_history` | Lịch sử bàn giao | handover_date, return_date, old/new status, changed_by |
 | `tickets` | Yêu cầu hỗ trợ IT | employee_id set NULL khi xoá NV |
 | `users` | Tài khoản | employee_code + password_hash + role |
+| `user_permissions` | Permission module theo user | employee_code + module + can_view + can_edit |
 | `resources` | Xe + Phòng họp | is_active, mặc định 6 resources |
 | `bookings` | Đặt lịch | resource_id, book_date, start/end_time, status |
+| `business_trips` | Công tác | employee_code, destination, start/end_date, status |
 | `workflow_templates` | Mẫu quy trình phê duyệt | name, icon, is_active |
 | `workflow_steps` | Bước duyệt | template_id, step_order, approver_type/role/department_match |
 | `approval_requests` | Phiếu yêu cầu duyệt | template_id, requester_code, status, current_step, total_steps |
 | `approval_logs` | Nhật ký phê duyệt | request_id, step_order, approver_code, action, comment |
+| `departments` | Phòng ban | name UNIQUE, head_id → employees.id |
 | `storage_config` | Cấu hình storage SMB/FTP/GDrive | type, host, port, username, password, remote_path, domain, is_active |
-| `storage_permissions` | Phân quyền thư mục storage | storage_id, folder_path, role, employee_code, department, permission |
+| `storage_permissions` | Phân quyền thư mục storage | storage_id, folder_path, target_type (EVERYONE/DEPARTMENT), can_read/write/edit/delete, allow_download, can_reshare, expires_at |
 | `salary_slips` | Phiếu lương (dạng cột) | employee_code, month, basic_salary, allowances, bonus, deductions, net_salary |
-| `salaries` | Phiếu lương (dạng JSON) | employee_code, month, password, data_json — `ON CONFLICT(employee_code, month) DO UPDATE` |
+| `salaries` | Phiếu lương (dạng JSON) | employee_code, month, password, data_json — ON CONFLICT upsert |
 | `salary_upload_logs` | Lịch sử upload Excel | month, filename, uploaded_by, record_count |
+| `software_categories` | Danh mục phần mềm | name, icon_name, order_index |
+| `software_items` | Mục phần mềm | category_id, name, registered_date, expiration_date, contract_info |
 
 > Schema không dùng FOREIGN KEY constraints — xử lý integrity ở application layer.
 
