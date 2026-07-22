@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   FileText, Upload, Check, Loader, AlertCircle, TriangleAlert, Clock,
   ChevronLeft, ChevronRight, Calendar, Search, Download, Lock, Save,
@@ -403,32 +403,35 @@ export default function SalarySlipAdmin() {
                     <X size={14} />
                   </button>
                 )}
-                {searchTerm && !selectedEmp && employees.length > 0 && (
-                  <div className="sa-search-dropdown">
-                    {employees.map(emp => (
-                      <div key={emp.employee_code} className="sa-search-dropdown-item"
-                        onClick={() => selectEmployee(emp)}>
-                        <div className="sa-search-dd-icon"><User size={14} /></div>
-                        <div className="sa-search-dd-info">
-                          <div className="sa-search-dd-name">{emp.full_name || emp.employee_code}</div>
-                          <div className="sa-search-dd-meta">{emp.employee_code} · {emp.department || '—'}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {searchTerm && !selectedEmp && !empLoading && employees.length === 0 && (
-                  <div className="sa-search-dropdown">
-                    <div className="sa-search-dropdown-empty">Không tìm thấy nhân viên</div>
-                  </div>
-                )}
-                {searchTerm && empLoading && (
-                  <div className="sa-search-dropdown">
-                    <div className="sa-search-dropdown-empty"><Loader size={14} className="spin" /> Đang tìm...</div>
-                  </div>
-                )}
               </div>
             </div>
+            {searchTerm && (
+              <div className="sa-search-overlay" onClick={() => setSearchTerm('')} />
+            )}
+            {searchTerm && !selectedEmp && employees.length > 0 && (
+              <div className="sa-search-dropdown">
+                {employees.map(emp => (
+                  <div key={emp.employee_code} className="sa-search-dropdown-item"
+                    onClick={() => selectEmployee(emp)}>
+                    <div className="sa-search-dd-icon"><User size={14} /></div>
+                    <div className="sa-search-dd-info">
+                      <div className="sa-search-dd-name">{emp.full_name || emp.employee_code}</div>
+                      <div className="sa-search-dd-meta">{emp.employee_code} · {emp.department || '—'}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {searchTerm && !selectedEmp && !empLoading && employees.length === 0 && (
+              <div className="sa-search-dropdown">
+                <div className="sa-search-dropdown-empty">Không tìm thấy nhân viên</div>
+              </div>
+            )}
+            {searchTerm && empLoading && (
+              <div className="sa-search-dropdown">
+                <div className="sa-search-dropdown-empty"><Loader size={14} className="spin" /> Đang tìm...</div>
+              </div>
+            )}
             {!selectedEmp ? (
               <div className="sa-main-empty">
                 <FileText size={48} />
