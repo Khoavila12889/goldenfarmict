@@ -5,7 +5,7 @@ import {
   User, Building, Edit3, X, Eye, EyeOff, Printer, FileDown, Trash2
 } from 'lucide-react'
 import {
-  searchAllEmployees, getSalaryView, updateSalaryFields,
+  getSalaryEmployees, getSalaryView, updateSalaryFields,
   exportSalaryPdf, batchExportSalaryPdf, uploadSalaryExcel,
   getSalaryUploadHistory, deleteSalarySlip, downloadSalaryTemplate,
 } from '../services/api'
@@ -69,6 +69,7 @@ export default function SalarySlipAdmin() {
 
   const [employees, setEmployees] = useState([])
   const [empLoading, setEmpLoading] = useState(false)
+  const [empError, setEmpError] = useState(null)
   const [selectedEmp, setSelectedEmp] = useState(null)
   const [salaryData, setSalaryData] = useState(null)
   const [salaryLoading, setSalaryLoading] = useState(false)
@@ -111,10 +112,15 @@ export default function SalarySlipAdmin() {
 
   async function fetchEmployees() {
     setEmpLoading(true)
+    setEmpError(null)
     try {
-      const res = await searchAllEmployees('', searchTerm, userCode, token, role)
+      const res = await getSalaryEmployees(selectedMonth, '', searchTerm, userCode, token, role)
       setEmployees(res.data.data || [])
-    } catch (_) {} finally {
+    } catch (err) {
+      const msg = err.response?.data?.detail || 'Lỗi kết nối máy chủ'
+      setEmpError(msg)
+      setEmployees([])
+    } finally {
       setEmpLoading(false)
     }
   }
@@ -126,16 +132,23 @@ export default function SalarySlipAdmin() {
   useEffect(() => {
     let cancelled = false
     setEmpLoading(true)
+    setEmpError(null)
     ;(async () => {
       try {
-        const res = await searchAllEmployees('', searchTerm, userCode, token, role)
+        const res = await getSalaryEmployees(selectedMonth, '', searchTerm, userCode, token, role)
         if (!cancelled) setEmployees(res.data.data || [])
-      } catch (_) {} finally {
+      } catch (err) {
+        if (!cancelled) {
+          const msg = err.response?.data?.detail || 'Lỗi kết nối máy chủ'
+          setEmpError(msg)
+          setEmployees([])
+        }
+      } finally {
         if (!cancelled) setEmpLoading(false)
       }
     })()
     return () => { cancelled = true }
-  }, [searchTerm, userCode, token, role])
+  }, [selectedMonth, searchTerm, userCode, token, role])
 
   function navigate(dir) {
     const [y, m] = selectedMonth.split('-').map(Number)
@@ -203,15 +216,16 @@ export default function SalarySlipAdmin() {
   async function selectEmployee(emp) {
     setSelectedEmp(emp)
     setSearchTerm('')
-    setSalaryLoading(true)
-    setSalaryError(null)
     setSalaryData(null)
     setEditedFields({})
     setSaveMsg(null)
+    setSalaryLoading(true)
+    setSalaryError(null)
     try {
       const res = await getSalaryView(emp.employee_code, selectedMonth, userCode, token, role)
       setSalaryData(res.data.data)
     } catch (err) {
+      setSelectedEmp(null)
       setSalaryError(err.response?.data?.detail || 'Lỗi tải dữ liệu')
     } finally {
       setSalaryLoading(false)
@@ -337,7 +351,6 @@ export default function SalarySlipAdmin() {
     )
   }
 
-  const hasSalaryForMonth = employees.length > 0
   const hasEdits = Object.keys(editedFields).length > 0
 
   return (
@@ -391,56 +404,56 @@ export default function SalarySlipAdmin() {
 
       { /* ─── Tab: Employees ─── */ }
       {activeTab === 'employees' && (
-        <div className="sa-body">
-          <div className="sa-main">
-            <div className="sa-main-toolbar">
-              <div className="sa-search-wrap" style={{ position: 'relative' }}>
-                <Search size={14} className="sa-search-icon" />
-                <input type="text" className="sa-search-input" placeholder="Tìm theo mã hoặc tên nhân viên..."
-                  value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                {searchTerm && (
-                  <button className="sa-search-clear" onClick={() => setSearchTerm('')}>
-                    <X size={14} />
-                  </button>
+        <div className="sa-emp-tab">
+          <div className="sa-emp-search-area">
+            <div className="sa-emp-search-box">
+              <Search size={18} className="sa-emp-search-icon" />
+              <input type="text" className="sa-emp-search-input"
+                placeholder="Tìm theo mã hoặc tên nhân viên..."
+                value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                autoFocus />
+              {searchTerm && (
+                <button className="sa-emp-search-clear" onClick={() => setSearchTerm('')}>
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+
+            {searchTerm && (
+              <div className="sa-emp-dropdown">
+                {empLoading ? (
+                  <div className="sa-emp-dd-item sa-emp-dd-muted"><Loader size={14} className="spin" /> Đang tìm...</div>
+                ) : empError ? (
+                  <div className="sa-emp-dd-item sa-emp-dd-error"><AlertCircle size={14} /> {empError}</div>
+                ) : employees.length === 0 ? (
+                  <div className="sa-emp-dd-item sa-emp-dd-muted">Không tìm thấy nhân viên</div>
+                ) : (
+                  employees.map(emp => (
+                    <div key={emp.employee_code}
+                      className={`sa-emp-dd-item${selectedEmp?.employee_code === emp.employee_code ? ' selected' : ''}`}
+                      onClick={() => selectEmployee(emp)}>
+                      <div className="sa-emp-dd-avatar"><User size={16} /></div>
+                      <div className="sa-emp-dd-info">
+                        <div className="sa-emp-dd-name">{emp.full_name || emp.employee_code}</div>
+                        <div className="sa-emp-dd-meta">{emp.employee_code} · {emp.department || '—'}</div>
+                      </div>
+                    </div>
+                  ))
                 )}
               </div>
-            </div>
-            {searchTerm && (
-              <div className="sa-search-overlay" onClick={() => setSearchTerm('')} />
             )}
-            {searchTerm && !selectedEmp && employees.length > 0 && (
-              <div className="sa-search-dropdown">
-                {employees.map(emp => (
-                  <div key={emp.employee_code} className="sa-search-dropdown-item"
-                    onClick={() => selectEmployee(emp)}>
-                    <div className="sa-search-dd-icon"><User size={14} /></div>
-                    <div className="sa-search-dd-info">
-                      <div className="sa-search-dd-name">{emp.full_name || emp.employee_code}</div>
-                      <div className="sa-search-dd-meta">{emp.employee_code} · {emp.department || '—'}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {searchTerm && !selectedEmp && !empLoading && employees.length === 0 && (
-              <div className="sa-search-dropdown">
-                <div className="sa-search-dropdown-empty">Không tìm thấy nhân viên</div>
-              </div>
-            )}
-            {searchTerm && empLoading && (
-              <div className="sa-search-dropdown">
-                <div className="sa-search-dropdown-empty"><Loader size={14} className="spin" /> Đang tìm...</div>
-              </div>
-            )}
+          </div>
+
+          <div className="sa-emp-result">
             {!selectedEmp ? (
-              <div className="sa-main-empty">
+              <div className="sa-emp-empty-state">
                 <FileText size={48} />
-                <p>Chọn nhân viên để xem và chỉnh sửa phiếu lương</p>
+                <p>Tìm kiếm & chọn nhân viên để xem phiếu lương</p>
               </div>
             ) : salaryLoading ? (
-              <div className="sa-main-loading"><Loader size={32} className="spin" /> Đang tải...</div>
+              <div className="sa-emp-loading"><Loader size={28} className="spin" /> Đang tải...</div>
             ) : salaryError ? (
-              <div className="sa-main-empty">
+              <div className="sa-emp-empty-state">
                 <AlertCircle size={32} />
                 <p style={{ color: 'var(--bk-danger)' }}>{salaryError}</p>
               </div>
@@ -454,7 +467,7 @@ export default function SalarySlipAdmin() {
                   <div className="sa-editor-actions">
                     <div className="sa-pwd-wrap">
                       <input type={showPwdField ? 'text' : 'password'} className="sa-pwd-input"
-                        placeholder="Pass PDF (để trống nếu k cần)" value={pdfPassword}
+                        placeholder="Pass PDF" value={pdfPassword}
                         onChange={e => setPdfPassword(e.target.value)} />
                       <button className="sa-pwd-toggle" onClick={() => setShowPwdField(s => !s)}>
                         {showPwdField ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -481,7 +494,6 @@ export default function SalarySlipAdmin() {
                   </div>
                 )}
 
-                { /* Editable form */ }
                 <div className="sa-form">
                   <div className="sa-form-section">
                     <h4 className="sa-form-title">Thông tin nhân viên</h4>

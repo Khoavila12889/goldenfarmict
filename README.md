@@ -104,11 +104,11 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 ### 💰 Quản lý phiếu lương (Salary Slip)
 
 - **Admin — 3 Tab UI** (`SalarySlipAdmin.jsx`):
-  1. **Nhân viên (Employees)**: Sidebar danh sách NV (search + filter phòng ban) → chọn NV → form chỉnh sửa ở panel phải. Các field chia theo section: Thông tin NV, Mức lương & Công, Thu nhập (A), Khấu trừ (B) & Thực nhận, Theo dõi phép năm & Giờ tích lũy, Ghi chú. Nút Lưu (save vào JSON), Xuất PDF (có password), Xóa.
-  2. **Import Excel**: Tải file mẫu → chọn file .xlsx/.xls → tự động parse cột lương/thuế/phép → lưu JSON vào `salaries` → tạo user account nếu chưa có. Hỗ trợ ghi đè nếu tháng đã tồn tại.
+  1. **Nhân viên (Employees)**: Search typeahead (tìm theo mã/tên NV) → chọn kết quả → form chỉnh sửa. Chỉ hiển thị NV đã có phiếu lương trong tháng đang chọn. Các field chia theo section: Thông tin NV, Mức lương & Công, Thu nhập (A), Khấu trừ (B) & Thực nhận, Theo dõi phép năm & Giờ tích lũy, Ghi chú. Nút Lưu (save JSON), Xuất PDF (có password), Xóa.
+  2. **Import Excel**: Tải file mẫu → chọn file .xlsx/.xls → tự động parse cột lương/thuế/phép → lưu JSON vào `salaries` → tạo user + employee record nếu chưa có. Hỗ trợ ghi đè nếu tháng đã tồn tại.
   3. **Lịch sử (History)**: Danh sách các lần upload Excel (tháng, filename, số NV, người upload, thời gian).
-- **Admin — Xuất PDF**: Xuất PDF có mật khẩu (dùng template `luong.docx` qua LibreOffice headless) cho từng NV hoặc batch toàn bộ phòng ban → file ZIP
-- **Employee — Xem phiếu lương**: Chọn tháng, nhập mật khẩu (nếu có) → xem JSON render dạng HTML (`.pdf-a4-portrait`) — giao diện giống phiếu lương giấy
+- **Admin — Xuất PDF**: Xuất PDF có mật khẩu (template `luong.docx` → LibreOffice headless, fallback `docx2pdf` trên Windows) cho từng NV hoặc batch toàn bộ phòng ban → file ZIP
+- **Employee — Xem phiếu lương**: Chọn tháng, nhập mật khẩu (nếu có) → xem JSON render dạng HTML (.pdf-a4-portrait)
 - **Employee — Tải PDF**: Tải phiếu lương PDF có mật khẩu
 - **Employee — Lịch sử**: Xem danh sách các tháng đã có phiếu lương, chuyển nhanh giữa các tháng
 

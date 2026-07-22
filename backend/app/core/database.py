@@ -302,6 +302,8 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
+
+
     try:
         conn.execute("ALTER TABLE tickets ADD COLUMN employee_code TEXT")
     except sqlite3.OperationalError:

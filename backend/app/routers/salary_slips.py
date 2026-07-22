@@ -112,8 +112,8 @@ async def get_employees_for_salary(
     conn = get_conn()
     # Lấy nhân viên từ employees table...
     rows = conn.execute("""
-        SELECT employee_code, full_name, department, position, phone, email
-        FROM employees WHERE status='active' AND employee_code != ''
+        SELECT id, employee_code, full_name, department, position, phone, email
+        FROM employees WHERE status='active' AND (employee_code IS NULL OR employee_code != '')
     """).fetchall()
     # ...kết hợp với nhân viên chỉ có trong salaries (import Excel trước đây không tạo employees record)
     salary_rows = conn.execute("""
@@ -125,12 +125,14 @@ async def get_employees_for_salary(
                '' AS email
         FROM salaries s
         WHERE s.employee_code NOT IN (
-            SELECT employee_code FROM employees WHERE status='active' AND employee_code != ''
+            SELECT employee_code FROM employees WHERE status='active' AND (employee_code IS NULL OR employee_code != '')
         )
     """).fetchall()
     combined = {}
     for r in rows:
-        combined[r['employee_code']] = dict(r)
+        key = r['employee_code'] or f"__id_{r['id']}"
+        combined[key] = dict(r)
+        combined[key]['employee_code'] = r['employee_code'] or key
     for r in salary_rows:
         if r['employee_code'] not in combined:
             combined[r['employee_code']] = dict(r)
@@ -139,7 +141,7 @@ async def get_employees_for_salary(
         result = [e for e in result if e['department'] == department]
     if search:
         kw = search.lower()
-        result = [e for e in result if kw in e['full_name'].lower() or kw in e['employee_code'].lower()]
+        result = [e for e in result if kw in (e['full_name'] or '').lower() or kw in (e['employee_code'] or '').lower()]
     result.sort(key=lambda e: (e['department'] or '', e['full_name'] or ''))
     conn.close()
     return {"data": result, "total": len(result)}
@@ -226,7 +228,7 @@ async def bulk_generate_salary_slips(body: dict, admin_code: str = None, token: 
     conn = get_conn()
     sql = """
         SELECT employee_code, full_name, department FROM employees
-        WHERE status='active' AND employee_code != '' AND employee_code != 'admin'
+        WHERE status='active' AND (employee_code IS NULL OR employee_code != '') AND employee_code != 'admin'
     """
     params = []
     if body.get("department"):
