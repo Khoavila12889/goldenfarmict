@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from app.core.database import init_db
 from app.core.auth import seed_users, get_conn
 from app.core import events
-from app.routers import auth, employees, equipment, tickets, bookings, dashboard, licenses, software, approvals, business_trips, departments, salary_slips, salary_user, documents
+from app.routers import auth, employees, equipment, tickets, bookings, dashboard, licenses, software, approvals, business_trips, departments, salary_slips, salary_user, documents, todos
 
 app = FastAPI(title="GOLDENFARM ICT API", version="1.0.0")
 
@@ -38,6 +38,8 @@ app.include_router(departments.router)
 app.include_router(salary_slips.router)
 app.include_router(salary_user.router)
 app.include_router(documents.router)
+app.include_router(todos.router)
+
 
 
 @app.on_event("startup")

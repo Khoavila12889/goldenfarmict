@@ -11,12 +11,14 @@ const MODULES = [
   { key: 'licenses', label: 'License Keys', group: 'admin', desc: 'Quản lý bản quyền phần mềm' },
   { key: 'workflows', label: 'Quy trình', group: 'admin', desc: 'Tạo quy trình phê duyệt' },
   { key: 'salary-admin', label: 'Quản lý lương', group: 'admin', desc: 'Import & xuất phiếu lương' },
+  { key: 'todos', label: 'Công việc (Todos)', group: 'support', desc: 'Quản lý công việc cá nhân & phòng ban' },
   { key: 'tickets', label: 'Tickets', group: 'support', desc: 'Yêu cầu hỗ trợ IT' },
   { key: 'approvals', label: 'Phê duyệt', group: 'support', desc: 'Phê duyệt yêu cầu' },
   { key: 'bookings', label: 'Lịch', group: 'support', desc: 'Đặt lịch xe & phòng họp' },
   { key: 'documents', label: 'Tài liệu', group: 'support', desc: 'Truy cập tài liệu dùng chung' },
   { key: 'salary', label: 'Phiếu lương', group: 'support', desc: 'Xem phiếu lương cá nhân' },
 ]
+
 
 const ADMIN_MODULES = new Set(MODULES.filter(m => m.group === 'admin').map(m => m.key))
 

@@ -14,6 +14,7 @@ import SalarySlipAdmin from './pages/SalarySlipAdmin'
 import Documents from './pages/Documents'
 import Profile from './pages/Profile'
 import Permissions from './pages/Permissions'
+import Todos from './pages/Todos'
 import Layout from './components/Layout'
 
 function ProtectedRoute({ children }) {
@@ -46,6 +47,7 @@ export default function App() {
         }
       >
         <Route index element={<Dashboard />} />
+        <Route path="todos" element={<Todos />} />
         <Route path="employees" element={<AdminRoute><Employees /></AdminRoute>} />
         <Route path="tickets" element={<Tickets />} />
         <Route path="bookings" element={<BookingPage />} />
@@ -63,3 +65,4 @@ export default function App() {
     </Routes>
   )
 }
+

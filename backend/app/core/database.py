@@ -294,6 +294,34 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_user_perm_emp ON user_permissions(employee_code);
         CREATE INDEX IF NOT EXISTS idx_user_perm_module ON user_permissions(module);
+
+        CREATE TABLE IF NOT EXISTS todos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            scope TEXT DEFAULT 'personal', -- 'personal', 'department'
+            department TEXT DEFAULT '',
+            creator_code TEXT NOT NULL,
+            creator_name TEXT DEFAULT '',
+            assignee_code TEXT DEFAULT '',
+            assignee_name TEXT DEFAULT '',
+            status TEXT DEFAULT 'todo', -- 'todo', 'in_progress', 'review', 'completed', 'cancelled'
+            priority TEXT DEFAULT 'medium', -- 'low', 'medium', 'high', 'urgent'
+            due_date TEXT DEFAULT '',
+            tags TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            updated_at TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS todo_subtasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            todo_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            is_completed INTEGER DEFAULT 0,
+            sort_order INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now','localtime'))
+        );
+
     """)
 
     for col in ['employee_code TEXT', 'handover_date TEXT DEFAULT ""', 'status TEXT DEFAULT "active"']:
@@ -425,6 +453,12 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_storage_perm_storage ON storage_permissions(storage_id)",
         "CREATE INDEX IF NOT EXISTS idx_storage_perm_role ON storage_permissions(role)",
         "CREATE INDEX IF NOT EXISTS idx_storage_perm_emp ON storage_permissions(employee_code)",
+        "CREATE INDEX IF NOT EXISTS idx_todos_creator ON todos(creator_code)",
+        "CREATE INDEX IF NOT EXISTS idx_todos_assignee ON todos(assignee_code)",
+        "CREATE INDEX IF NOT EXISTS idx_todos_dept ON todos(department)",
+        "CREATE INDEX IF NOT EXISTS idx_todos_status ON todos(status)",
+        "CREATE INDEX IF NOT EXISTS idx_todos_scope ON todos(scope)",
+        "CREATE INDEX IF NOT EXISTS idx_todo_subtasks_todo ON todo_subtasks(todo_id)",
     ]
     for idx in indexes:
         try:

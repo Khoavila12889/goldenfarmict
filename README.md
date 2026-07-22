@@ -147,7 +147,14 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
   - **Granular permissions**: Read (xem), Create/Write (tạo), Edit (sửa), Delete (xoá), Allow Download (cho phép tải), Reshare (chia sẻ lại)
   - **Expiration date**: Đặt ngày hết hạn cho từng permission
   - **Permission inheritance**: quyền folder cha áp dụng cho folder con
-  - **Server-side enforcement**: Kiểm tra `can_read` khi browse, `allow_download` khi download; admin/head bypass toàn bộ
+  ### ✅ Quản lý Công việc & Todos (User & Phòng ban)
+- **Kanban Board 4 cột**: Cần làm, Đang xử lý, Chờ duyệt, Đã hoàn thành với hiệu ứng Glassmorphism hiện đại.
+- **Phạm vi phân quyền (Scope)**: Switch giữa cá nhân (Personal Todos) và phòng ban (Department Shared Todos).
+- **Phân công & Giao việc**: Phân công người chịu trách nhiệm, người tạo, hạn chót (Due Date), tags/nhãn và độ ưu tiên (Low, Medium, High, Urgent 🚨).
+- **Subtask Checklist & Progress Bar**: Tạo các việc con (subtasks), đánh dấu hoàn thành trực quan với thanh phần trăm tiến độ (Progress %).
+- **Cảnh báo quá hạn (Overdue Alert)**: Đánh dấu đỏ các công việc trễ hạn cần ưu tiên xử lý.
+- **Realtime SSE Sync**: Tự động cập nhật Kanban realtime giữa các thành viên cùng phòng ban khi có thay đổi.
+
 
 ### 📅 Đặt lịch — Scheduler Grid (Xe & Phòng họp)
 - **Grid scheduling**: Trục dọc time slots 07:00→19:00 (bước 30 phút), trục ngang resources

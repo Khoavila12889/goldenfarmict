@@ -344,6 +344,72 @@ export function deleteBusinessTrip(id) {
   })
 }
 
+export function getTodos(params = {}) {
+  const userCode = sessionStorage.getItem('user_code') || ''
+  const userRole = sessionStorage.getItem('user_role') || ''
+  const userDept = sessionStorage.getItem('user_department') || ''
+  return api.get('/todos', {
+    params,
+    headers: {
+      'X-User-Code': userCode,
+      'X-User-Role': userRole,
+      'X-User-Dept': userDept
+    }
+  })
+}
+
+export function getTodoStats() {
+  const userCode = sessionStorage.getItem('user_code') || ''
+  const userRole = sessionStorage.getItem('user_role') || ''
+  const userDept = sessionStorage.getItem('user_department') || ''
+  return api.get('/todos/stats', {
+    headers: {
+      'X-User-Code': userCode,
+      'X-User-Role': userRole,
+      'X-User-Dept': userDept
+    }
+  })
+}
+
+export function createTodo(data) {
+  const userCode = sessionStorage.getItem('user_code') || ''
+  const userRole = sessionStorage.getItem('user_role') || ''
+  const userDept = sessionStorage.getItem('user_department') || ''
+  return api.post('/todos', data, {
+    headers: {
+      'X-User-Code': userCode,
+      'X-User-Role': userRole,
+      'X-User-Dept': userDept
+    }
+  })
+}
+
+export function updateTodo(id, data) {
+  const userCode = sessionStorage.getItem('user_code') || ''
+  const userRole = sessionStorage.getItem('user_role') || ''
+  return api.put(`/todos/${id}`, data, {
+    headers: {
+      'X-User-Code': userCode,
+      'X-User-Role': userRole
+    }
+  })
+}
+
+export function updateTodoStatus(id, status) {
+  return api.patch(`/todos/${id}/status`, { status })
+}
+
+export function deleteTodo(id) {
+  const userCode = sessionStorage.getItem('user_code') || ''
+  const userRole = sessionStorage.getItem('user_role') || ''
+  return api.delete(`/todos/${id}`, {
+    headers: {
+      'X-User-Code': userCode,
+      'X-User-Role': userRole
+    }
+  })
+}
+
 // ─── Documents / Storage ──────────────────────────────────────
 export function getStorageConfigs(userCode = '', userRole = '') {
   return api.get('/documents/config', {

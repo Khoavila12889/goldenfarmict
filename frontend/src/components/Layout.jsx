@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Users, Monitor, Key, Ticket, CheckCircle, Settings, Calendar, Receipt, Folder, Shield, Menu, X, User, Lock, Eye, EyeOff } from 'lucide-react'
+import { LayoutDashboard, Users, Monitor, Key, Ticket, CheckCircle, Settings, Calendar, Receipt, Folder, Shield, Menu, X, User, Lock, Eye, EyeOff, CheckSquare } from 'lucide-react'
 import { changePassword } from '../services/api'
 
 const iconMap = {
   dashboard: LayoutDashboard,
+  todos: CheckSquare,
   employees: Users,
   equipment: Monitor,
   licenses: Key,
@@ -21,6 +22,7 @@ const iconMap = {
 
 const allNavItems = [
   { path: '/', label: 'Dashboard', icon: 'dashboard', roles: ['user', 'head', 'admin'] },
+  { path: '/todos', label: 'Công việc (Todos)', icon: 'todos', roles: ['user', 'head', 'admin'] },
   { path: '/employees', label: 'Nhân viên', icon: 'employees', roles: ['head', 'admin'] },
   { path: '/equipment', label: 'Thiết bị', icon: 'equipment', roles: ['head', 'admin'] },
   { path: '/licenses', label: 'License Keys', icon: 'licenses', roles: ['head', 'admin'] },
@@ -36,6 +38,7 @@ const allNavItems = [
 
 const MODULE_MAP = {
   '/': 'dashboard',
+  '/todos': 'todos',
   '/employees': 'employees',
   '/equipment': 'equipment',
   '/licenses': 'licenses',
@@ -47,6 +50,7 @@ const MODULE_MAP = {
   '/salary-slip': 'salary',
   '/salary-slip-admin': 'salary-admin',
 }
+
 
 export default function Layout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)

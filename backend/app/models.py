@@ -296,3 +296,33 @@ class StoragePermission(Base):
     department = Column(String, default='')
     permission = Column(String, nullable=False, default='read')
     created_at = Column(String, default='')
+
+
+class Todo(Base):
+    __tablename__ = 'todos'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, default='')
+    scope = Column(String, default='personal', index=True)
+    department = Column(String, default='', index=True)
+    creator_code = Column(String, nullable=False, index=True)
+    creator_name = Column(String, default='')
+    assignee_code = Column(String, default='', index=True)
+    assignee_name = Column(String, default='')
+    status = Column(String, default='todo', index=True)
+    priority = Column(String, default='medium')
+    due_date = Column(String, default='')
+    tags = Column(String, default='')
+    created_at = Column(String, default='')
+    updated_at = Column(String, default='')
+
+
+class TodoSubtask(Base):
+    __tablename__ = 'todo_subtasks'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    todo_id = Column(Integer, nullable=False, index=True)
+    title = Column(String, nullable=False)
+    is_completed = Column(Integer, default=0)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(String, default='')
+

@@ -653,8 +653,24 @@ Chỉ dùng SQLAlchemy
 - `backend/app/models.py` — ORM models 18 tables
 - `backend/app/core/db.py` — abstraction layer (dùng SQLAlchemy, module mới dùng file này)
 
+### 3.12 Module Công việc & Todos (Todos)
+
+**API prefix:** `/api/todos`
+
+| Endpoint | Chức năng |
+|----------|-----------|
+| `GET /api/todos` | Danh sách todos (filter: scope=all/personal/department, status, priority, search). |
+| `GET /api/todos/stats` | Thống kê KPI: total, todo, in_progress, review, completed, overdue |
+| `POST /api/todos` | Tạo mới todo + checklist subtasks |
+| `PUT /api/todos/{id}` | Cập nhật todo + subtasks |
+| `PATCH /api/todos/{id}/status` | Đổi trạng thái todo nhanh (Kanban drag/move) |
+| `DELETE /api/todos/{id}` | Xoá todo & subtasks liên quan |
+
+**SSE events**: `todo_created`, `todo_updated`, `todo_deleted`.
+
 ---
 
 > **Tài liệu này có hiệu lực ngay khi được commit.**  
 > Mọi AI CLI (Cursor, Copilot, opencode agent) PHẢI đọc và tuân thủ.  
 > Team Dev review: vi phạm → reject ngay.
+
