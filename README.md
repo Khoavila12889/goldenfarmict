@@ -176,21 +176,47 @@ cd frontend
 npm install
 ```
 
+## Cấu hình Database (`.env`)
+
+File `.env` tại thư mục gốc:
+
+```env
+# DATABASE_URL=sqlite:///backend/company.db
+```
+
+- **Chạy trên PC local**: **Comment dòng `DATABASE_URL` lại** (thêm `#` ở đầu) — hệ thống tự động tính đường dẫn tuyệt đối đến `backend/company.db`
+- **Deploy lên VPS (Docker)**: **Bỏ comment** (xóa `#`) — dùng relative path cho SQLAlchemy trong container
+
+> 💡 Lý do: Trên PC, chạy backend từ thư mục `backend/`, relative path `backend/company.db` sẽ sai thành `backend/backend/company.db`. Khi comment, code tự tính path tuyệt đối đúng.
+
 ## Usage
 
-### Khởi động Backend (cổng 8080)
+### Cách 1: Chạy trên PC Local
+
+**Bước 1** — Mở Terminal 1 — Khởi động Backend:
 ```bash
 cd backend
 python -m uvicorn main:app --reload --port 8080
 ```
 
-### Khởi động Frontend (cổng 5173)
+**Bước 2** — Mở Terminal 2 — Khởi động Frontend:
 ```bash
 cd frontend
 npm run dev
 ```
 
 Mở trình duyệt tại **`http://localhost:5173`**.
+
+### Cách 2: Deploy bằng Docker (VPS)
+
+```bash
+docker compose up -d --build
+```
+
+- Frontend: `http://<VPS_IP>:8088`
+- Backend API: `http://<VPS_IP>:8000`
+
+> Đảm bảo đã **bỏ comment** dòng `DATABASE_URL` trong `.env` trước khi build Docker.
 
 ## Tài khoản mặc định
 
