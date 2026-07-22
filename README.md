@@ -124,11 +124,14 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 - **Realtime**: SSE tự động cập nhật khi có ticket mới/thay đổi
 
 ### 📁 Quản lý tài liệu (Documents) — SMB / FTP / Google Drive
-- Cấu hình storage: SMB (Windows Share), FTP, Google Drive (Service Account)
-- Test kết nối trước khi lưu
-- Duyệt cây thư mục với breadcrumb navigation
-- Phân quyền truy cập thư mục con theo: vai trò (role), mã nhân viên, bộ phận (department), hoặc tất cả user
-- Permission inheritance: quyền folder cha áp dụng cho folder con
+- **User UI trực quan**: Giao diện dạng card grid (hiển thị file dạng thumbnail lớn) kết hợp list view, cho phép chuyển đổi linh hoạt
+- **File Preview**: Xem trước ảnh, PDF, video, audio, text, code ngay trong trình duyệt (FileViewer component)
+- **Search file**: Tìm kiếm file/thư mục theo tên realtime
+- **Cấu hình storage**: SMB (Windows Share), FTP, Google Drive (Service Account)
+- **Test kết nối** trước khi lưu
+- **Duyệt cây thư mục** với breadcrumb navigation
+- **Phân quyền** truy cập thư mục con theo: vai trò (role), mã nhân viên, bộ phận (department), hoặc tất cả user
+- **Permission inheritance**: quyền folder cha áp dụng cho folder con
 
 ### 📅 Đặt lịch — Scheduler Grid (Xe & Phòng họp)
 - **Grid scheduling**: Trục dọc time slots 07:00→19:00 (bước 30 phút), trục ngang resources

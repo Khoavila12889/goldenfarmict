@@ -8,7 +8,6 @@ import {
   searchAllEmployees, getSalaryView, updateSalaryFields,
   exportSalaryPdf, batchExportSalaryPdf, uploadSalaryExcel,
   getSalaryUploadHistory, deleteSalarySlip, downloadSalaryTemplate,
-  getDepartments
 } from '../services/api'
 import '../styles/booking.css'
 import './SalarySlip.css'
@@ -79,8 +78,6 @@ export default function SalarySlipAdmin() {
   const [saveMsg, setSaveMsg] = useState(null)
 
   const [searchTerm, setSearchTerm] = useState('')
-  const [departmentFilter, setDepartmentFilter] = useState('Tất cả')
-  const [departments, setDepartments] = useState([])
 
   const [pdfPassword, setPdfPassword] = useState('')
   const [exportingPdf, setExportingPdf] = useState(false)
@@ -115,7 +112,7 @@ export default function SalarySlipAdmin() {
   async function fetchEmployees() {
     setEmpLoading(true)
     try {
-      const res = await searchAllEmployees(departmentFilter, searchTerm, userCode, token, role)
+      const res = await searchAllEmployees('', searchTerm, userCode, token, role)
       setEmployees(res.data.data || [])
     } catch (_) {} finally {
       setEmpLoading(false)
@@ -124,12 +121,6 @@ export default function SalarySlipAdmin() {
 
   useEffect(() => {
     fetchHistory()
-    ;(async () => {
-      try {
-        const res = await getDepartments()
-        setDepartments(res.data.data || [])
-      } catch (_) {}
-    })()
   }, [])
 
   useEffect(() => {
@@ -137,14 +128,14 @@ export default function SalarySlipAdmin() {
     setEmpLoading(true)
     ;(async () => {
       try {
-        const res = await searchAllEmployees(departmentFilter, searchTerm, userCode, token, role)
+        const res = await searchAllEmployees('', searchTerm, userCode, token, role)
         if (!cancelled) setEmployees(res.data.data || [])
       } catch (_) {} finally {
         if (!cancelled) setEmpLoading(false)
       }
     })()
     return () => { cancelled = true }
-  }, [departmentFilter, searchTerm, userCode, token, role])
+  }, [searchTerm, userCode, token, role])
 
   function navigate(dir) {
     const [y, m] = selectedMonth.split('-').map(Number)
@@ -274,9 +265,7 @@ export default function SalarySlipAdmin() {
     setBatchExporting(true)
     setBatchExportMsg(null)
     try {
-      const res = await batchExportSalaryPdf(selectedMonth,
-        departmentFilter !== 'Tất cả' ? departmentFilter : '',
-        userCode, token, role)
+      const res = await batchExportSalaryPdf(selectedMonth, '', userCode, token, role)
       const blob = new Blob([res.data], { type: 'application/zip' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -402,12 +391,11 @@ export default function SalarySlipAdmin() {
       { /* ─── Tab: Employees ─── */ }
       {activeTab === 'employees' && (
         <div className="sa-body">
-          { /* Left panel: employee list */ }
-          <div className="sa-sidebar">
-            <div className="sa-sidebar-header">
+          <div className="sa-main">
+            <div className="sa-main-toolbar">
               <div className="sa-search-wrap">
                 <Search size={14} className="sa-search-icon" />
-                <input type="text" className="sa-search-input" placeholder="Tìm nhân viên..."
+                <input type="text" className="sa-search-input" placeholder="Tìm theo mã hoặc tên nhân viên..."
                   value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                 {searchTerm && (
                   <button className="sa-search-clear" onClick={() => setSearchTerm('')}>
@@ -416,33 +404,6 @@ export default function SalarySlipAdmin() {
                 )}
               </div>
             </div>
-            <div className="sa-emp-list">
-              {empLoading ? (
-                <div className="sa-emp-empty"><Loader size={20} className="spin" /> Đang tải...</div>
-              ) : employees.length === 0 ? (
-                <div className="sa-emp-empty">
-                  <User size={24} />
-                  <p>Không tìm thấy nhân viên</p>
-                  <p className="sa-emp-hint">Thử tìm kiếm với từ khóa khác</p>
-                </div>
-              ) : (
-                employees.map(emp => (
-                  <div key={emp.employee_code}
-                    className={`sa-emp-item${selectedEmp?.employee_code === emp.employee_code ? ' selected' : ''}`}
-                    onClick={() => selectEmployee(emp)}>
-                    <div className="sa-emp-icon"><User size={16} /></div>
-                    <div className="sa-emp-info">
-                      <div className="sa-emp-name">{emp.full_name || emp.employee_code}</div>
-                      <div className="sa-emp-meta">{emp.employee_code} · {emp.department || '—'}</div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          { /* Right panel: salary slip viewer/editor */ }
-          <div className="sa-main">
             {!selectedEmp ? (
               <div className="sa-main-empty">
                 <FileText size={48} />

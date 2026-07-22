@@ -12,8 +12,8 @@ docx2pdf>=0.1.8
 PyPDF2>=3.0.0
 python-multipart>=0.0.6
 
-# SMB (Windows Share) - smbprotocol supports SMB2/3
-smbprotocol>=1.11.0
+# SMB (Windows Share)
+pysmb>=1.2.10
 
 # FTP - aioftp supports FTP/TLS
 aioftp>=0.21.0
