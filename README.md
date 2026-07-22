@@ -254,6 +254,32 @@ docker compose up -d --build
 
 > Đảm bảo đã **bỏ comment** dòng `DATABASE_URL` trong `.env` trước khi build Docker.
 
+## Hybrid Authentication (Argon2id + SHA-256)
+
+Hệ thống hỗ trợ **đa thuật toán mã hóa** để tương thích với dữ liệu user từ Nextcloud cũ:
+
+| Thuật toán | Đối tượng | Cơ chế |
+|-----------|-----------|--------|
+| **SHA-256** | User mới tạo (seed_users), admin | `hashlib.sha256(password).hexdigest()` |
+| **Argon2id** | User import từ Nextcloud (`oc_users.csv`) | Verify bằng `argon2-cffi`, tự động **re-hash** sang SHA-256 sau lần đăng nhập đầu tiên |
+
+### Import Users từ Nextcloud
+
+Script migration: `backend/app/utils/import_oc_users.py`
+
+```bash
+cd backend
+python -m app.utils.import_oc_users
+# hoặc chỉ định file CSV khác:
+python -m app.utils.import_oc_users --csv /path/to/oc_users.csv
+```
+
+Chức năng:
+- Đọc CSV → upsert `employees` (employee_code, full_name, department)
+- Lưu nguyên hash argon2id vào `users.password_hash`
+- Tự động gán role (`admin` nếu department = "Admin", `head` nếu là trưởng phòng, còn lại `user`)
+- User import có thể đăng nhập bằng **mật khẩu Nextcloud cũ** ngay lập tức
+
 ## Tài khoản mặc định
 
 | Mã NV | Vai trò | Mật khẩu |
@@ -261,7 +287,7 @@ docker compose up -d --build
 | `admin` | admin | `admin` |
 | `NV001` | user | `NV001` |
 
-Database `company.db` đã bao gồm dữ liệu mẫu. Để seed lại:
+Database `company.db` đã bao gồm dữ liệu mẫu + 355 user thật từ Nextcloud. Để seed lại:
 ```bash
 cd backend
 python -c "from app.core.auth import seed_users; from app.core.database import get_conn; conn=get_conn(); seed_users(conn); conn.close()"
@@ -295,6 +321,10 @@ goldenfarm-ict-web/
 │   │   │   ├── salary_slips.py    # Admin salary CRUD + Excel + PDF (single/batch)
 │   │   │   └── salary_user.py     # Employee salary view + PDF download
 │   │   ├── utils/
+│   │   │   ├── import_oc_users.py  # Migration: import users từ Nextcloud CSV
+│   │   │   ├── pdf_generator.py    # Salary slip PDF generation
+│   │   │   ├── ftp_utils.py        # FTP/SMB upload utility
+│   │   │   └── seed_demo_data.py   # Seed dữ liệu mẫu
 │   ├── main.py                    # FastAPI entry point + SSE endpoint
 │   ├── company.db                 # SQLite database
 │   ├── requirements.txt
