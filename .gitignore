@@ -6,4 +6,7 @@ dist/
 .vscode/
 *.db
 !backend/company.db
+*.db-shm
+*.db-wal
+db.sqlite3
 temp_pdf_gen/
