@@ -345,7 +345,7 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/documents/config').then(r => r.json()),
+      fetch(`/api/documents/config?user_code=${userCode}&user_role=${role}`).then(r => r.json()),
       fetch('/api/documents/departments').then(r => r.json()),
     ]).then(([sRes, dRes]) => {
       if (sRes.data) setStorages(sRes.data)
