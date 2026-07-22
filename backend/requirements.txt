@@ -25,5 +25,8 @@ google-auth>=2.25.0
 # ORM — SQLAlchemy (đã cài sẵn, dùng cho module mới)
 sqlalchemy>=1.4.0
 
+# Argon2 — xác thực mật khẩu Nextcloud legacy
+argon2-cffi>=23.1.0
+
 # PostgreSQL driver (chỉ cần khi migrate)
 # asyncpg>=0.29.0
