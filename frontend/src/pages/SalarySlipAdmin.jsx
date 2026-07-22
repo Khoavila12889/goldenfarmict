@@ -202,6 +202,7 @@ export default function SalarySlipAdmin() {
 
   async function selectEmployee(emp) {
     setSelectedEmp(emp)
+    setSearchTerm('')
     setSalaryLoading(true)
     setSalaryError(null)
     setSalaryData(null)
@@ -393,7 +394,7 @@ export default function SalarySlipAdmin() {
         <div className="sa-body">
           <div className="sa-main">
             <div className="sa-main-toolbar">
-              <div className="sa-search-wrap">
+              <div className="sa-search-wrap" style={{ position: 'relative' }}>
                 <Search size={14} className="sa-search-icon" />
                 <input type="text" className="sa-search-input" placeholder="Tìm theo mã hoặc tên nhân viên..."
                   value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
@@ -401,6 +402,30 @@ export default function SalarySlipAdmin() {
                   <button className="sa-search-clear" onClick={() => setSearchTerm('')}>
                     <X size={14} />
                   </button>
+                )}
+                {searchTerm && !selectedEmp && employees.length > 0 && (
+                  <div className="sa-search-dropdown">
+                    {employees.map(emp => (
+                      <div key={emp.employee_code} className="sa-search-dropdown-item"
+                        onClick={() => selectEmployee(emp)}>
+                        <div className="sa-search-dd-icon"><User size={14} /></div>
+                        <div className="sa-search-dd-info">
+                          <div className="sa-search-dd-name">{emp.full_name || emp.employee_code}</div>
+                          <div className="sa-search-dd-meta">{emp.employee_code} · {emp.department || '—'}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {searchTerm && !selectedEmp && !empLoading && employees.length === 0 && (
+                  <div className="sa-search-dropdown">
+                    <div className="sa-search-dropdown-empty">Không tìm thấy nhân viên</div>
+                  </div>
+                )}
+                {searchTerm && empLoading && (
+                  <div className="sa-search-dropdown">
+                    <div className="sa-search-dropdown-empty"><Loader size={14} className="spin" /> Đang tìm...</div>
+                  </div>
                 )}
               </div>
             </div>
