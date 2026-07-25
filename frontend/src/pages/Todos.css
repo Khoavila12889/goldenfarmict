@@ -552,6 +552,22 @@
   color: var(--todo-text-primary);
 }
 
+.modal-close-btn {
+  background: none;
+  border: none;
+  color: var(--todo-text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  transition: all 0.2s ease;
+}
+
+.modal-close-btn:hover {
+  background: var(--select-bg);
+  color: var(--todo-text-primary);
+}
+
 .todo-modal-body {
   padding: 1.5rem;
   display: flex;
@@ -572,6 +588,10 @@
   color: var(--todo-text-primary);
 }
 
+.required-star {
+  color: #ef4444;
+}
+
 .form-control {
   background: var(--todo-card-bg);
   border: 1px solid var(--select-border);
@@ -590,6 +610,11 @@
 .form-control:focus {
   border-color: var(--todo-accent);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.form-control-readonly {
+  opacity: 0.7;
+  cursor: default;
 }
 
 textarea.form-control {
@@ -617,19 +642,107 @@ select.form-control:hover {
   .form-row { grid-template-columns: 1fr; }
 }
 
-/* ---- Subtask Manager (Modal) ---- */
+/* ---- Subtask Panel (Modal) ---- */
+.subtask-panel {
+  background: var(--todo-bg);
+  border: 1px solid var(--todo-border);
+  border-radius: var(--todo-radius);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.subtask-panel-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--todo-text-primary);
+}
+
+.subtask-add-row {
+  display: flex;
+  gap: 8px;
+}
+
+.subtask-add-row .form-control {
+  flex: 1;
+}
+
+.subtask-add-row .btn-primary {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.subtask-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
 .subtask-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: var(--todo-bg);
-  padding: 6px 10px;
+  justify-content: space-between;
+  background: var(--todo-card-bg);
+  padding: 8px 10px;
   border-radius: 6px;
   border: 1px solid var(--todo-border);
+  transition: all 0.2s ease;
 }
 
-.subtask-item input[type="checkbox"] {
+.subtask-item.completed {
+  background: #f1f5f9;
+}
+
+.subtask-item-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.subtask-item-left input[type="checkbox"] {
   accent-color: var(--todo-accent);
+  flex-shrink: 0;
+}
+
+.subtask-item-text {
+  font-size: 0.85rem;
+  color: var(--todo-text-primary);
+  transition: all 0.2s ease;
+}
+
+.subtask-item-text.done {
+  text-decoration: line-through;
+  color: var(--todo-text-muted);
+}
+
+.subtask-remove-btn {
+  background: none;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.subtask-remove-btn:hover {
+  background: #fef2f2;
+}
+
+/* ---- Modal Footer ---- */
+.todo-modal-footer {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--todo-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 /* ---- Empty State ---- */

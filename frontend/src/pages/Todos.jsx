@@ -405,7 +405,7 @@ export default function Todos() {
                 })}
 
                 {colTodos.length === 0 && (
-                  <div style={{ textAlign: 'center', padding: '2rem 1rem', color: '#64748b', fontSize: '0.85rem' }}>
+                  <div className="empty-state">
                     Chưa có công việc
                   </div>
                 )}
@@ -420,10 +420,8 @@ export default function Todos() {
         <div className="todo-modal-overlay" onClick={() => setShowModal(false)}>
           <div className="todo-modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="todo-modal-header">
-              <h2 style={{ margin: 0, fontSize: '1.15rem' }}>
-                {editingTodo ? 'Chỉnh sửa Công việc' : 'Tạo mới Công việc'}
-              </h2>
-              <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
+              <h2>{editingTodo ? 'Chỉnh sửa Công việc' : 'Tạo mới Công việc'}</h2>
+              <button className="modal-close-btn" onClick={() => setShowModal(false)}>
                 <X size={20} />
               </button>
             </div>
@@ -431,7 +429,7 @@ export default function Todos() {
             <form onSubmit={handleSaveTodo}>
               <div className="todo-modal-body">
                 <div className="form-group">
-                  <label>Tên công việc <span style={{ color: '#ef4444' }}>*</span></label>
+                  <label>Tên công việc <span className="required-star">*</span></label>
                   <input
                     type="text"
                     className="form-control"
@@ -483,10 +481,9 @@ export default function Todos() {
                       ) : (
                         <input
                           type="text"
-                          className="form-control"
+                          className="form-control form-control-readonly"
                           value={formDept}
                           readOnly
-                          style={{ opacity: 0.7 }}
                         />
                       )}
                     </div>
@@ -549,9 +546,9 @@ export default function Todos() {
                 </div>
 
                 {/* Subtask / Checklist Manager */}
-                <div className="form-group">
-                  <label>Danh sách việc nhỏ (Subtasks Checklist)</label>
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                <div className="subtask-panel">
+                  <label className="subtask-panel-label">Danh sách việc nhỏ (Subtasks Checklist)</label>
+                  <div className="subtask-add-row">
                     <input
                       type="text"
                       className="form-control"
@@ -565,20 +562,20 @@ export default function Todos() {
                     </button>
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '150px', overflowY: 'auto' }}>
+                  <div className="subtask-list">
                     {formSubtasks.map((sub, idx) => (
-                      <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyBetween: 'space-between', background: 'rgba(15,23,42,0.4)', padding: '6px 10px', borderRadius: '6px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                      <div key={idx} className={`subtask-item${sub.is_completed ? ' completed' : ''}`}>
+                        <div className="subtask-item-left">
                           <input
                             type="checkbox"
                             checked={!!sub.is_completed}
                             onChange={() => handleToggleSubtask(idx)}
                           />
-                          <span style={{ fontSize: '0.85rem', textDecoration: sub.is_completed ? 'line-through' : 'none', color: sub.is_completed ? '#64748b' : '#fff' }}>
+                          <span className={`subtask-item-text${sub.is_completed ? ' done' : ''}`}>
                             {sub.title}
                           </span>
                         </div>
-                        <button type="button" onClick={() => handleRemoveSubtask(idx)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
+                        <button type="button" className="subtask-remove-btn" onClick={() => handleRemoveSubtask(idx)}>
                           <X size={14} />
                         </button>
                       </div>
@@ -587,7 +584,7 @@ export default function Todos() {
                 </div>
               </div>
 
-              <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <div className="todo-modal-footer">
                 <button type="button" className="scope-btn" onClick={() => setShowModal(false)}>Hủy</button>
                 <button type="submit" className="btn-primary">
                   {editingTodo ? 'Lưu thay đổi' : 'Tạo mới'}
