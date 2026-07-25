@@ -322,7 +322,7 @@ export default function Todos() {
           const ColIcon = col.icon
 
           return (
-            <div key={col.id} className="kanban-column">
+            <div key={col.id} className={`kanban-column column-${col.id}`}>
               <div className="column-header">
                 <div className="column-title">
                   <ColIcon size={16} style={{ color: col.color }} />
