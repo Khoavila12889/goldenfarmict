@@ -456,29 +456,32 @@
   transition: width 0.3s ease;
 }
 
-/* ---- Status Dropdown (Slate Neutral) ---- */
+/* ---- Status Dropdown (Color by status) ---- */
 .todo-card select.form-control {
   font-size: 0.78rem;
-  font-weight: 500;
+  font-weight: 600;
   padding: 5px 8px;
   width: 100%;
-  background-color: var(--select-bg);
-  border: 1px solid var(--select-border);
   border-radius: 6px;
-  color: var(--select-text);
   outline: none;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
-.todo-card select.form-control:hover {
-  background-color: var(--select-hover-bg);
-  border-color: #94a3b8;
-}
+.todo-card select.status-todo        { background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; }
+.todo-card select.status-in_progress { background: #dbeafe; border: 1px solid #93c5fd; color: #1d4ed8; }
+.todo-card select.status-review      { background: #fef3c7; border: 1px solid #fcd34d; color: #b45309; }
+.todo-card select.status-completed   { background: #d1fae5; border: 1px solid #6ee7b7; color: #047857; }
+.todo-card select.status-cancelled   { background: #fee2e2; border: 1px solid #fca5a5; color: #dc2626; }
+
+.todo-card select.status-todo:hover        { background: #e2e8f0; border-color: #94a3b8; }
+.todo-card select.status-in_progress:hover { background: #bfdbfe; border-color: #60a5fa; }
+.todo-card select.status-review:hover      { background: #fde68a; border-color: #fbbf24; }
+.todo-card select.status-completed:hover   { background: #a7f3d0; border-color: #34d399; }
+.todo-card select.status-cancelled:hover   { background: #fecaca; border-color: #f87171; }
 
 .todo-card select.form-control:focus {
   border-color: var(--todo-accent);
-  background-color: var(--todo-card-bg);
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
 }
 

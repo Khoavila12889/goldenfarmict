@@ -377,8 +377,7 @@ export default function Todos() {
                         <select
                           value={todo.status}
                           onChange={(e) => handleStatusChange(todo.id, e.target.value)}
-                          className="form-control"
-                          style={{ fontSize: '0.75rem', padding: '3px 6px', width: '100%', background: 'rgba(15,23,42,0.5)' }}
+                          className={`form-control status-${todo.status}`}
                         >
                           <option value="todo">Chuyển: Cần làm</option>
                           <option value="in_progress">Chuyển: Đang xử lý</option>
