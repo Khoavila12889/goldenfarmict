@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useState, useCallback } from 'react'
 import '../styles/shared.css'
+import { formatDate } from '../utils/formatters'
 import {
   getEmployees, getDepartments, getEmployeeEquipment,
   createEmployee, updateEmployee, deleteEmployee,
@@ -509,7 +510,7 @@ export default function Employees() {
                 <DetailItem label="Chức vụ" value={selectedEmp.position} />
                 <DetailItem label="Số điện thoại" value={selectedEmp.phone} />
                 <DetailItem label="Địa chỉ Email" value={selectedEmp.email} />
-                <DetailItem label="Ngày bàn giao" value={selectedEmp.handover_date} />
+                <DetailItem label="Ngày bàn giao" value={formatDate(selectedEmp.handover_date)} />
               </div>
               {selectedEmp.notes && (
                 <div style={{ fontSize: '0.78rem', color: '#64748b', background: '#f8fafc', borderRadius: 8, padding: '0.5rem 0.7rem', marginBottom: '1rem', border: '1px solid #f1f5f9' }}>

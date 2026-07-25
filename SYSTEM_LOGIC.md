@@ -572,7 +572,7 @@ template/                        # luong.docx, luong.xlsx (salary PDF template)
 
 **SSE events**: `todo_created`, `todo_updated`, `todo_deleted`.
 
-**Date format:** Hiển thị `dd/mm/yyyy` dùng `formatDate()` từ `utils/formatters.js`. Database lưu ISO `yyyy-mm-dd`.
+**Date format — QUY TẮC TOÀN CỤC:** Hiển thị `dd/mm/yyyy` dùng `formatDate()` từ `utils/formatters.js`. Database lưu ISO `yyyy-mm-dd`. `<input type="date">` dùng value ISO `yyyy-mm-dd`, browser tự locale hoá hiển thị. Tất cả module PHẢI dùng `formatDate()` cho mọi date display.
 
 ---
 

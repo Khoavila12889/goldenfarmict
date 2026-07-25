@@ -376,7 +376,7 @@ export default function Licenses() {
                       <td style={{ fontSize: '0.78rem' }}>{lic.equipment_type || <span className="sw-cell-muted">—</span>}</td>
                       <td style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{lic.serial_number || <span className="sw-cell-muted">—</span>}</td>
                       <td style={{ fontSize: '0.78rem' }}>{lic.activated || <span className="sw-cell-muted">—</span>}</td>
-                      <td style={{ fontSize: '0.78rem' }}>{lic.expiry_date || <span className="sw-cell-muted">—</span>}</td>
+                      <td style={{ fontSize: '0.78rem' }}>{formatDate(lic.expiry_date) || <span className="sw-cell-muted">—</span>}</td>
                       <td className="sw-cell-action">{sel ? '◀' : '▶'}</td>
                     </tr>
                   )

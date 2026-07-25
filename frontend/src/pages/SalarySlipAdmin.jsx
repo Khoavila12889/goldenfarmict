@@ -4,6 +4,7 @@ import {
   ChevronLeft, ChevronRight, Calendar, Search, Download, Lock, Save,
   User, Building, Edit3, X, Eye, EyeOff, Printer, FileDown, Trash2
 } from 'lucide-react'
+import { formatDate } from '../utils/formatters'
 import {
   getSalaryEmployees, getSalaryView, updateSalaryFields,
   exportSalaryPdf, batchExportSalaryPdf, uploadSalaryExcel,
@@ -710,7 +711,7 @@ export default function SalarySlipAdmin() {
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
                       <div style={{ fontSize: '0.78rem', color: 'var(--bk-text-secondary)' }}>{h.uploaded_by_name || h.uploaded_by}</div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--bk-text-muted)' }}>{h.created_at?.split(' ')[0]}</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--bk-text-muted)' }}>{formatDate(h.created_at)}</div>
                     </div>
                   </div>
                 ))}

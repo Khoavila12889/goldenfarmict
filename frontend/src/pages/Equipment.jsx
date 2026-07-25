@@ -1136,7 +1136,7 @@ export default function Equipment() {
                 })()}
                 {selectedEq.issued_date && (
                   <span style={{ fontSize: '0.72rem', color: '#94a3b8', alignSelf: 'center', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
-                    <Clock size={12} /> {selectedEq.issued_date}
+                    <Clock size={12} /> {formatDate(selectedEq.issued_date)}
                   </span>
                 )}
               </div>
@@ -1223,7 +1223,7 @@ export default function Equipment() {
                   </div>
                   <div>
                     <div className="eq-detail-item-label">Ngày cấp</div>
-                    <div className="eq-detail-item-value">{selectedEq.issued_date || '—'}</div>
+                    <div className="eq-detail-item-value">{formatDate(selectedEq.issued_date) || '—'}</div>
                   </div>
                   <div>
                     <div className="eq-detail-item-label">Người sử dụng</div>
@@ -1352,8 +1352,8 @@ export default function Equipment() {
                               <span style={{ fontWeight: 500 }}>{h.employee_name}</span> ({h.employee_code})
                             </div>
                             <div className="eq-timeline-content">
-                              Bàn giao: {h.handover_date || '?'}
-                              {h.return_date ? ` → Thu hồi: ${h.return_date}` : ' → Đang sử dụng'}
+                              Bàn giao: {formatDate(h.handover_date) || '?'}
+                              {h.return_date ? ` → Thu hồi: ${formatDate(h.return_date)}` : ' → Đang sử dụng'}
                             </div>
                             <div className="eq-timeline-date">{formatDate(h.created_at)}</div>
                           </div>
