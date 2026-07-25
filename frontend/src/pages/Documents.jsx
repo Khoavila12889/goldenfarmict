@@ -59,17 +59,7 @@ function formatSize(bytes) {
   return (i === 0 ? size.toFixed(0) : size.toFixed(1)) + ' ' + units[i]
 }
 
-function formatDate(dateStr) {
-  if (!dateStr) return ''
-  try {
-    const d = new Date(dateStr)
-    if (isNaN(d.getTime())) return ''
-    const day = String(d.getDate()).padStart(2, '0')
-    const month = String(d.getMonth() + 1).padStart(2, '0')
-    const year = d.getFullYear()
-    return `${day}/${month}/${year}`
-  } catch { return '' }
-}
+import { formatDate } from '../utils/date'
 
 function SkeletonRows({ count = 5 }) {
   return (

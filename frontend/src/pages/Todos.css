@@ -351,6 +351,23 @@
   flex: 1;
 }
 
+/* ---- Read-only Card ---- */
+.todo-card-readonly {
+  opacity: 0.85;
+  border-left: 3px solid #f59e0b;
+}
+
+.todo-card-readonly:hover {
+  border-color: #f59e0b;
+  border-left-width: 3px;
+}
+
+select.form-control:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: #f1f5f9;
+}
+
 /* ---- Task Card ---- */
 .todo-card {
   background: var(--todo-card-bg);

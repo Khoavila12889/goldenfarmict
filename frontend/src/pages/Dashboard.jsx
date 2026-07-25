@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { getDashboardStats, getEmployeeByCode, getTickets, getTicketQueuePosition } from '../services/api'
-import { formatDate } from '../utils/formatters'
+import { formatDate } from '../utils/date'
 
 const statusOrder = ['Cho xu ly', 'Dang xu ly', 'Da xu ly', 'Da huy']
 

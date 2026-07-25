@@ -5,7 +5,7 @@ import {
   Users, Building, ListTodo, Layers, RefreshCw, X, ChevronRight
 } from 'lucide-react'
 import { getTodos, getTodoStats, createTodo, updateTodo, updateTodoStatus, deleteTodo, getTodoAssignees, getDepartments } from '../services/api'
-import { formatDate } from '../utils/formatters'
+import { formatDate } from '../utils/date'
 import './Todos.css'
 
 export default function Todos() {
@@ -42,6 +42,31 @@ export default function Todos() {
   const userRole = sessionStorage.getItem('user_role') || 'user'
   const userDept = sessionStorage.getItem('user_department') || ''
   const userCode = sessionStorage.getItem('user_code') || ''
+
+  const canEditTodo = (todo) => {
+    if (userRole === 'admin') return true
+    if (userRole === 'head') {
+      if (todo.scope === 'department' && todo.department === userDept) return true
+      if (todo.creator_code === userCode || todo.assignee_code === userCode) return true
+      return false
+    }
+    return todo.creator_code === userCode || todo.assignee_code === userCode
+  }
+
+  const canDeleteTodo = (todo) => {
+    if (userRole === 'admin') return true
+    if (userRole === 'head') {
+      if (todo.scope === 'department' && todo.department === userDept) return true
+      if (todo.creator_code === userCode) return true
+      return false
+    }
+    return false
+  }
+
+  const readonlyWarning = (todo) => {
+    if (!canEditTodo(todo) || !canDeleteTodo(todo)) return ' ⚠️ Chỉ xem, không có quyền chỉnh sửa'
+    return ''
+  }
 
   useEffect(() => {
     loadAuxData()
@@ -337,7 +362,7 @@ export default function Todos() {
                   const overdue = isOverdue(todo.due_date, todo.status)
 
                   return (
-                    <div key={todo.id} className="todo-card">
+                    <div key={todo.id} className={`todo-card${!canEditTodo(todo) ? ' todo-card-readonly' : ''}`}>
                       <div className="todo-card-top">
                         <span className={`badge-priority priority-${todo.priority}`}>
                           {todo.priority === 'urgent' ? 'Khẩn cấp' : todo.priority === 'high' ? 'Cao' : todo.priority === 'medium' ? 'Trung bình' : 'Thấp'}
@@ -348,12 +373,18 @@ export default function Todos() {
                             {todo.scope === 'department' ? <Building size={10} /> : <User size={10} />}
                             {todo.scope === 'department' ? todo.department || 'Phòng ban' : 'Cá nhân'}
                           </span>
-                          <button onClick={() => openEditModal(todo)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '2px' }}>
-                            <Edit2 size={13} />
-                          </button>
-                          <button onClick={() => handleDeleteTodo(todo.id)} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', padding: '2px' }}>
-                            <Trash2 size={13} />
-                          </button>
+                          {canEditTodo(todo) ? (
+                            <button onClick={() => openEditModal(todo)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '2px' }} title="Chỉnh sửa">
+                              <Edit2 size={13} />
+                            </button>
+                          ) : (
+                            <span style={{ color: '#f59e0b', fontSize: '0.65rem', padding: '2px', cursor: 'default' }} title="Chỉ xem, không có quyền chỉnh sửa">⚠️</span>
+                          )}
+                          {canDeleteTodo(todo) ? (
+                            <button onClick={() => handleDeleteTodo(todo.id)} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', padding: '2px' }} title="Xóa">
+                              <Trash2 size={13} />
+                            </button>
+                          ) : null}
                         </div>
                       </div>
 
@@ -379,12 +410,14 @@ export default function Todos() {
                           value={todo.status}
                           onChange={(e) => handleStatusChange(todo.id, e.target.value)}
                           className={`form-control status-${todo.status}`}
+                          disabled={!canEditTodo(todo)}
+                          title={!canEditTodo(todo) ? 'Chỉ xem, không có quyền thay đổi trạng thái' : ''}
                         >
-                          <option value="todo">Chuyển: Cần làm</option>
-                          <option value="in_progress">Chuyển: Đang xử lý</option>
-                          <option value="review">Chuyển: Chờ duyệt</option>
-                          <option value="completed">Chuyển: Hoàn thành</option>
-                          <option value="cancelled">Hủy công việc</option>
+                          <option value="todo">Cần làm</option>
+                          <option value="in_progress">Đang xử lý</option>
+                          <option value="review">Chờ duyệt</option>
+                          <option value="completed">Hoàn thành</option>
+                          <option value="cancelled">Hủy</option>
                         </select>
                       </div>
 
@@ -526,10 +559,19 @@ export default function Todos() {
                   <div className="form-group">
                     <label>Hạn hoàn thành (Due Date)</label>
                     <input
-                      type="date"
+                      type="text"
                       className="form-control"
-                      value={formDueDate}
-                      onChange={(e) => setFormDueDate(e.target.value)}
+                      placeholder="DD/MM/YYYY"
+                      value={formDueDate ? formatDate(formDueDate) : ''}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        const parts = val.split('/')
+                        if (parts.length === 3 && parts[0].length >= 1 && parts[1].length >= 1 && parts[2].length === 4) {
+                          setFormDueDate(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`)
+                        } else {
+                          setFormDueDate(val)
+                        }
+                      }}
                     />
                   </div>
 

@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState, useCallback } from 'react'
 import '../styles/shared.css'
-import { formatDate } from '../utils/formatters'
+import { formatDate } from '../utils/date'
 import {
   getEmployees, getDepartments, getEmployeeEquipment,
   createEmployee, updateEmployee, deleteEmployee,
@@ -46,6 +46,7 @@ export default function Employees() {
   const [formOpen, setFormOpen] = useState(false)
   const [editId, setEditId] = useState(null)
   const [formData, setFormData] = useState(emptyForm())
+  const [handoverDisplay, setHandoverDisplay] = useState('')
 
   const [transferEqId, setTransferEqId] = useState(null)
   const [transferSearch, setTransferSearch] = useState('')
@@ -75,8 +76,16 @@ export default function Employees() {
     setEquipLoading(false)
   }
 
+  function parseDateInput(val) {
+    const parts = val.split('/')
+    if (parts.length === 3 && parts[0].length === 2 && parts[1].length === 2 && parts[2].length === 4) {
+      return `${parts[2]}-${parts[1]}-${parts[0]}`
+    }
+    return null
+  }
+
   function openAdd() {
-    setEditId(null); setFormData(emptyForm()); setFormOpen(true)
+    setEditId(null); setFormData(emptyForm()); setHandoverDisplay(''); setFormOpen(true)
   }
 
   function openEdit(emp) {
@@ -92,6 +101,7 @@ export default function Employees() {
       notes: emp.notes || '',
       status: emp.status || 'active',
     })
+    setHandoverDisplay(emp.handover_date ? formatDate(emp.handover_date) : '')
     setFormOpen(true)
   }
 
@@ -302,8 +312,13 @@ export default function Employees() {
                     onChange={e => setFormData({ ...formData, position: e.target.value })} style={inputS} />
                 </FormField>
                 <FormField label="Ngày bắt đầu bàn giao">
-                  <input type="date" value={formData.handover_date}
-                    onChange={e => setFormData({ ...formData, handover_date: e.target.value })} style={inputS} />
+                  <input type="text" placeholder="DD/MM/YYYY" value={handoverDisplay}
+                    onChange={e => {
+                      const v = e.target.value
+                      setHandoverDisplay(v)
+                      const parsed = parseDateInput(v)
+                      if (parsed) setFormData({ ...formData, handover_date: parsed })
+                    }} style={inputS} />
                 </FormField>
                 <FormField label="Số điện thoại">
                   <input type="text" value={formData.phone} placeholder="Nhập SĐT liên hệ"

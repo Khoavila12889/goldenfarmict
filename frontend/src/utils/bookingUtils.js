@@ -51,11 +51,10 @@ export function formatBookingTime(booking) {
   return `${booking.start_time} → ${booking.end_time}`
 }
 
+import { formatDate } from './date'
+
 export function formatDateDDMM(s) {
-  if (!s) return ''
-  const d = new Date(s)
-  if (isNaN(d)) return s
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+  return formatDate(s)
 }
 
 export function validateBookingForm({ resource_id, title, date, startTime, endTime }) {

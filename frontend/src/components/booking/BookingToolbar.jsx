@@ -1,11 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react'
 import { getBookingStats } from '../../utils/bookingUtils'
-
-function fmtDDMM(dateStr) {
-  if (!dateStr) return ''
-  const [y, m, d] = dateStr.split('-')
-  return `${d}/${m}/${y}`
-}
+import { formatDate } from '../../utils/date'
 
 export default function BookingToolbar({
   tab, onNewBooking, onNewTrip,
@@ -15,10 +10,10 @@ export default function BookingToolbar({
   const isBooking = tab === 'bookings'
   const stats = getBookingStats(bookings || [])
   const dateInputRef = useRef(null)
-  const [displayDate, setDisplayDate] = useState(() => fmtDDMM(filterDate))
+  const [displayDate, setDisplayDate] = useState(() => formatDate(filterDate))
 
   useEffect(() => {
-    setDisplayDate(fmtDDMM(filterDate))
+    setDisplayDate(formatDate(filterDate))
   }, [filterDate])
 
   const shiftDay = (delta) => {
@@ -37,7 +32,7 @@ export default function BookingToolbar({
   const handleDateChange = (e) => {
     const val = e.target.value
     if (!val) return
-    setDisplayDate(fmtDDMM(val))
+    setDisplayDate(formatDate(val))
     onFilterChange(val, null, null)
   }
 

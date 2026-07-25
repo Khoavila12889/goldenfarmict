@@ -309,10 +309,11 @@ def update_todo(
     data: TodoUpdate,
     x_user_code: str = Header(None, alias="X-User-Code"),
     x_user_role: str = Header(None, alias="X-User-Role"),
+    x_user_dept: str = Header(None, alias="X-User-Dept"),
     x_user_token: str = Header(None, alias="X-User-Token")
 ):
     conn = get_conn()
-    user = verify_session(x_user_code, x_user_role, "", x_user_token)
+    user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
     todo = conn.execute("SELECT * FROM todos WHERE id = ?", (todo_id,)).fetchone()
     if not todo:
         conn.close()
@@ -321,6 +322,20 @@ def update_todo(
     u_role = user["user_role"]
     u_code = user["user_code"]
     u_dept = user["department"]
+
+    # Permission check: who can update this todo?
+    if u_role == 'admin':
+        pass
+    elif u_role == 'head':
+        if todo['scope'] == 'personal' and todo['creator_code'] != u_code and todo['assignee_code'] != u_code:
+            if todo['department'] and todo['department'] != u_dept:
+                conn.close()
+                raise HTTPException(403, "Trưởng phòng chỉ có thể cập nhật công việc trong phòng ban của mình hoặc công việc của chính mình")
+    else:
+        # user: only creator or assignee
+        if todo['creator_code'] != u_code and todo['assignee_code'] != u_code:
+            conn.close()
+            raise HTTPException(403, "Bạn chỉ có thể cập nhật công việc của chính mình")
 
     # Validate assignee on update
     if data.assignee_code and u_role != 'admin':
@@ -399,12 +414,34 @@ def update_todo(
 def update_todo_status(
     todo_id: int,
     data: TodoStatusUpdate,
+    x_user_code: str = Header(None, alias="X-User-Code"),
+    x_user_role: str = Header(None, alias="X-User-Role"),
+    x_user_dept: str = Header(None, alias="X-User-Dept"),
+    x_user_token: str = Header(None, alias="X-User-Token")
 ):
     conn = get_conn()
+    user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
     todo = conn.execute("SELECT * FROM todos WHERE id = ?", (todo_id,)).fetchone()
     if not todo:
         conn.close()
         raise HTTPException(status_code=404, detail="Không tìm thấy công việc")
+
+    u_role = user["user_role"]
+    u_code = user["user_code"]
+    u_dept = user["department"]
+
+    # Permission check for status update
+    if u_role == 'admin':
+        pass
+    elif u_role == 'head':
+        if todo['scope'] == 'personal' and todo['creator_code'] != u_code and todo['assignee_code'] != u_code:
+            if todo['department'] and todo['department'] != u_dept:
+                conn.close()
+                raise HTTPException(403, "Trưởng phòng chỉ có thể cập nhật trạng thái công việc trong phòng ban của mình")
+    else:
+        if todo['creator_code'] != u_code and todo['assignee_code'] != u_code:
+            conn.close()
+            raise HTTPException(403, "Bạn chỉ có thể cập nhật trạng thái công việc của chính mình")
 
     conn.execute(
         "UPDATE todos SET status = ?, updated_at = (datetime('now','localtime')) WHERE id = ?",
@@ -421,14 +458,30 @@ def delete_todo(
     todo_id: int,
     x_user_code: str = Header(None, alias="X-User-Code"),
     x_user_role: str = Header(None, alias="X-User-Role"),
+    x_user_dept: str = Header(None, alias="X-User-Dept"),
     x_user_token: str = Header(None, alias="X-User-Token")
 ):
     conn = get_conn()
-    user = verify_session(x_user_code, x_user_role, "", x_user_token)
+    user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
     todo = conn.execute("SELECT * FROM todos WHERE id = ?", (todo_id,)).fetchone()
     if not todo:
         conn.close()
         raise HTTPException(status_code=404, detail="Không tìm thấy công việc")
+
+    u_role = user["user_role"]
+    u_code = user["user_code"]
+    u_dept = user["department"]
+
+    if u_role == 'admin':
+        pass
+    elif u_role == 'head':
+        if todo['scope'] == 'personal' and todo['creator_code'] != u_code and todo['assignee_code'] != u_code:
+            if todo['department'] and todo['department'] != u_dept:
+                conn.close()
+                raise HTTPException(403, "Trưởng phòng chỉ có thể xóa công việc trong phòng ban của mình")
+    else:
+        conn.close()
+        raise HTTPException(403, "Bạn không có quyền xóa công việc")
 
     conn.execute("DELETE FROM todo_subtasks WHERE todo_id = ?", (todo_id,))
     conn.execute("DELETE FROM todos WHERE id = ?", (todo_id,))

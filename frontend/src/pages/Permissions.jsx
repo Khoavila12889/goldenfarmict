@@ -4,6 +4,7 @@ import {
   Users, BookOpen, FolderOpen, Building, Trash2, Plus, ChevronDown
 } from 'lucide-react'
 import '../styles/booking.css'
+import { formatDate } from '../utils/date'
 
 const MODULES = [
   { key: 'employees', label: 'Nhân viên', group: 'admin', desc: 'Quản lý thông tin nhân viên' },
@@ -394,6 +395,14 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
     return new URLSearchParams({ admin_code: adminCode, token, role })
   }
 
+  function parseDateInput(val) {
+    const parts = val.split('/')
+    if (parts.length === 3 && parts[0].length === 2 && parts[1].length === 2 && parts[2].length === 4) {
+      return `${parts[2]}-${parts[1]}-${parts[0]}`
+    }
+    return null
+  }
+
   useEffect(() => {
     Promise.all([
       fetch(`/api/documents/config?user_code=${userCode}&user_role=${role}`).then(r => r.json()),
@@ -625,8 +634,11 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
                 onChange={k => setEveryonePerms(p => ({ ...p, [k]: !p[k] }))}
                 showDownload />
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.5rem' }}>
-                <input type="date" value={everyoneExpires}
-                  onChange={e => setEveryoneExpires(e.target.value)}
+                <input type="text" placeholder="DD/MM/YYYY" value={everyoneExpires ? formatDate(everyoneExpires) : ''}
+                  onChange={e => {
+                    const parsed = parseDateInput(e.target.value)
+                    if (parsed || !e.target.value) setEveryoneExpires(parsed || '')
+                  }}
                   style={{
                     flex: 1, padding: '0.3rem 0.5rem', borderRadius: '6px', border: '1px solid var(--bk-border)',
                     fontSize: '0.78rem', fontFamily: 'inherit', background: 'var(--bk-surface)',
@@ -698,8 +710,11 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
                             can_delete: p.can_delete, can_reshare: p.can_reshare,
                           }} onChange={k => updateDeptPerm(p, k)} showDownload />
                           <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginTop: '0.4rem' }}>
-                            <input type="date" value={p.expires_at || ''}
-                              onChange={e => updateDeptExpires(p, e.target.value)}
+                            <input type="text" placeholder="DD/MM/YYYY" value={p.expires_at ? formatDate(p.expires_at) : ''}
+                              onChange={e => {
+                                const parsed = parseDateInput(e.target.value)
+                                if (parsed || !e.target.value) updateDeptExpires(p, parsed || '')
+                              }}
                               style={{
                                 flex: 1, padding: '0.25rem 0.4rem', borderRadius: '6px',
                                 border: '1px solid var(--bk-border)', fontSize: '0.75rem',
@@ -744,8 +759,11 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
                 onChange={k => setDeptPerms(p => ({ ...p, [k]: !p[k] }))}
                 showDownload />
               <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginTop: '0.5rem' }}>
-                <input type="date" value={deptExpires}
-                  onChange={e => setDeptExpires(e.target.value)}
+                <input type="text" placeholder="DD/MM/YYYY" value={deptExpires ? formatDate(deptExpires) : ''}
+                  onChange={e => {
+                    const parsed = parseDateInput(e.target.value)
+                    if (parsed || !e.target.value) setDeptExpires(parsed || '')
+                  }}
                   style={{
                     flex: 1, padding: '0.3rem 0.5rem', borderRadius: '6px',
                     border: '1px solid var(--bk-border)', fontSize: '0.78rem',

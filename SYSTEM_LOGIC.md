@@ -544,7 +544,8 @@ styles/
 └── shared.css                   # Shared: .tbl, .panel, .module-header, .ticket-user-*
 utils/
 ├── bookingUtils.js              # isExpired, isUpcoming, getStatusLabel, validateBookingForm
-├── formatters.js                # Number/date formatting
+├── formatters.js                # Re-exports from date.js (backward compat)
+├── date.js                      # CENTRALIZED date utils: formatDate, parseDateInput, toISODate, todayISO, SYSTEM_DATE_FORMAT
 └── timeUtils.js                 # today(), nearestDate(), etc.
 assets/                          # logo.png, background.webp
 template/                        # luong.docx, luong.xlsx (salary PDF template)
@@ -572,7 +573,7 @@ template/                        # luong.docx, luong.xlsx (salary PDF template)
 
 **SSE events**: `todo_created`, `todo_updated`, `todo_deleted`.
 
-**Date format — QUY TẮC TOÀN CỤC:** Hiển thị `dd/mm/yyyy` dùng `formatDate()` từ `utils/formatters.js`. Database lưu ISO `yyyy-mm-dd`. `<input type="date">` dùng value ISO `yyyy-mm-dd`, browser tự locale hoá hiển thị. Tất cả module PHẢI dùng `formatDate()` cho mọi date display.
+**Date format — QUY TẮC TOÀN CỤC (D13):** Mọi ngày tháng hiển thị trên UI PHẢI dùng format `DD/MM/YYYY` qua `formatDate()` từ `utils/date.js` (module tập trung). Database lưu ISO `yyyy-mm-dd`. **KHÔNG dùng** `<input type="date">` (phụ thuộc locale trình duyệt). Thay vào đó dùng `<input type="text" placeholder="DD/MM/YYYY">` với `parseDateInput()` để chuyển `DD/MM/YYYY` → `yyyy-mm-dd` trước khi gửi API. `formatDate()` nhận ISO string, trả về `DD/MM/YYYY[ HH:mm]`.
 
 ---
 

@@ -4,7 +4,7 @@ import {
   ChevronLeft, ChevronRight, Calendar, Search, Download, Lock, Save,
   User, Building, Edit3, X, Eye, EyeOff, Printer, FileDown, Trash2
 } from 'lucide-react'
-import { formatDate } from '../utils/formatters'
+import { formatDate } from '../utils/date'
 import {
   getSalaryEmployees, getSalaryView, updateSalaryFields,
   exportSalaryPdf, batchExportSalaryPdf, uploadSalaryExcel,

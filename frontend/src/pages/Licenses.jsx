@@ -8,6 +8,7 @@ import {
   getSoftwareCategories, createSoftwareCategory, updateSoftwareCategory, deleteSoftwareCategory,
   getSoftwareItems, createSoftwareItem, updateSoftwareItem, deleteSoftwareItem, uploadSoftwareContract,
 } from '../services/api'
+import { formatDate } from '../utils/date'
 
 const EDITABLE = ['license_key', 'product_name', 'activated', 'expiry_date', 'notes']
 const LABELS = {
@@ -25,15 +26,6 @@ function getExpiryInfo(dateStr) {
   if (diffDays < 0) return { class: 'sw-exp-danger', label: 'Quá hạn', badge: 'sw-badge-danger' }
   if (diffDays <= 30) return { class: 'sw-exp-warning', label: 'Sắp hết hạn', badge: 'sw-badge-warning' }
   return { class: '', label: '', badge: '' }
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return ''
-  try {
-    const d = new Date(dateStr)
-    if (isNaN(d.getTime())) return dateStr
-    return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
-  } catch { return dateStr }
 }
 
 export default function Licenses() {
@@ -58,6 +50,8 @@ export default function Licenses() {
   const [selectedItem, setSelectedItem] = useState(null)
   const [itemForm, setItemForm] = useState({ name: '', registered_date: '', expiration_date: '', notes: '' })
   const [itemFormOpen, setItemFormOpen] = useState(false)
+  const [regDisplay, setRegDisplay] = useState('')
+  const [expDisplay, setExpDisplay] = useState('')
   const [itemEditId, setItemEditId] = useState(null)
 
   // Category management
@@ -149,9 +143,19 @@ export default function Licenses() {
 
   // ─── Items Tab ────────────────────────────────────────────
 
+  function parseDateInput(val) {
+    const parts = val.split('/')
+    if (parts.length === 3 && parts[0].length === 2 && parts[1].length === 2 && parts[2].length === 4) {
+      return `${parts[2]}-${parts[1]}-${parts[0]}`
+    }
+    return null
+  }
+
   function openItemAdd() {
     setItemEditId(null)
     setItemForm({ name: '', registered_date: '', expiration_date: '', notes: '' })
+    setRegDisplay('')
+    setExpDisplay('')
     setItemFormOpen(true)
   }
 
@@ -163,6 +167,8 @@ export default function Licenses() {
       expiration_date: item.expiration_date || '',
       notes: item.notes || '',
     })
+    setRegDisplay(item.registered_date ? formatDate(item.registered_date) : '')
+    setExpDisplay(item.expiration_date ? formatDate(item.expiration_date) : '')
     setItemFormOpen(true)
   }
 
@@ -533,14 +539,22 @@ export default function Licenses() {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                     <div className="bk-form-group">
                       <label className="bk-form-label">Ngày đăng ký</label>
-                      <input type="date" value={itemForm.registered_date}
-                        onChange={e => setItemForm({ ...itemForm, registered_date: e.target.value })}
+                      <input type="text" placeholder="DD/MM/YYYY" value={regDisplay}
+                        onChange={e => {
+                          setRegDisplay(e.target.value)
+                          const parsed = parseDateInput(e.target.value)
+                          if (parsed) setItemForm({ ...itemForm, registered_date: parsed })
+                        }}
                         className="bk-input" />
                     </div>
                     <div className="bk-form-group">
                       <label className="bk-form-label">Ngày hết hạn</label>
-                      <input type="date" value={itemForm.expiration_date}
-                        onChange={e => setItemForm({ ...itemForm, expiration_date: e.target.value })}
+                      <input type="text" placeholder="DD/MM/YYYY" value={expDisplay}
+                        onChange={e => {
+                          setExpDisplay(e.target.value)
+                          const parsed = parseDateInput(e.target.value)
+                          if (parsed) setItemForm({ ...itemForm, expiration_date: parsed })
+                        }}
                         className="bk-input" />
                     </div>
                   </div>

@@ -4,7 +4,7 @@ import {
   revokeEquipment, allocateEquipment, getEquipmentHistory,
   getEmployees,
 } from '../services/api'
-import { formatDate } from '../utils/formatters'
+import { formatDate } from '../utils/date'
 import {
   Monitor, Laptop, Printer, Monitor as MonitorIcon, Keyboard, Mouse,
   Smartphone, Tablet, Package, Plus, Search, Download, RefreshCw,
@@ -96,6 +96,7 @@ export default function Equipment() {
   const [showHist, setShowHist] = useState(false)
 
   const [showForm, setShowForm] = useState(false)
+  const [issuedDisplay, setIssuedDisplay] = useState('')
   const [editId, setEditId] = useState(null)
   const [form, setForm] = useState(emptyFormData())
   const [saving, setSaving] = useState(false)
@@ -187,6 +188,7 @@ export default function Equipment() {
   function openCreate() {
     setEditId(null)
     setForm(emptyFormData())
+    setIssuedDisplay('')
     setShowForm(true)
   }
 
@@ -202,6 +204,7 @@ export default function Equipment() {
       notes: eq.notes || '',
       issued_date: eq.issued_date || '',
     })
+    setIssuedDisplay(eq.issued_date ? formatDate(eq.issued_date) : '')
     setShowForm(true)
   }
 
@@ -1443,8 +1446,14 @@ export default function Equipment() {
                 </div>
                 <div className="eq-form-group" style={{ maxWidth: 250 }}>
                   <label className="eq-form-label">Ngày cấp</label>
-                  <input type="date" className="eq-form-input" value={form.issued_date}
-                    onChange={e => setForm({ ...form, issued_date: e.target.value })} />
+                  <input type="text" className="eq-form-input" placeholder="DD/MM/YYYY" value={issuedDisplay}
+                    onChange={e => {
+                      setIssuedDisplay(e.target.value)
+                      const parts = e.target.value.split('/')
+                      if (parts.length === 3 && parts[0].length === 2 && parts[1].length === 2 && parts[2].length === 4) {
+                        setForm({ ...form, issued_date: `${parts[2]}-${parts[1]}-${parts[0]}` })
+                      }
+                    }} />
                 </div>
               </div>
 

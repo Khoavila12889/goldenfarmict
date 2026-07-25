@@ -1,4 +1,13 @@
-import React from 'react'
+import React, { useState } from 'react'
+import { formatDate } from '../../utils/date'
+
+function parseDateInput(val) {
+  const parts = val.split('/')
+  if (parts.length === 3 && parts[0].length === 2 && parts[1].length === 2 && parts[2].length === 4) {
+    return `${parts[2]}-${parts[1]}-${parts[0]}`
+  }
+  return null
+}
 
 export default function BookingFilter({ filterDate, filterType, filterStatus, dateSet, onFilterChange }) {
   const hasDate = dateSet.has(filterDate)
@@ -17,10 +26,14 @@ export default function BookingFilter({ filterDate, filterType, filterStatus, da
       <div className="bk-date-nav">
         <button className="bk-date-nav-btn" onClick={() => shiftDay(-1)} title="Ngày trước">‹</button>
         <input
-          type="date"
+          type="text"
           className="bk-input"
-          value={filterDate}
-          onChange={e => onFilterChange(e.target.value, null, null)}
+          placeholder="DD/MM/YYYY"
+          value={formatDate(filterDate)}
+          onChange={e => {
+            const parsed = parseDateInput(e.target.value)
+            if (parsed) onFilterChange(parsed, null, null)
+          }}
           style={hasDate ? { borderColor: '#f59e0b' } : {}}
         />
         <button className="bk-date-nav-btn" onClick={() => shiftDay(1)} title="Ngày sau">›</button>

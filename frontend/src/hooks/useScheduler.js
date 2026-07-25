@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   getEmployeeByCode, getResources, getBookingDates,
 } from '../services/api'
-import { today, nearestDate } from '../utils/timeUtils'
+import { today } from '../utils/timeUtils'
 import useBookings from './useBookings'
 
 export default function useScheduler() {
@@ -36,18 +36,16 @@ export default function useScheduler() {
       setResources(resourcesData)
       const dates = datesRes.data?.data || []
       setBookingDates(dates)
-      const nearest = nearestDate(dates, today())
-      if (nearest) setFilterDate(nearest)
-      return { resources: resourcesData, dates, nearest }
+      return { resources: resourcesData, dates }
     } catch {
-      return { resources: [], dates: [], nearest: null }
+      return { resources: [], dates: [] }
     }
   }, [userCode])
 
   useEffect(() => {
-    loadInitial().then(({ nearest }) => {
+    loadInitial().then(() => {
       const f = filterRef.current
-      loadBookings(nearest || f.filterDate, f.filterType, f.filterStatus)
+      loadBookings(f.filterDate, f.filterType, f.filterStatus)
     })
   }, [loadInitial, loadBookings])
 

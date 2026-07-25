@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Users, Monitor, Key, Ticket, CheckCircle, Settings, Calendar, Receipt, Folder, Shield, Menu, X, User, Lock, Eye, EyeOff, CheckSquare } from 'lucide-react'
+import { LayoutDashboard, Users, Monitor, Key, Ticket, CheckCircle, Settings, Calendar, Receipt, Folder, Shield, Menu, X, User, Lock, Eye, EyeOff, CheckSquare, HelpCircle } from 'lucide-react'
 import { changePassword } from '../services/api'
 
 const iconMap = {
@@ -18,6 +18,7 @@ const iconMap = {
   salaryAdmin: Receipt,
   profile: User,
   permissions: Shield,
+  help: HelpCircle,
 }
 
 const allNavItems = [
@@ -34,6 +35,7 @@ const allNavItems = [
   { path: '/salary-slip', label: 'Phiếu lương', icon: 'salary', roles: ['user', 'head', 'admin'] },
   { path: '/salary-slip-admin', label: 'Quản lý lương', icon: 'salaryAdmin', roles: ['head', 'admin'] },
   { path: '/permissions', label: 'Phân quyền', icon: 'permissions', roles: ['head', 'admin'] },
+  { path: '/help', label: 'Trợ giúp', icon: 'help', roles: ['user', 'head', 'admin'] },
 ]
 
 const MODULE_MAP = {

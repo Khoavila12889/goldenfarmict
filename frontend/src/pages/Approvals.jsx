@@ -4,7 +4,7 @@ import {
   createApprovalRequest, submitApprovalRequest, cancelApprovalRequest,
   approveRequest, rejectRequest, getWorkflows,
 } from '../services/api'
-import { formatDate } from '../utils/formatters'
+import { formatDate } from '../utils/date'
 import {
   FileCheck, FileX, Clock, CheckCircle, XCircle, AlertTriangle,
   Send, Plus, Search, X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Loader2,

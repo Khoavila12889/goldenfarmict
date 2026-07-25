@@ -1,10 +1,21 @@
 import React, { useState, useEffect } from 'react'
+import { formatDate } from '../../utils/date'
+
+function parseDateInput(val) {
+  const parts = val.split('/')
+  if (parts.length === 3 && parts[0].length === 2 && parts[1].length === 2 && parts[2].length === 4) {
+    return `${parts[2]}-${parts[1]}-${parts[0]}`
+  }
+  return null
+}
 
 export default function BusinessTripDialog({ isOpen, onClose, onSubmit, employee, initialData }) {
   const [destination, setDestination] = useState('')
   const [purpose, setPurpose] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [startDisplay, setStartDisplay] = useState('')
+  const [endDisplay, setEndDisplay] = useState('')
   const [notes, setNotes] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -16,18 +27,40 @@ export default function BusinessTripDialog({ isOpen, onClose, onSubmit, employee
         setPurpose(initialData.purpose || '')
         setStartDate(initialData.start_date || '')
         setEndDate(initialData.end_date || '')
+        setStartDisplay(initialData.start_date ? formatDate(initialData.start_date) : '')
+        setEndDisplay(initialData.end_date ? formatDate(initialData.end_date) : '')
         setNotes(initialData.notes || '')
       } else {
         setDestination('')
         setPurpose('')
         setStartDate('')
         setEndDate('')
+        setStartDisplay('')
+        setEndDisplay('')
         setNotes('')
       }
       setError('')
       setSubmitting(false)
     }
   }, [isOpen, initialData])
+
+  function handleStartChange(val) {
+    setStartDisplay(val)
+    const parsed = parseDateInput(val)
+    if (parsed) {
+      setStartDate(parsed)
+      if (endDate && parsed > endDate) {
+        setEndDate(parsed)
+        setEndDisplay(val)
+      }
+    }
+  }
+
+  function handleEndChange(val) {
+    setEndDisplay(val)
+    const parsed = parseDateInput(val)
+    if (parsed) setEndDate(parsed)
+  }
 
   if (!isOpen) return null
 
@@ -94,17 +127,13 @@ export default function BusinessTripDialog({ isOpen, onClose, onSubmit, employee
           <div className="bk-form-row">
             <div className="bk-form-group">
               <label className="bk-form-label">Ngày đi *</label>
-              <input className="bk-input" type="date"
-                value={startDate} onChange={e => {
-                  setStartDate(e.target.value)
-                  if (endDate && e.target.value > endDate) setEndDate(e.target.value)
-                }} />
+              <input className="bk-input" type="text" placeholder="DD/MM/YYYY"
+                value={startDisplay} onChange={e => handleStartChange(e.target.value)} />
             </div>
             <div className="bk-form-group">
               <label className="bk-form-label">Ngày về *</label>
-              <input className="bk-input" type="date"
-                value={endDate} onChange={e => setEndDate(e.target.value)}
-                min={startDate} />
+              <input className="bk-input" type="text" placeholder="DD/MM/YYYY"
+                value={endDisplay} onChange={e => handleEndChange(e.target.value)} />
             </div>
           </div>
 
