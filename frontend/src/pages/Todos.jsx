@@ -4,7 +4,7 @@ import {
   Clock, AlertCircle, CheckCircle2, MoreVertical, Trash2, Edit2,
   Users, Building, ListTodo, Layers, RefreshCw, X, ChevronRight
 } from 'lucide-react'
-import { getTodos, getTodoStats, createTodo, updateTodo, updateTodoStatus, deleteTodo, getEmployees, getDepartments } from '../services/api'
+import { getTodos, getTodoStats, createTodo, updateTodo, updateTodoStatus, deleteTodo, getTodoAssignees, getDepartments } from '../services/api'
 import './Todos.css'
 
 export default function Todos() {
@@ -68,9 +68,14 @@ export default function Todos() {
 
   const loadAuxData = async () => {
     try {
-      const [empRes, deptRes] = await Promise.all([getEmployees(), getDepartments()])
+      const [empRes, deptRes] = await Promise.all([getTodoAssignees(), getDepartments()])
       setEmployees(empRes.data?.data || [])
-      setDepartments(deptRes.data?.data || [])
+      const allDepts = deptRes.data?.data || []
+      if (userRole === 'admin') {
+        setDepartments(allDepts)
+      } else {
+        setDepartments(allDepts.filter(d => d.name === userDept))
+      }
     } catch (e) {
       console.error(e)
     }
@@ -464,16 +469,26 @@ export default function Todos() {
                   {formScope === 'department' && (
                     <div className="form-group">
                       <label>Chọn Phòng ban</label>
-                      <select
-                        className="form-control"
-                        value={formDept}
-                        onChange={(e) => setFormDept(e.target.value)}
-                      >
-                        <option value="">-- Chọn phòng ban --</option>
-                        {departments.map(d => (
-                          <option key={d.id} value={d.name}>{d.name}</option>
-                        ))}
-                      </select>
+                      {userRole === 'admin' ? (
+                        <select
+                          className="form-control"
+                          value={formDept}
+                          onChange={(e) => setFormDept(e.target.value)}
+                        >
+                          <option value="">-- Chọn phòng ban --</option>
+                          {departments.map(d => (
+                            <option key={d.id || d.name} value={d.name}>{d.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={formDept}
+                          readOnly
+                          style={{ opacity: 0.7 }}
+                        />
+                      )}
                     </div>
                   )}
                 </div>

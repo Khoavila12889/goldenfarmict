@@ -224,6 +224,24 @@ def create_todo(
     creator_name = user["full_name"]
     creator_dept = user["department"]
 
+    u_role = user["user_role"]
+
+    # Validate assignee permission
+    if u_role != 'admin' and data.assignee_code:
+        if u_role == 'head':
+            if not conn.execute("SELECT id FROM employees WHERE employee_code = ? AND department = ?", (data.assignee_code, creator_dept)).fetchone():
+                conn.close()
+                raise HTTPException(403, "Trưởng phòng chỉ có thể giao việc cho nhân viên trong phòng ban của mình")
+        else:
+            if data.assignee_code != creator_code:
+                conn.close()
+                raise HTTPException(403, "Người dùng chỉ có thể giao việc cho chính mình")
+
+    # Validate department scope for non-admin
+    if u_role != 'admin' and data.scope == 'department' and data.department and data.department != creator_dept:
+        conn.close()
+        raise HTTPException(403, f"Bạn chỉ có thể tạo công việc trong phòng ban {creator_dept}")
+
     target_dept = data.department if data.department else (creator_dept if data.scope == 'department' else "")
     
     # Insert todo
@@ -253,6 +271,38 @@ def create_todo(
     events.publish("todo_created", {"id": todo_id, "title": data.title, "scope": data.scope, "department": target_dept})
     return {"status": "success", "id": todo_id, "message": "Công việc đã được tạo thành công"}
 
+
+@router.get("/assignees")
+def get_assignees(
+    x_user_code: str = Header(None, alias="X-User-Code"),
+    x_user_role: str = Header(None, alias="X-User-Role"),
+    x_user_dept: str = Header(None, alias="X-User-Dept"),
+    x_user_token: str = Header(None, alias="X-User-Token")
+):
+    conn = get_conn()
+    user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
+    u_role = user["user_role"]
+    u_code = user["user_code"]
+    u_dept = user["department"]
+
+    if u_role == 'admin':
+        rows = conn.execute(
+            "SELECT employee_code, full_name, department, position FROM employees WHERE status='active' ORDER BY department, full_name"
+        ).fetchall()
+    elif u_role == 'head':
+        rows = conn.execute(
+            "SELECT employee_code, full_name, department, position FROM employees WHERE status='active' AND department = ? ORDER BY full_name",
+            (u_dept,)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT employee_code, full_name, department, position FROM employees WHERE status='active' AND employee_code = ?",
+            (u_code,)
+        ).fetchall()
+
+    conn.close()
+    return {"status": "success", "data": [dict(r) for r in rows]}
+
 @router.put("/{todo_id}")
 def update_todo(
     todo_id: int,
@@ -267,6 +317,27 @@ def update_todo(
     if not todo:
         conn.close()
         raise HTTPException(status_code=404, detail="Không tìm thấy công việc")
+
+    u_role = user["user_role"]
+    u_code = user["user_code"]
+    u_dept = user["department"]
+
+    # Validate assignee on update
+    if data.assignee_code and u_role != 'admin':
+        if u_role == 'head':
+            if not conn.execute("SELECT id FROM employees WHERE employee_code = ? AND department = ?", (data.assignee_code, u_dept)).fetchone():
+                conn.close()
+                raise HTTPException(403, "Trưởng phòng chỉ có thể giao việc cho nhân viên trong phòng ban của mình")
+        else:
+            if data.assignee_code != u_code:
+                conn.close()
+                raise HTTPException(403, "Người dùng chỉ có thể giao việc cho chính mình")
+
+    # Validate department on update
+    if data.department and u_role != 'admin':
+        if data.department != u_dept:
+            conn.close()
+            raise HTTPException(403, "Bạn chỉ có thể gán công việc trong phòng ban của mình")
 
     # Update todo fields
     update_fields = []

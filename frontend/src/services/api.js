@@ -407,6 +407,21 @@ export function updateTodoStatus(id, status) {
   return api.patch(`/todos/${id}/status`, { status })
 }
 
+export function getTodoAssignees() {
+  const userCode = sessionStorage.getItem('user_code') || ''
+  const userRole = sessionStorage.getItem('user_role') || ''
+  const userDept = sessionStorage.getItem('user_department') || ''
+  const userToken = sessionStorage.getItem('token') || ''
+  return api.get('/todos/assignees', {
+    headers: {
+      'X-User-Code': userCode,
+      'X-User-Role': userRole,
+      'X-User-Dept': userDept,
+      'X-User-Token': userToken
+    }
+  })
+}
+
 export function deleteTodo(id) {
   const userCode = sessionStorage.getItem('user_code') || ''
   const userRole = sessionStorage.getItem('user_role') || ''
