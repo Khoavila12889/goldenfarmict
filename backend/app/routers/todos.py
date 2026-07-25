@@ -2,6 +2,7 @@ from typing import Optional, List
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Query, Header
 from app.core.database import get_conn
+from app.core.auth import verify_token
 from app.core import events
 
 class SubTaskItem(BaseModel):
@@ -40,11 +41,47 @@ class TodoStatusUpdate(BaseModel):
 
 router = APIRouter(prefix="/api/todos", tags=["todos"])
 
-def verify_session(x_user_code: Optional[str], x_user_role: Optional[str], x_user_dept: Optional[str]):
+def verify_session(x_user_code: Optional[str], x_user_role: Optional[str], x_user_dept: Optional[str], x_user_token: Optional[str] = None):
+    code = (x_user_code or "").strip()
+    if not code:
+        raise HTTPException(status_code=401, detail="Thiếu thông tin người dùng")
+
+    # Validate token if provided
+    if x_user_token:
+        if not verify_token(code, x_user_token, x_user_role or "user"):
+            raise HTTPException(status_code=401, detail="Token không hợp lệ")
+
+    conn = get_conn()
+    # Verify user exists in company users table
+    user = conn.execute(
+        "SELECT u.role FROM users u WHERE u.employee_code = ?",
+        (code,)
+    ).fetchone()
+    if not user:
+        conn.close()
+        raise HTTPException(status_code=401, detail="Người dùng không tồn tại trong hệ thống")
+
+    # Get employee info and resolve department from departments table
+    emp = conn.execute(
+        "SELECT e.full_name, e.department FROM employees e WHERE e.employee_code = ?",
+        (code,)
+    ).fetchone()
+    full_name = emp['full_name'] if emp else code
+    emp_dept = emp['department'] if emp else ""
+
+    # Resolve department: use our departments table name if matching
+    dept_entry = conn.execute(
+        "SELECT name FROM departments WHERE LOWER(name) = LOWER(?)",
+        (emp_dept,)
+    ).fetchone()
+    resolved_dept = dept_entry['name'] if dept_entry else emp_dept
+
+    conn.close()
     return {
-        "user_code": x_user_code or "",
-        "user_role": x_user_role or "user",
-        "department": x_user_dept or ""
+        "user_code": code,
+        "user_role": user['role'],
+        "department": resolved_dept,
+        "full_name": full_name
     }
 
 @router.get("")
@@ -55,10 +92,11 @@ def get_todos(
     search: str = Query("", description="Keywords"),
     x_user_code: str = Header(None, alias="X-User-Code"),
     x_user_role: str = Header(None, alias="X-User-Role"),
-    x_user_dept: str = Header(None, alias="X-User-Dept")
+    x_user_dept: str = Header(None, alias="X-User-Dept"),
+    x_user_token: str = Header(None, alias="X-User-Token")
 ):
     conn = get_conn()
-    user = verify_session(x_user_code, x_user_role, x_user_dept)
+    user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
     u_code = user["user_code"]
     u_role = user["user_role"]
     u_dept = user["department"]
@@ -128,10 +166,11 @@ def get_todos(
 def get_todo_stats(
     x_user_code: str = Header(None, alias="X-User-Code"),
     x_user_role: str = Header(None, alias="X-User-Role"),
-    x_user_dept: str = Header(None, alias="X-User-Dept")
+    x_user_dept: str = Header(None, alias="X-User-Dept"),
+    x_user_token: str = Header(None, alias="X-User-Token")
 ):
     conn = get_conn()
-    user = verify_session(x_user_code, x_user_role, x_user_dept)
+    user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
     u_code = user["user_code"]
     u_role = user["user_role"]
     u_dept = user["department"]
@@ -176,16 +215,14 @@ def create_todo(
     data: TodoCreate,
     x_user_code: str = Header(None, alias="X-User-Code"),
     x_user_role: str = Header(None, alias="X-User-Role"),
-    x_user_dept: str = Header(None, alias="X-User-Dept")
+    x_user_dept: str = Header(None, alias="X-User-Dept"),
+    x_user_token: str = Header(None, alias="X-User-Token")
 ):
     conn = get_conn()
-    user = verify_session(x_user_code, x_user_role, x_user_dept)
-    creator_code = user["user_code"] or "ADMIN"
-    
-    # Get creator name
-    creator_emp = conn.execute("SELECT full_name, department FROM employees WHERE employee_code = ?", (creator_code,)).fetchone()
-    creator_name = creator_emp['full_name'] if creator_emp else creator_code
-    creator_dept = creator_emp['department'] if creator_emp else user["department"]
+    user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
+    creator_code = user["user_code"]
+    creator_name = user["full_name"]
+    creator_dept = user["department"]
 
     target_dept = data.department if data.department else (creator_dept if data.scope == 'department' else "")
     
@@ -221,9 +258,11 @@ def update_todo(
     todo_id: int,
     data: TodoUpdate,
     x_user_code: str = Header(None, alias="X-User-Code"),
-    x_user_role: str = Header(None, alias="X-User-Role")
+    x_user_role: str = Header(None, alias="X-User-Role"),
+    x_user_token: str = Header(None, alias="X-User-Token")
 ):
     conn = get_conn()
+    user = verify_session(x_user_code, x_user_role, "", x_user_token)
     todo = conn.execute("SELECT * FROM todos WHERE id = ?", (todo_id,)).fetchone()
     if not todo:
         conn.close()
@@ -310,9 +349,11 @@ def update_todo_status(
 def delete_todo(
     todo_id: int,
     x_user_code: str = Header(None, alias="X-User-Code"),
-    x_user_role: str = Header(None, alias="X-User-Role")
+    x_user_role: str = Header(None, alias="X-User-Role"),
+    x_user_token: str = Header(None, alias="X-User-Token")
 ):
     conn = get_conn()
+    user = verify_session(x_user_code, x_user_role, "", x_user_token)
     todo = conn.execute("SELECT * FROM todos WHERE id = ?", (todo_id,)).fetchone()
     if not todo:
         conn.close()

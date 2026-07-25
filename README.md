@@ -292,12 +292,18 @@ Chức năng:
 | Mã NV | Vai trò | Mật khẩu |
 |-------|---------|----------|
 | `admin` | admin | `admin` |
-| `NV001` | user | `NV001` |
+| `administrator` | admin | `administrator` |
 
-Database `company.db` đã bao gồm dữ liệu mẫu + 355 user thật từ Nextcloud. Để seed lại:
+Database `company.db` đã bao gồm 355 user thật từ Nextcloud (`oc_users.csv`). Để seed lại:
 ```bash
 cd backend
 python -c "from app.core.auth import seed_users; from app.core.database import get_conn; conn=get_conn(); seed_users(conn); conn.close()"
+```
+
+Seed demo todos (dùng user thật, idempotent):
+```bash
+cd backend
+python -m app.utils.seed_todos_demo
 ```
 
 ## Project Structure
@@ -581,30 +587,32 @@ goldenfarm-ict-web/
 
 | Table | Records | Ghi chú |
 |-------|---------|---------|
-| `employees` | Nhân viên | `employee_code` unique, `status` (active/inactive) |
-| `equipment` | Thiết bị CNTT | `asset_code` (TS-XXXXX), `lifecycle_status`, `storage` (in_stock/issued) |
-| `licenses` | License key | `license_key` UNIQUE, gán theo equipment_id |
-| `lic_categories` | Danh mục license | name, icon, order_index |
-| `lic_items` | Mục license | category_id, name, registered_date, expiration_date, contract_info, contract_file |
-| `equipment_history` | Lịch sử bàn giao | handover_date, return_date, old/new status, changed_by |
-| `tickets` | Yêu cầu hỗ trợ IT | employee_id set NULL khi xoá NV |
-| `users` | Tài khoản | employee_code + password_hash + role |
-| `user_permissions` | Permission module theo user | employee_code + module + can_view + can_edit |
-| `resources` | Xe + Phòng họp | is_active, mặc định 6 resources |
-| `bookings` | Đặt lịch | resource_id, book_date, start/end_time, status |
-| `business_trips` | Công tác | employee_code, destination, start/end_date, status |
-| `workflow_templates` | Mẫu quy trình phê duyệt | name, icon, is_active |
-| `workflow_steps` | Bước duyệt | template_id, step_order, approver_type/role/department_match |
-| `approval_requests` | Phiếu yêu cầu duyệt | template_id, requester_code, status, current_step, total_steps |
-| `approval_logs` | Nhật ký phê duyệt | request_id, step_order, approver_code, action, comment |
-| `departments` | Phòng ban | name UNIQUE, head_id → employees.id |
-| `storage_config` | Cấu hình storage SMB/FTP/GDrive | type, host, port, username, password, remote_path, domain, is_active |
-| `storage_permissions` | Phân quyền thư mục storage | storage_id, folder_path, target_type (EVERYONE/DEPARTMENT), can_read/write/edit/delete, allow_download, can_reshare, expires_at |
-| `salary_slips` | Phiếu lương (dạng cột) | employee_code, month, basic_salary, allowances, bonus, deductions, net_salary |
-| `salaries` | Phiếu lương (dạng JSON) | employee_code, month, password, data_json — ON CONFLICT upsert |
-| `salary_upload_logs` | Lịch sử upload Excel | month, filename, uploaded_by, record_count |
-| `software_categories` | Danh mục phần mềm | name, icon_name, order_index |
-| `software_items` | Mục phần mềm | category_id, name, registered_date, expiration_date, contract_info |
+| `employees` | 354 | `employee_code` unique, `status` (active/inactive) |
+| `equipment` | 100 | `asset_code` (TS-XXXXX), `lifecycle_status`, `storage` (in_stock/issued) |
+| `licenses` | 216 | `license_key` UNIQUE, gán theo equipment_id |
+| `lic_categories` | 4 | name, icon, order_index |
+| `lic_items` | 0 | category_id, name, registered_date, expiration_date, contract_info |
+| `equipment_history` | 1 | handover_date, return_date, old/new status, changed_by |
+| `tickets` | 126 | Yêu cầu hỗ trợ IT |
+| `users` | 355 | employee_code + password_hash + role |
+| `user_permissions` | 10 | Permission module theo user |
+| `resources` | 7 | Xe + Phòng họp, is_active |
+| `bookings` | 81 | resource_id, book_date, start/end_time, status |
+| `business_trips` | 21 | employee_code, destination, start/end_date, status |
+| `workflow_templates` | 3 | name, icon, is_active |
+| `workflow_steps` | 1 | template_id, step_order, approver_type/role/department_match |
+| `approval_requests` | 1 | requester_code, status, current_step, total_steps |
+| `approval_logs` | 0 | request_id, step_order, approver_code, action, comment |
+| `departments` | 20 | name UNIQUE, head_id → employees.id |
+| `storage_config` | 3 | Cấu hình storage SMB/FTP/GDrive |
+| `storage_permissions` | 0 | Phân quyền thư mục storage |
+| `salary_slips` | 2 | Phiếu lương (dạng cột) |
+| `salaries` | 4 | Phiếu lương (dạng JSON), ON CONFLICT upsert |
+| `salary_upload_logs` | 1 | Lịch sử upload Excel |
+| `software_categories` | 4 | Danh mục phần mềm |
+| `software_items` | 0 | Mục phần mềm |
+| `todos` | 27 | Công việc theo phòng ban / cá nhân |
+| `todo_subtasks` | 32 | Checklist con của todo |
 
 > Schema không dùng FOREIGN KEY constraints — xử lý integrity ở application layer.
 

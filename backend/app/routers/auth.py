@@ -227,6 +227,7 @@ ALL_MODULES = [
     {"key": "employees", "label": "Nhân viên", "group": "admin"},
     {"key": "equipment", "label": "Thiết bị", "group": "admin"},
     {"key": "licenses", "label": "License Keys", "group": "admin"},
+    {"key": "todos", "label": "Công việc (Todos)", "group": "support"},
     {"key": "tickets", "label": "Tickets", "group": "support"},
     {"key": "approvals", "label": "Phê duyệt", "group": "support"},
     {"key": "workflows", "label": "Quy trình", "group": "admin"},
@@ -235,6 +236,7 @@ ALL_MODULES = [
     {"key": "salary", "label": "Phiếu lương", "group": "support"},
     {"key": "salary-admin", "label": "Quản lý lương", "group": "admin"},
 ]
+
 
 ADMIN_MODULES = {m["key"] for m in ALL_MODULES if m["group"] == "admin"}
 

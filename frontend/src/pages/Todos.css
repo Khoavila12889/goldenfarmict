@@ -1,131 +1,173 @@
-/* Todos Page Styles - Modern Glassmorphic Dashboard Design */
+/* ============================================================
+   Todos Page — Light Slate Clean Theme (Microsoft Fluent UI)
+   ============================================================ */
+:root {
+  --todo-bg: #f8fafc;
+  --todo-card-bg: #ffffff;
+  --todo-border: #e2e8f0;
+  --todo-text-primary: #0f172a;
+  --todo-text-secondary: #64748b;
+  --todo-text-muted: #94a3b8;
+  --todo-accent: #2563eb;
+  --todo-accent-light: #eff6ff;
+  --todo-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --todo-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --todo-radius: 10px;
+  --todo-radius-lg: 12px;
+}
+
+/* ---- Layout Base ---- */
 .todos-container {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
-  padding: 1.5rem;
-  max-width: 1600px;
-  margin: 0 auto;
-  color: var(--text-primary, #f8fafc);
+  gap: 1rem;
+  padding: 0.5rem 2rem 1.5rem 2rem;
+  width: 100%;
+  max-width: 100%;
+  background: var(--todo-bg);
+  min-height: 100vh;
+  color: var(--todo-text-primary);
 }
 
+/* ---- Header ---- */
 .todos-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: 1rem;
-  background: var(--bg-card, rgba(30, 41, 59, 0.7));
-  backdrop-filter: blur(12px);
-  padding: 1.25rem 1.5rem;
-  border-radius: 16px;
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  padding: 0.5rem 0;
+  margin-bottom: 0.75rem;
 }
 
 .todos-title-section {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.85rem;
 }
 
 .todos-title-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--todo-accent-light);
+  color: var(--todo-accent);
 }
 
 .todos-title {
-  font-size: 1.5rem;
+  font-size: 1.4rem;
   font-weight: 700;
   margin: 0;
-  background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--todo-text-primary);
+  background: none;
+  -webkit-text-fill-color: initial;
 }
 
 .todos-subtitle {
-  font-size: 0.875rem;
-  color: var(--text-secondary, #94a3b8);
-  margin-top: 0.2rem;
+  font-size: 0.85rem;
+  color: var(--todo-text-secondary);
+  margin-top: 0.15rem;
 }
 
-/* Stats Cards Bar */
+.btn-primary {
+  background: var(--todo-accent);
+  color: #fff;
+  border: none;
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  box-shadow: var(--todo-shadow-sm);
+}
+.btn-primary:hover {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+}
+
+/* ---- KPI Stat Cards ---- */
 .todos-stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.75rem;
+  width: 100%;
+}
+@media (max-width: 1100px) {
+  .todos-stats-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 600px) {
+  .todos-stats-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 .todos-stat-card {
-  background: var(--bg-card, rgba(30, 41, 59, 0.6));
-  backdrop-filter: blur(10px);
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
-  padding: 1rem 1.25rem;
-  border-radius: 14px;
+  background: var(--todo-card-bg);
+  border: 1px solid var(--todo-border);
+  padding: 10px 14px;
+  border-radius: var(--todo-radius);
   display: flex;
   align-items: center;
-  gap: 1rem;
-  transition: all 0.25s ease;
+  gap: 0.75rem;
+  transition: all 0.2s ease;
   cursor: pointer;
+  box-shadow: var(--todo-shadow-sm);
 }
-
 .todos-stat-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(99, 102, 241, 0.4);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  border-color: var(--todo-accent);
+  box-shadow: var(--todo-shadow-md);
 }
-
 .todos-stat-card.active {
-  border-color: #6366f1;
-  background: rgba(99, 102, 241, 0.12);
+  border-color: var(--todo-accent);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
 }
 
 .todos-stat-icon {
-  width: 42px;
-  height: 42px;
-  border-radius: 10px;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: bold;
+  font-weight: 700;
+  flex-shrink: 0;
 }
-
-.todos-stat-icon.total { background: rgba(99, 102, 241, 0.15); color: #818cf8; }
-.todos-stat-icon.todo { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; }
-.todos-stat-icon.in_progress { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
-.todos-stat-icon.review { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
-.todos-stat-icon.completed { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
-.todos-stat-icon.overdue { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+.todos-stat-icon.total { background: var(--todo-accent-light); color: var(--todo-accent); }
+.todos-stat-icon.todo { background: #f1f5f9; color: #64748b; }
+.todos-stat-icon.in_progress { background: #eff6ff; color: #3b82f6; }
+.todos-stat-icon.review { background: #fffbeb; color: #f59e0b; }
+.todos-stat-icon.completed { background: #ecfdf5; color: #10b981; }
+.todos-stat-icon.overdue { background: #fef2f2; color: #ef4444; }
 
 .todos-stat-info .val {
-  font-size: 1.4rem;
+  font-size: 1.2rem;
   font-weight: 700;
   line-height: 1.2;
+  color: var(--todo-text-primary);
 }
-
 .todos-stat-info .lbl {
   font-size: 0.8rem;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--todo-text-secondary);
 }
 
-/* Controls Toolbar */
+/* ---- Toolbar ---- */
 .todos-toolbar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
+  justify-content: space-between;
+  width: 100%;
   gap: 1rem;
-  background: var(--bg-card, rgba(30, 41, 59, 0.6));
-  padding: 1rem 1.25rem;
-  border-radius: 14px;
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  padding: 0.75rem 1.25rem;
+  background: var(--todo-card-bg);
+  border: 1px solid var(--todo-border);
+  border-radius: var(--todo-radius);
+  box-shadow: var(--todo-shadow-sm);
 }
 
 .todos-controls-left {
@@ -133,291 +175,285 @@
   align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
+  flex: 1;
 }
 
+/* Segmented Control Scope */
 .scope-tabs {
   display: flex;
-  background: rgba(15, 23, 42, 0.6);
-  padding: 4px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: #f1f5f9;
+  padding: 3px;
+  border-radius: 8px;
+  gap: 2px;
 }
 
 .scope-btn {
   padding: 6px 14px;
-  border-radius: 8px;
+  border-radius: 6px;
   border: none;
   background: transparent;
-  color: #94a3b8;
+  color: var(--todo-text-secondary);
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  white-space: nowrap;
 }
-
 .scope-btn.active {
-  background: #6366f1;
-  color: #ffffff;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+  background: var(--todo-card-bg);
+  color: var(--todo-text-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
+/* Search */
 .todos-search-input {
   position: relative;
   display: flex;
   align-items: center;
+  flex: 1;
+  max-width: 400px;
 }
-
 .todos-search-input input {
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 7px 12px 7px 34px;
+  background: var(--todo-card-bg);
+  border: 1px solid #cbd5e1;
+  padding: 7px 12px 7px 32px;
   border-radius: 8px;
-  color: #fff;
+  color: var(--todo-text-primary);
   font-size: 0.85rem;
   outline: none;
-  width: 200px;
+  width: 100%;
   transition: all 0.2s ease;
 }
-
-.todos-search-input input:focus {
-  width: 250px;
-  border-color: #6366f1;
+.todos-search-input input::placeholder {
+  color: var(--todo-text-muted);
 }
-
+.todos-search-input input:focus {
+  border-color: var(--todo-accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
 .todos-search-input svg {
   position: absolute;
   left: 10px;
-  color: #64748b;
+  color: var(--todo-text-muted);
+  pointer-events: none;
 }
 
-.view-mode-toggle {
-  display: flex;
-  background: rgba(15, 23, 42, 0.6);
-  padding: 4px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.view-mode-btn {
-  padding: 5px 10px;
-  border-radius: 6px;
-  border: none;
-  background: transparent;
-  color: #94a3b8;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-}
-
-.view-mode-btn.active {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
-
-/* Kanban Board Layout */
+/* ---- Kanban Board ---- */
 .kanban-board {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1.25rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  width: 100%;
   overflow-x: auto;
   padding-bottom: 0.5rem;
 }
-
 @media (max-width: 1200px) {
-  .kanban-board {
-    grid-template-columns: repeat(2, 1fr);
-  }
+  .kanban-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-
 @media (max-width: 640px) {
-  .kanban-board {
-    grid-template-columns: 1fr;
-  }
+  .kanban-board { grid-template-columns: 1fr; }
 }
 
 .kanban-column {
-  background: rgba(15, 23, 42, 0.5);
-  backdrop-filter: blur(10px);
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: #f1f5f9;
+  border-radius: var(--todo-radius-lg);
+  border: 1px solid var(--todo-border);
   display: flex;
   flex-direction: column;
-  min-height: 550px;
+  min-height: calc(100vh - 280px);
   max-height: calc(100vh - 280px);
 }
 
 .column-header {
-  padding: 1rem 1.25rem;
+  padding: 0.75rem 1rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--todo-border);
 }
 
 .column-title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   font-weight: 600;
   font-size: 0.95rem;
 }
 
 .column-count {
-  background: rgba(255, 255, 255, 0.08);
-  padding: 2px 8px;
-  border-radius: 12px;
+  background: var(--todo-card-bg);
+  padding: 1px 9px;
+  border-radius: 10px;
   font-size: 0.75rem;
-  color: #94a3b8;
+  font-weight: 600;
+  color: var(--todo-text-secondary);
+  border: 1px solid var(--todo-border);
 }
 
 .column-cards {
-  padding: 1rem;
+  padding: 0.75rem;
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: 0.65rem;
   overflow-y: auto;
   flex: 1;
 }
 
-/* Task Card Style */
+/* ---- Task Card ---- */
 .todo-card {
-  background: rgba(30, 41, 59, 0.8);
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 1rem;
+  background: var(--todo-card-bg);
+  border-radius: var(--todo-radius);
+  border: 1px solid var(--todo-border);
+  padding: 0.9rem;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.6rem;
   transition: all 0.2s ease;
   position: relative;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--todo-shadow-sm);
 }
-
 .todo-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(99, 102, 241, 0.4);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  border-color: var(--todo-accent);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
 }
 
 .todo-card-top {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 8px;
+  gap: 6px;
 }
 
 .badge-priority {
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 0.68rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
+  line-height: 1.4;
 }
-
-.priority-low { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; }
-.priority-medium { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
-.priority-high { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
-.priority-urgent { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+.priority-low { background: #e0f2fe; color: #0369a1; }
+.priority-medium { background: #f1f5f9; color: #475569; }
+.priority-high { background: #ffedd5; color: #c2410c; }
+.priority-urgent { background: #ffe4e6; color: #be123c; }
 
 .badge-scope {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 0.7rem;
-  background: rgba(99, 102, 241, 0.15);
-  color: #a5b4fc;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 0.68rem;
+  font-weight: 500;
+  background: var(--todo-accent-light);
+  color: var(--todo-accent);
+  border: 1px solid rgba(37, 99, 235, 0.15);
 }
 
 .todo-card-title {
   font-size: 0.95rem;
   font-weight: 600;
-  color: #f8fafc;
+  color: #1e293b;
   margin: 0;
   line-height: 1.35;
 }
 
 .todo-card-desc {
   font-size: 0.8rem;
-  color: #94a3b8;
+  color: var(--todo-text-secondary);
   line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  margin: 0;
 }
 
-/* Subtask progress bar */
+/* Subtask Progress */
 .subtasks-progress {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
-
 .subtasks-bar-bg {
   height: 4px;
   width: 100%;
-  background: rgba(255, 255, 255, 0.1);
+  background: #f1f5f9;
   border-radius: 2px;
   overflow: hidden;
 }
-
 .subtasks-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #6366f1 0%, #22c55e 100%);
+  background: linear-gradient(90deg, var(--todo-accent) 0%, #10b981 100%);
+  border-radius: 2px;
   transition: width 0.3s ease;
 }
-
 .subtasks-label {
   display: flex;
   justify-content: space-between;
-  font-size: 0.75rem;
-  color: #94a3b8;
+  font-size: 0.72rem;
+  color: var(--todo-text-secondary);
 }
 
+/* Card Footer */
 .todo-card-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-  padding-top: 0.65rem;
-  margin-top: 0.25rem;
+  border-top: 1px solid var(--todo-border);
+  padding-top: 0.55rem;
+  margin-top: 0.15rem;
   font-size: 0.75rem;
 }
 
 .todo-assignee {
   display: flex;
   align-items: center;
-  gap: 6px;
-  color: #cbd5e1;
+  gap: 5px;
+  color: var(--todo-text-secondary);
 }
-
 .todo-due {
   display: flex;
   align-items: center;
   gap: 4px;
-  color: #94a3b8;
+  color: var(--todo-text-secondary);
 }
-
 .todo-due.is-overdue {
-  color: #f87171;
+  color: #ef4444;
   font-weight: 600;
+  background: #fef2f2;
+  padding: 1px 6px;
+  border-radius: 4px;
 }
 
-/* Modal Form styling */
+/* Inline status select inside card */
+.todo-card select.form-control {
+  font-size: 0.72rem;
+  padding: 3px 6px;
+  width: 100%;
+  background: #f8fafc;
+  border: 1px solid var(--todo-border);
+  border-radius: 6px;
+  color: var(--todo-text-primary);
+  outline: none;
+}
+.todo-card select.form-control:focus {
+  border-color: var(--todo-accent);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+/* ---- Modal ---- */
 .todo-modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(15, 23, 42, 0.75);
-  backdrop-filter: blur(8px);
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(4px);
   z-index: 1000;
   display: flex;
   align-items: center;
@@ -426,57 +462,71 @@
 }
 
 .todo-modal-content {
-  background: #1e293b;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 16px;
+  background: var(--todo-card-bg);
+  border: 1px solid var(--todo-border);
+  border-radius: var(--todo-radius-lg);
   width: 100%;
   max-width: 600px;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.12);
   display: flex;
   flex-direction: column;
 }
 
 .todo-modal-header {
-  padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 1.15rem 1.5rem;
+  border-bottom: 1px solid var(--todo-border);
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+.todo-modal-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  color: var(--todo-text-primary);
 }
 
 .todo-modal-body {
   padding: 1.5rem;
   display: flex;
-  flex-direction: flex-col;
-  gap: 1.25rem;
+  flex-direction: column;
+  gap: 1.15rem;
 }
 
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.35rem;
 }
-
 .form-group label {
   font-size: 0.85rem;
   font-weight: 500;
-  color: #cbd5e1;
+  color: var(--todo-text-primary);
 }
 
 .form-control {
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 8px 12px;
+  background: var(--todo-card-bg);
+  border: 1px solid #cbd5e1;
+  padding: 10px 12px;
   border-radius: 8px;
-  color: #fff;
+  color: var(--todo-text-primary);
   font-size: 0.9rem;
   outline: none;
+  transition: all 0.2s ease;
+}
+.form-control::placeholder {
+  color: var(--todo-text-muted);
+}
+.form-control:focus {
+  border-color: var(--todo-accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
-.form-control:focus {
-  border-color: #6366f1;
+textarea.form-control {
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.5;
 }
 
 .form-row {
@@ -484,22 +534,28 @@
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
 }
-
-.btn-primary {
-  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-  color: #fff;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-weight: 600;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  transition: all 0.2s ease;
+@media (max-width: 480px) {
+  .form-row { grid-template-columns: 1fr; }
 }
 
-.btn-primary:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
+/* ---- Subtask Manager in Modal ---- */
+.subtask-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f8fafc;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--todo-border);
+}
+.subtask-item input[type="checkbox"] {
+  accent-color: var(--todo-accent);
+}
+
+/* ---- Empty State ---- */
+.empty-state {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--todo-text-muted);
+  font-size: 0.85rem;
 }

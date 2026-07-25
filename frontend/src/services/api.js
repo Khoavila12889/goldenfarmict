@@ -348,12 +348,14 @@ export function getTodos(params = {}) {
   const userCode = sessionStorage.getItem('user_code') || ''
   const userRole = sessionStorage.getItem('user_role') || ''
   const userDept = sessionStorage.getItem('user_department') || ''
+  const userToken = sessionStorage.getItem('token') || ''
   return api.get('/todos', {
     params,
     headers: {
       'X-User-Code': userCode,
       'X-User-Role': userRole,
-      'X-User-Dept': userDept
+      'X-User-Dept': userDept,
+      'X-User-Token': userToken
     }
   })
 }
@@ -362,11 +364,13 @@ export function getTodoStats() {
   const userCode = sessionStorage.getItem('user_code') || ''
   const userRole = sessionStorage.getItem('user_role') || ''
   const userDept = sessionStorage.getItem('user_department') || ''
+  const userToken = sessionStorage.getItem('token') || ''
   return api.get('/todos/stats', {
     headers: {
       'X-User-Code': userCode,
       'X-User-Role': userRole,
-      'X-User-Dept': userDept
+      'X-User-Dept': userDept,
+      'X-User-Token': userToken
     }
   })
 }
@@ -375,11 +379,13 @@ export function createTodo(data) {
   const userCode = sessionStorage.getItem('user_code') || ''
   const userRole = sessionStorage.getItem('user_role') || ''
   const userDept = sessionStorage.getItem('user_department') || ''
+  const userToken = sessionStorage.getItem('token') || ''
   return api.post('/todos', data, {
     headers: {
       'X-User-Code': userCode,
       'X-User-Role': userRole,
-      'X-User-Dept': userDept
+      'X-User-Dept': userDept,
+      'X-User-Token': userToken
     }
   })
 }
@@ -387,10 +393,12 @@ export function createTodo(data) {
 export function updateTodo(id, data) {
   const userCode = sessionStorage.getItem('user_code') || ''
   const userRole = sessionStorage.getItem('user_role') || ''
+  const userToken = sessionStorage.getItem('token') || ''
   return api.put(`/todos/${id}`, data, {
     headers: {
       'X-User-Code': userCode,
-      'X-User-Role': userRole
+      'X-User-Role': userRole,
+      'X-User-Token': userToken
     }
   })
 }
@@ -402,10 +410,12 @@ export function updateTodoStatus(id, status) {
 export function deleteTodo(id) {
   const userCode = sessionStorage.getItem('user_code') || ''
   const userRole = sessionStorage.getItem('user_role') || ''
+  const userToken = sessionStorage.getItem('token') || ''
   return api.delete(`/todos/${id}`, {
     headers: {
       'X-User-Code': userCode,
-      'X-User-Role': userRole
+      'X-User-Role': userRole,
+      'X-User-Token': userToken
     }
   })
 }

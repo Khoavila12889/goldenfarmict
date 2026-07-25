@@ -187,10 +187,10 @@ export default function Todos() {
   }
 
   const columns = [
-    { id: 'todo', label: 'Cần làm', icon: Clock, color: '#94a3b8' },
-    { id: 'in_progress', label: 'Đang thực hiện', icon: RefreshCw, color: '#60a5fa' },
-    { id: 'review', label: 'Chờ duyệt', icon: AlertCircle, color: '#fbbf24' },
-    { id: 'completed', label: 'Đã hoàn thành', icon: CheckCircle2, color: '#4ade80' }
+    { id: 'todo', label: 'Cần làm', icon: Clock, color: '#64748b' },
+    { id: 'in_progress', label: 'Đang thực hiện', icon: RefreshCw, color: '#3b82f6' },
+    { id: 'review', label: 'Chờ duyệt', icon: AlertCircle, color: '#f59e0b' },
+    { id: 'completed', label: 'Đã hoàn thành', icon: CheckCircle2, color: '#10b981' }
   ]
 
   const isOverdue = (dateStr, status) => {
@@ -319,8 +319,8 @@ export default function Todos() {
           return (
             <div key={col.id} className="kanban-column">
               <div className="column-header">
-                <div className="column-title" style={{ color: col.color }}>
-                  <ColIcon size={16} />
+                <div className="column-title">
+                  <ColIcon size={16} style={{ color: col.color }} />
                   <span>{col.label}</span>
                 </div>
                 <span className="column-count">{colTodos.length}</span>
@@ -415,7 +415,7 @@ export default function Todos() {
         <div className="todo-modal-overlay" onClick={() => setShowModal(false)}>
           <div className="todo-modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="todo-modal-header">
-              <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#fff' }}>
+              <h2 style={{ margin: 0, fontSize: '1.15rem' }}>
                 {editingTodo ? 'Chỉnh sửa Công việc' : 'Tạo mới Công việc'}
               </h2>
               <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>

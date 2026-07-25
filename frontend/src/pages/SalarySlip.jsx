@@ -138,7 +138,7 @@ export default function SalarySlip() {
       {availableMonths.length > 0 && (
         <div className="salary-months-bar">
           <button className="salary-months-toggle" onClick={() => setShowMonths(s => !s)}>
-            {showMonths ? '▲' : '▼'} Lịch sử phiếu lương ({availableMonths.length} tháng)
+            {showMonths ? '▲' : '▼'} Lịch sử  ({availableMonths.length} tháng)
           </button>
           {showMonths && (
             <div className="salary-months-list">
