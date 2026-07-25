@@ -552,6 +552,30 @@ template/                        # luong.docx, luong.xlsx (salary PDF template)
 
 ---
 
+## 6.5 Module Công việc & Todos (Todos)
+
+**API prefix:** `/api/todos`
+
+| Endpoint | Chức năng |
+|----------|-----------|
+| `GET /api/todos` | Danh sách todos (filter: scope=all/personal/department, status, priority, search). |
+| `GET /api/todos/stats` | Thống kê KPI: total, todo, in_progress, review, completed, overdue |
+| `POST /api/todos` | Tạo mới todo + checklist subtasks |
+| `PUT /api/todos/{id}` | Cập nhật todo + subtasks |
+| `PATCH /api/todos/{id}/status` | Đổi trạng thái todo nhanh (Kanban drag/move) |
+| `DELETE /api/todos/{id}` | Xoá todo & subtasks liên quan |
+
+**Phân quyền:**
+- `admin`: thấy tất cả todos, assignee tất cả users, department tất cả phòng ban
+- `head`: thấy todos trong phòng ban mình, chỉ assignee cho user cùng phòng
+- `user`: chỉ thấy personal todos + department todos của phòng mình, chỉ assignee cho chính mình
+
+**SSE events**: `todo_created`, `todo_updated`, `todo_deleted`.
+
+**Date format:** Hiển thị `dd/mm/yyyy` dùng `formatDate()` từ `utils/formatters.js`. Database lưu ISO `yyyy-mm-dd`.
+
+---
+
 ## 7. AI Core Directives — MỆNH LỆNH TỐI THƯỢNG
 
 > ⚠️ **CÁC MỆNH LỆNH SAU LÀ BẮT BUỘC. AI VI PHẠM SẼ BỊ REJECT.**
@@ -652,21 +676,6 @@ Chỉ dùng SQLAlchemy
 - `backend/app/core/session.py` — SQLAlchemy engine + session (đổi DATABASE_URL để migrate)
 - `backend/app/models.py` — ORM models 18 tables
 - `backend/app/core/db.py` — abstraction layer (dùng SQLAlchemy, module mới dùng file này)
-
-### 3.12 Module Công việc & Todos (Todos)
-
-**API prefix:** `/api/todos`
-
-| Endpoint | Chức năng |
-|----------|-----------|
-| `GET /api/todos` | Danh sách todos (filter: scope=all/personal/department, status, priority, search). |
-| `GET /api/todos/stats` | Thống kê KPI: total, todo, in_progress, review, completed, overdue |
-| `POST /api/todos` | Tạo mới todo + checklist subtasks |
-| `PUT /api/todos/{id}` | Cập nhật todo + subtasks |
-| `PATCH /api/todos/{id}/status` | Đổi trạng thái todo nhanh (Kanban drag/move) |
-| `DELETE /api/todos/{id}` | Xoá todo & subtasks liên quan |
-
-**SSE events**: `todo_created`, `todo_updated`, `todo_deleted`.
 
 ---
 

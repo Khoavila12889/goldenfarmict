@@ -5,6 +5,7 @@ import {
   Users, Building, ListTodo, Layers, RefreshCw, X, ChevronRight
 } from 'lucide-react'
 import { getTodos, getTodoStats, createTodo, updateTodo, updateTodoStatus, deleteTodo, getTodoAssignees, getDepartments } from '../services/api'
+import { formatDate } from '../utils/formatters'
 import './Todos.css'
 
 export default function Todos() {
@@ -395,7 +396,7 @@ export default function Todos() {
                         {todo.due_date && (
                           <div className={`todo-due ${overdue ? 'is-overdue' : ''}`}>
                             <Calendar size={12} />
-                            <span>{todo.due_date}</span>
+                            <span>{formatDate(todo.due_date)}</span>
                           </div>
                         )}
                       </div>
