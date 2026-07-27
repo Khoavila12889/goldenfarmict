@@ -15,7 +15,7 @@ import logging
 import zipfile
 import shutil
 from datetime import datetime
-from ..core.database import get_conn
+from ..core.db import fetchall, fetchone, execute, insert
 from ..core.auth import verify_token
 import pandas as pd
 
@@ -52,12 +52,10 @@ async def get_my_salary_slip(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid month format (YYYY-MM)")
 
-    conn = get_conn()
-    slip = conn.execute(
-        "SELECT * FROM salary_slips WHERE employee_code=? AND month=?",
-        (employee_code, month)
-    ).fetchone()
-    conn.close()
+    slip = fetchone(
+        "SELECT * FROM salary_slips WHERE employee_code=:employee_code AND month=:month",
+        {"employee_code": employee_code, "month": month}
+    )
 
     if not slip:
         raise HTTPException(status_code=404, detail="Chưa có phiếu lương cho tháng này")
@@ -77,24 +75,22 @@ async def list_salary_slips(
     role: str = None
 ):
     require_admin(admin_code, token, role)
-    conn = get_conn()
     sql = """
         SELECT s.*, e.full_name, e.department, e.position
         FROM salary_slips s
         LEFT JOIN employees e ON e.employee_code = s.employee_code
         WHERE 1=1
     """
-    params = []
+    params = {}
     if month:
-        sql += " AND s.month = ?"; params.append(month)
+        sql += " AND s.month = :month"; params["month"] = month
     if employee_code:
-        sql += " AND s.employee_code LIKE ?"; params.append(f"%{employee_code}%")
+        sql += " AND s.employee_code ILIKE :employee_code"; params["employee_code"] = f"%{employee_code}%"
     if department:
-        sql += " AND e.department = ?"; params.append(department)
+        sql += " AND e.department = :department"; params["department"] = department
     sql += " ORDER BY s.month DESC, e.full_name ASC"
-    rows = conn.execute(sql, params).fetchall()
-    conn.close()
-    return {"data": [dict(r) for r in rows], "total": len(rows)}
+    rows = fetchall(sql, params)
+    return {"data": rows, "total": len(rows)}
 
 
 # ─── Admin: Get Employees ─────────────────────────────────────────────
@@ -109,14 +105,11 @@ async def get_employees_for_salary(
 ):
     """Tìm kiếm nhân viên (có/ chưa có lương) để admin chọn làm việc."""
     require_admin(admin_code, token, role)
-    conn = get_conn()
-    # Lấy nhân viên từ employees table...
-    rows = conn.execute("""
+    rows = fetchall("""
         SELECT id, employee_code, full_name, department, position, phone, email
         FROM employees WHERE status='active' AND (employee_code IS NULL OR employee_code != '')
-    """).fetchall()
-    # ...kết hợp với nhân viên chỉ có trong salaries (import Excel trước đây không tạo employees record)
-    salary_rows = conn.execute("""
+    """)
+    salary_rows = fetchall("""
         SELECT DISTINCT s.employee_code,
                COALESCE(json_extract(s.data_json, '$.NAME'), '') AS full_name,
                COALESCE(json_extract(s.data_json, '$.PB'), '') AS department,
@@ -127,7 +120,7 @@ async def get_employees_for_salary(
         WHERE s.employee_code NOT IN (
             SELECT employee_code FROM employees WHERE status='active' AND (employee_code IS NULL OR employee_code != '')
         )
-    """).fetchall()
+    """)
     combined = {}
     for r in rows:
         key = r['employee_code'] or f"__id_{r['id']}"
@@ -143,7 +136,6 @@ async def get_employees_for_salary(
         kw = search.lower()
         result = [e for e in result if kw in (e['full_name'] or '').lower() or kw in (e['employee_code'] or '').lower()]
     result.sort(key=lambda e: (e['department'] or '', e['full_name'] or ''))
-    conn.close()
     return {"data": result, "total": len(result)}
 
 
@@ -157,41 +149,44 @@ async def create_salary_slip(body: dict, admin_code: str = None, token: str = No
         if field not in body:
             raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
 
-    conn = get_conn()
-    emp = conn.execute("SELECT id FROM employees WHERE employee_code=? AND status='active'", (body["employee_code"],)).fetchone()
+    emp = fetchone(
+        "SELECT id FROM employees WHERE employee_code=:employee_code AND status='active'",
+        {"employee_code": body["employee_code"]}
+    )
     if not emp:
-        conn.close()
         raise HTTPException(status_code=404, detail="Employee not found or inactive")
 
-    existing = conn.execute(
-        "SELECT id FROM salary_slips WHERE employee_code=? AND month=?",
-        (body["employee_code"], body["month"])
-    ).fetchone()
+    existing = fetchone(
+        "SELECT id FROM salary_slips WHERE employee_code=:employee_code AND month=:month",
+        {"employee_code": body["employee_code"], "month": body["month"]}
+    )
 
     if existing:
-        conn.execute("""
-            UPDATE salary_slips SET basic_salary=?, allowances=?, bonus=?, deductions=?, net_salary=?,
-                notes=?, updated_at=datetime('now','localtime'), updated_by=?
-            WHERE employee_code=? AND month=?
-        """, (
-            body.get("basic_salary", 0), body.get("allowances", 0), body.get("bonus", 0),
-            body.get("deductions", 0), body.get("net_salary", 0), body.get("notes", ""),
-            admin_code, body["employee_code"], body["month"]
-        ))
-        conn.commit(); conn.close()
+        execute("""
+            UPDATE salary_slips SET basic_salary=:basic_salary, allowances=:allowances, bonus=:bonus, deductions=:deductions,
+                net_salary=:net_salary, notes=:notes, updated_at=CURRENT_TIMESTAMP, updated_by=:updated_by
+            WHERE employee_code=:employee_code AND month=:month
+        """, {
+            "basic_salary": body.get("basic_salary", 0), "allowances": body.get("allowances", 0),
+            "bonus": body.get("bonus", 0), "deductions": body.get("deductions", 0),
+            "net_salary": body.get("net_salary", 0), "notes": body.get("notes", ""),
+            "updated_by": admin_code, "employee_code": body["employee_code"], "month": body["month"]
+        })
         return {"success": True, "action": "updated", "id": existing["id"]}
     else:
-        conn.execute("""
+        slip_id = insert("""
             INSERT INTO salary_slips (employee_code, month, basic_salary, allowances, bonus, deductions,
                 net_salary, notes, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            body["employee_code"], body["month"], body.get("basic_salary", 0),
-            body.get("allowances", 0), body.get("bonus", 0), body.get("deductions", 0),
-            body.get("net_salary", 0), body.get("notes", ""), admin_code
-        ))
-        slip_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        conn.commit(); conn.close()
+            VALUES (:employee_code, :month, :basic_salary, :allowances, :bonus, :deductions,
+                :net_salary, :notes, :created_by)
+            RETURNING id
+        """, {
+            "employee_code": body["employee_code"], "month": body["month"],
+            "basic_salary": body.get("basic_salary", 0), "allowances": body.get("allowances", 0),
+            "bonus": body.get("bonus", 0), "deductions": body.get("deductions", 0),
+            "net_salary": body.get("net_salary", 0), "notes": body.get("notes", ""),
+            "created_by": admin_code,
+        })
         return {"success": True, "action": "created", "id": slip_id}
 
 
@@ -209,10 +204,8 @@ async def delete_salary_slip(
     require_admin(admin_code, token, role)
     if not month:
         raise HTTPException(status_code=400, detail="Missing month parameter")
-    conn = get_conn()
-    conn.execute("DELETE FROM salary_slips WHERE employee_code=? AND month=?", (employee_code, month))
-    conn.execute("DELETE FROM salaries WHERE employee_code=? AND month=?", (employee_code, month))
-    conn.commit(); conn.close()
+    execute("DELETE FROM salary_slips WHERE employee_code=:employee_code AND month=:month", {"employee_code": employee_code, "month": month})
+    execute("DELETE FROM salaries WHERE employee_code=:employee_code AND month=:month", {"employee_code": employee_code, "month": month})
     return {"success": True, "message": f"Đã xóa phiếu lương của {employee_code} tháng {month}"}
 
 
@@ -225,15 +218,14 @@ async def bulk_generate_salary_slips(body: dict, admin_code: str = None, token: 
     if not month:
         raise HTTPException(status_code=400, detail="Month is required")
 
-    conn = get_conn()
     sql = """
         SELECT employee_code, full_name, department FROM employees
         WHERE status='active' AND (employee_code IS NULL OR employee_code != '') AND employee_code != 'admin'
     """
-    params = []
+    params = {}
     if body.get("department"):
-        sql += " AND department = ?"; params.append(body["department"])
-    employees = conn.execute(sql, params).fetchall()
+        sql += " AND department = :department"; params["department"] = body["department"]
+    employees = fetchall(sql, params)
 
     basic = body.get("default_basic_salary", 0)
     allowances = body.get("default_allowances", 0)
@@ -244,24 +236,23 @@ async def bulk_generate_salary_slips(body: dict, admin_code: str = None, token: 
     created = 0; updated = 0; errors = []
     for emp in employees:
         try:
-            existing = conn.execute("SELECT id FROM salary_slips WHERE employee_code=? AND month=?",
-                (emp["employee_code"], month)).fetchone()
+            existing = fetchone("SELECT id FROM salary_slips WHERE employee_code=:employee_code AND month=:month",
+                {"employee_code": emp["employee_code"], "month": month})
             if existing:
-                conn.execute("""
-                    UPDATE salary_slips SET basic_salary=?, allowances=?, bonus=?, deductions=?, net_salary=?,
-                        updated_at=datetime('now','localtime'), updated_by=?
-                    WHERE employee_code=? AND month=?
-                """, (basic, allowances, bonus, deductions, net, admin_code, emp["employee_code"], month))
+                execute("""
+                    UPDATE salary_slips SET basic_salary=:basic_salary, allowances=:allowances, bonus=:bonus, deductions=:deductions, net_salary=:net_salary,
+                        updated_at=CURRENT_TIMESTAMP, updated_by=:updated_by
+                    WHERE employee_code=:employee_code AND month=:month
+                """, {"basic_salary": basic, "allowances": allowances, "bonus": bonus, "deductions": deductions, "net_salary": net, "updated_by": admin_code, "employee_code": emp["employee_code"], "month": month})
                 updated += 1
             else:
-                conn.execute("""
+                execute("""
                     INSERT INTO salary_slips (employee_code, month, basic_salary, allowances, bonus, deductions, net_salary, created_by)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (emp["employee_code"], month, basic, allowances, bonus, deductions, net, admin_code))
+                    VALUES (:employee_code, :month, :basic_salary, :allowances, :bonus, :deductions, :net_salary, :created_by)
+                """, {"employee_code": emp["employee_code"], "month": month, "basic_salary": basic, "allowances": allowances, "bonus": bonus, "deductions": deductions, "net_salary": net, "created_by": admin_code})
                 created += 1
         except Exception as e:
             errors.append(f"{emp['employee_code']}: {str(e)}")
-    conn.commit(); conn.close()
     return {"success": True, "created": created, "updated": updated, "errors": errors}
 
 
@@ -276,6 +267,7 @@ TEMPLATE_PATHS = [
     Path(__file__).parent.parent.parent / 'frontend' / 'src' / 'template' / 'luong.docx',
 ]
 TEMPLATE_PATH = next((p for p in TEMPLATE_PATHS if p.exists()), None)
+
 
 @router.get("/admin/download-template")
 async def download_template():
@@ -368,15 +360,13 @@ async def upload_salaries_excel(
         prev = current_date - relativedelta(months=1)
         month_str = f"{prev.year}-{prev.month:02d}"
 
-    conn = get_conn()
-
     # Kiểm tra tháng đã có dữ liệu chưa
-    existing_count = conn.execute(
-        "SELECT COUNT(*) FROM salaries WHERE month=?", (month_str,)
-    ).fetchone()[0]
+    existing_count_row = fetchone(
+        "SELECT COUNT(*) AS cnt FROM salaries WHERE month=:month", {"month": month_str}
+    )
+    existing_count = existing_count_row["cnt"]
 
     if existing_count > 0 and not force:
-        conn.close()
         return {
             "success": True,
             "month": month_str,
@@ -400,43 +390,42 @@ async def upload_salaries_excel(
             password = str(row.get('PASSWORD', '')) if pd.notna(row.get('PASSWORD')) else ''
             salary_json = json.dumps(context, ensure_ascii=False)
 
-            conn.execute("""
+            execute("""
                 INSERT INTO salaries (employee_code, month, password, data_json)
-                VALUES (?, ?, ?, ?)
+                VALUES (:employee_code, :month, :password, :data_json)
                 ON CONFLICT(employee_code, month) DO UPDATE SET
                     password=excluded.password, data_json=excluded.data_json,
-                    updated_at=datetime('now','localtime')
-            """, (emp_id, month_str, password, salary_json))
+                    updated_at=CURRENT_TIMESTAMP
+            """, {"employee_code": emp_id, "month": month_str, "password": password, "data_json": salary_json})
 
             # Tự động tạo user account nếu chưa có
-            user = conn.execute("SELECT id FROM users WHERE employee_code=?", (emp_id,)).fetchone()
+            user = fetchone("SELECT id FROM users WHERE employee_code=:employee_code", {"employee_code": emp_id})
             if not user:
-                conn.execute(
-                    "INSERT OR IGNORE INTO users (employee_code, password_hash, role) VALUES (?, ?, ?)",
-                    (emp_id, hashlib.sha256(emp_id.encode()).hexdigest(), 'user')
+                execute(
+                    "INSERT INTO users (employee_code, password_hash, role) VALUES (:employee_code, :password_hash, :role) ON CONFLICT DO NOTHING",
+                    {"employee_code": emp_id, "password_hash": hashlib.sha256(emp_id.encode()).hexdigest(), "role": "user"}
                 )
             # Tự động tạo employee record nếu chưa có (để tìm kiếm được trên tab Nhân viên)
-            emp_row = conn.execute("SELECT id FROM employees WHERE employee_code=?", (emp_id,)).fetchone()
+            emp_row = fetchone("SELECT id FROM employees WHERE employee_code=:employee_code", {"employee_code": emp_id})
             if not emp_row:
-                conn.execute("""
+                execute("""
                     INSERT INTO employees (employee_code, full_name, department, position, handover_date, status, created_at)
-                    VALUES (?, ?, ?, ?, ?, 'active', datetime('now','localtime'))
-                """, (context['ID'], context['NAME'], context.get('PB', ''), context.get('CHUCVU', ''), context.get('NVL', '')))
+                    VALUES (:employee_code, :full_name, :department, :position, :handover_date, 'active', CURRENT_TIMESTAMP)
+                """, {"employee_code": context['ID'], "full_name": context['NAME'], "department": context.get('PB', ''), "position": context.get('CHUCVU', ''), "handover_date": context.get('NVL', '')})
             success += 1
         except Exception as e:
             errors.append(f"Dòng {idx+2}: {str(e)}")
 
     # Ghi log upload
-    uploader_name = conn.execute(
-        "SELECT full_name FROM employees WHERE employee_code=?", (admin_code,)
-    ).fetchone()
-    conn.execute("""
+    uploader_name = fetchone(
+        "SELECT full_name FROM employees WHERE employee_code=:admin_code", {"admin_code": admin_code}
+    )
+    execute("""
         INSERT INTO salary_upload_logs (month, filename, uploaded_by, uploaded_by_name, record_count)
-        VALUES (?, ?, ?, ?, ?)
-    """, (month_str, excel_file.filename, admin_code,
-          uploader_name['full_name'] if uploader_name else admin_code, success))
+        VALUES (:month, :filename, :uploaded_by, :uploaded_by_name, :record_count)
+    """, {"month": month_str, "filename": excel_file.filename, "uploaded_by": admin_code,
+          "uploaded_by_name": uploader_name['full_name'] if uploader_name else admin_code, "record_count": success})
 
-    conn.commit(); conn.close()
     return {"success": True, "month": month_str, "imported": success, "errors": errors}
 
 
@@ -449,16 +438,14 @@ async def list_upload_history(
     role: str = None
 ):
     require_admin(admin_code, token, role)
-    conn = get_conn()
-    rows = conn.execute("""
+    rows = fetchall("""
         SELECT l.*, u.full_name AS uploader_name
         FROM salary_upload_logs l
         LEFT JOIN employees u ON u.employee_code = l.uploaded_by
         ORDER BY l.created_at DESC
         LIMIT 50
-    """).fetchall()
-    conn.close()
-    return {"data": [dict(r) for r in rows]}
+    """)
+    return {"data": rows}
 
 
 # ─── Admin: Import Salary Slip Data from Excel ──────────────────────────
@@ -510,7 +497,6 @@ async def import_salary_from_excel(
         except Exception:
             raise HTTPException(status_code=400, detail="Month format must be YYYY-MM")
 
-    conn = get_conn()
     imported = 0; skipped = 0; errors = []; new_users = []
 
     for idx, row in df.iterrows():
@@ -538,33 +524,31 @@ async def import_salary_from_excel(
                 deductions = _safe_float(row.get('Tổng thuế TNCN', 0))
                 net_salary = _safe_float(row.get('Thực nhận (A-B+C)', row.get('Thực nhận', 0)))
 
-            existing = conn.execute("SELECT id FROM salary_slips WHERE employee_code=? AND month=?",
-                (employee_code, month)).fetchone()
+            existing = fetchone("SELECT id FROM salary_slips WHERE employee_code=:employee_code AND month=:month",
+                {"employee_code": employee_code, "month": month})
 
             if existing:
-                conn.execute("""
-                    UPDATE salary_slips SET basic_salary=?, allowances=?, bonus=?, deductions=?, net_salary=?,
-                        updated_at=datetime('now','localtime'), updated_by=?
-                    WHERE employee_code=? AND month=?
-                """, (basic_salary, allowances, bonus, deductions, net_salary, admin_code, employee_code, month))
+                execute("""
+                    UPDATE salary_slips SET basic_salary=:basic_salary, allowances=:allowances, bonus=:bonus, deductions=:deductions, net_salary=:net_salary,
+                        updated_at=CURRENT_TIMESTAMP, updated_by=:updated_by
+                    WHERE employee_code=:employee_code AND month=:month
+                """, {"basic_salary": basic_salary, "allowances": allowances, "bonus": bonus, "deductions": deductions, "net_salary": net_salary, "updated_by": admin_code, "employee_code": employee_code, "month": month})
             else:
-                conn.execute("""
+                execute("""
                     INSERT INTO salary_slips (employee_code, month, basic_salary, allowances, bonus, deductions, net_salary, notes, created_by)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (employee_code, month, basic_salary, allowances, bonus, deductions, net_salary,
-                      f"Imported from Excel by {admin_code}", admin_code))
+                    VALUES (:employee_code, :month, :basic_salary, :allowances, :bonus, :deductions, :net_salary, :notes, :created_by)
+                """, {"employee_code": employee_code, "month": month, "basic_salary": basic_salary, "allowances": allowances, "bonus": bonus, "deductions": deductions, "net_salary": net_salary, "notes": f"Imported from Excel by {admin_code}", "created_by": admin_code})
 
-            user = conn.execute("SELECT id FROM users WHERE employee_code=?", (employee_code,)).fetchone()
+            user = fetchone("SELECT id FROM users WHERE employee_code=:employee_code", {"employee_code": employee_code})
             if not user:
-                conn.execute("INSERT OR IGNORE INTO users (employee_code, password_hash, role) VALUES (?, ?, ?)",
-                    (employee_code, hashlib.sha256(employee_code.encode()).hexdigest(), 'user'))
+                execute("INSERT INTO users (employee_code, password_hash, role) VALUES (:employee_code, :password_hash, :role) ON CONFLICT DO NOTHING",
+                    {"employee_code": employee_code, "password_hash": hashlib.sha256(employee_code.encode()).hexdigest(), "role": "user"})
                 new_users.append(employee_code)
 
             imported += 1
         except Exception as e:
             errors.append(f"Dòng {idx+2}: {str(e)}"); continue
 
-    conn.commit(); conn.close()
     return {"success": True, "month": month, "pdf_type": pdf_type, "imported": imported,
             "skipped": skipped, "total": imported + skipped, "new_users": new_users, "errors": errors}
 
@@ -583,12 +567,10 @@ async def admin_view_salary_slip(
     require_admin(admin_code, token, role)
     if not month:
         raise HTTPException(status_code=400, detail="Missing month parameter")
-    conn = get_conn()
-    record = conn.execute(
-        "SELECT data_json, password FROM salaries WHERE employee_code=? AND month=?",
-        (employee_code, month)
-    ).fetchone()
-    conn.close()
+    record = fetchone(
+        "SELECT data_json, password FROM salaries WHERE employee_code=:employee_code AND month=:month",
+        {"employee_code": employee_code, "month": month}
+    )
     if not record:
         raise HTTPException(status_code=404, detail="Chưa có phiếu lương cho tháng này")
     return {"success": True, "data": json.loads(record["data_json"]), "has_password": bool(record["password"])}
@@ -612,23 +594,21 @@ async def admin_get_employees_with_salary(
     require_admin(admin_code, token, role)
     if not month:
         raise HTTPException(status_code=400, detail="Missing month parameter")
-    conn = get_conn()
     sql = """
         SELECT s.employee_code, e.full_name, e.department, e.position, s.month
         FROM salaries s
         LEFT JOIN employees e ON e.employee_code = s.employee_code
-        WHERE s.month = ?
+        WHERE s.month = :month
     """
-    params = [month]
+    params = {"month": month}
     if department and department != "Tất cả":
-        sql += " AND e.department = ?"; params.append(department)
+        sql += " AND e.department = :department"; params["department"] = department
     if search:
-        sql += " AND (e.full_name LIKE ? OR s.employee_code LIKE ?)"
-        params.extend([f"%{search}%", f"%{search}%"])
+        sql += " AND (e.full_name ILIKE :search OR s.employee_code ILIKE :search)"
+        params["search"] = f"%{search}%"
     sql += " ORDER BY e.department, e.full_name"
-    rows = conn.execute(sql, params).fetchall()
-    conn.close()
-    return {"data": [dict(r) for r in rows], "total": len(rows)}
+    rows = fetchall(sql, params)
+    return {"data": rows, "total": len(rows)}
 
 
 # ─── Admin: Update Fields in Salary JSON ────────────────────────────
@@ -657,13 +637,11 @@ async def admin_update_salary_fields(
     if not fields:
         raise HTTPException(status_code=400, detail="Missing fields to update")
 
-    conn = get_conn()
-    record = conn.execute(
-        "SELECT data_json FROM salaries WHERE employee_code=? AND month=?",
-        (employee_code, month)
-    ).fetchone()
+    record = fetchone(
+        "SELECT data_json FROM salaries WHERE employee_code=:employee_code AND month=:month",
+        {"employee_code": employee_code, "month": month}
+    )
     if not record:
-        conn.close()
         raise HTTPException(status_code=404, detail="Chưa có phiếu lương")
 
     data = json.loads(record["data_json"])
@@ -671,12 +649,10 @@ async def admin_update_salary_fields(
         data[key] = str(value) if value is not None else ""
 
     updated_json = json.dumps(data, ensure_ascii=False)
-    conn.execute(
-        "UPDATE salaries SET data_json=?, updated_at=datetime('now','localtime') WHERE employee_code=? AND month=?",
-        (updated_json, employee_code, month)
+    execute(
+        "UPDATE salaries SET data_json=:data_json, updated_at=CURRENT_TIMESTAMP WHERE employee_code=:employee_code AND month=:month",
+        {"data_json": updated_json, "employee_code": employee_code, "month": month}
     )
-    conn.commit()
-    conn.close()
     return {"success": True, "data": data}
 
 
@@ -712,12 +688,10 @@ async def admin_export_salary_pdf(
     if not TEMPLATE_PATH or not TEMPLATE_PATH.exists():
         raise HTTPException(status_code=500, detail="Template file luong.docx not found")
 
-    conn = get_conn()
-    record = conn.execute(
-        "SELECT data_json FROM salaries WHERE employee_code=? AND month=?",
-        (employee_code, month)
-    ).fetchone()
-    conn.close()
+    record = fetchone(
+        "SELECT data_json FROM salaries WHERE employee_code=:employee_code AND month=:month",
+        {"employee_code": employee_code, "month": month}
+    )
     if not record:
         raise HTTPException(status_code=404, detail="Chưa có phiếu lương")
 
@@ -775,28 +749,27 @@ async def admin_batch_export_pdf(
     if not TEMPLATE_PATH or not TEMPLATE_PATH.exists():
         raise HTTPException(status_code=500, detail="Template file luong.docx not found")
 
-    conn = get_conn()
     sql = """
         SELECT s.employee_code, s.data_json, e.full_name
         FROM salaries s
         LEFT JOIN employees e ON e.employee_code = s.employee_code
-        WHERE s.month = ?
+        WHERE s.month = :month
     """
-    params = [month]
+    params = {"month": month}
 
     emp_codes = body.get("employee_codes", [])
     if emp_codes:
-        placeholders = ",".join("?" for _ in emp_codes)
+        placeholders = ",".join(f":emp_{i}" for i in range(len(emp_codes)))
         sql += f" AND s.employee_code IN ({placeholders})"
-        params.extend(emp_codes)
+        for i, code in enumerate(emp_codes):
+            params[f"emp_{i}"] = code
 
     department = body.get("department", "")
     if department and department != "Tất cả":
-        sql += " AND e.department = ?"
-        params.append(department)
+        sql += " AND e.department = :department"
+        params["department"] = department
 
-    rows = conn.execute(sql, params).fetchall()
-    conn.close()
+    rows = fetchall(sql, params)
 
     if not rows:
         raise HTTPException(status_code=404, detail="Không có dữ liệu phiếu lương cho tháng này")

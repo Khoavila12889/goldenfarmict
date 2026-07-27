@@ -4,12 +4,12 @@ Run: uvicorn main:app --host 127.0.0.1 --port 8080 --reload
 """
 import asyncio
 import os
+from datetime import datetime
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from app.core.database import init_db
-from app.core.auth import seed_users, get_conn
+from app.core.auth import hash_password
 from app.core import events
 from app.routers import auth, employees, equipment, tickets, bookings, dashboard, licenses, software, approvals, business_trips, departments, salary_slips, salary_user, documents, todos
 
@@ -45,14 +45,29 @@ app.include_router(todos.router)
 @app.on_event("startup")
 def on_startup():
     events.init(asyncio.get_event_loop())
-    init_db()
-    conn = get_conn()
-    seed_users(conn)
-    conn.close()
-    # Đồng bộ SQLAlchemy ORM models với DB schema hiện tại
+
     from app.models import Base
-    from app.core.session import engine
+    from app.core.session import engine, SessionLocal, DATABASE_URL
+
+    # Create all tables via ORM (works for both SQLite and PostgreSQL)
     Base.metadata.create_all(bind=engine)
+
+    # Seed default admin user if not exists
+    session = SessionLocal()
+    try:
+        from app.models import User
+        existing = session.query(User).filter(User.employee_code == 'admin').count()
+        if existing == 0:
+            session.add(User(
+                employee_code='admin',
+                password_hash=hash_password('admin'),
+                role='admin',
+                full_name='Administrator',
+                created_at=datetime.utcnow().isoformat()
+            ))
+            session.commit()
+    finally:
+        session.close()
 
 
 @app.on_event("shutdown")

@@ -28,5 +28,5 @@ sqlalchemy>=1.4.0
 # Argon2 — xác thực mật khẩu Nextcloud legacy
 argon2-cffi>=23.1.0
 
-# PostgreSQL driver (chỉ cần khi migrate)
-# asyncpg>=0.29.0
+# PostgreSQL driver
+psycopg2-binary>=2.9.0

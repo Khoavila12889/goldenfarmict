@@ -1,44 +1,16 @@
-version: '3.8'
-
 services:
-  # 1. PostgreSQL Database Service
-  db:
-    image: postgres:16-alpine
-    container_name: goldenfarm-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: goldenfarm
-      POSTGRES_PASSWORD: your_strong_password
-      POSTGRES_DB: goldenfarmict
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    networks:
-      - goldenfarm-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U goldenfarm -d goldenfarmict"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  # 2. Backend Service
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    platform: linux/amd64  
     container_name: goldenfarm-backend
     ports:
       - "8000:8000"
-    depends_on:
-      db:
-        condition: service_healthy
     volumes:
-      # Backend code for hot-reload
+      # Backend code for hot-reload (docker compose restart backend)
       - ./backend/app:/app/app:rw
       - ./backend/main.py:/app/main.py:rw
-      # Giữ lại mount SQLite directory để chạy script migrate dữ liệu
+      # Mount SQLite database directory for data persistence
       - ./backend/data:/app/data:rw
       # Mount logs directory
       - ./backend/logs:/app/logs:rw
@@ -47,8 +19,7 @@ services:
     environment:
       - APP_ENV=production
       - PYTHONUNBUFFERED=1
-      # Chuỗi kết nối đến container Postgres (tên host là 'db')
-      - DATABASE_URL=postgresql://goldenfarm:your_strong_password@db:5432/goldenfarmict
+      - DB_DIR=/app/data
       - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:8088
     restart: unless-stopped
     healthcheck:
@@ -60,7 +31,6 @@ services:
     networks:
       - goldenfarm-network
 
-  # 3. Frontend Service
   frontend:
     build:
       context: ./frontend
@@ -79,5 +49,5 @@ networks:
     driver: bridge
 
 volumes:
-  postgres-data:
+  backend-data:
     driver: local

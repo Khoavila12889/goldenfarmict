@@ -10,7 +10,7 @@ import json
 import logging
 import os
 
-from ..core.database import get_conn
+from ..core.db import fetchall, fetchone, execute, insert
 from ..core.auth import verify_token
 from ..utils.pdf_generator import generate_single_pdf_from_json
 
@@ -36,12 +36,10 @@ class ViewSalaryReq(BaseModel):
 
 
 def _check_pdf_permission(employee_code: str) -> bool:
-    conn = get_conn()
-    row = conn.execute(
-        "SELECT can_view FROM user_permissions WHERE employee_code=? AND module=?",
-        (employee_code, "salary-pdf")
-    ).fetchone()
-    conn.close()
+    row = fetchone(
+        "SELECT can_view FROM user_permissions WHERE employee_code = :emp_code AND module = :module",
+        {"emp_code": employee_code, "module": "salary-pdf"}
+    )
     return bool(row["can_view"]) if row else False
 
 
@@ -53,12 +51,10 @@ def verify_salary(req: ViewSalaryReq):
     if not verify_token(req.employee_code, req.token, req.role):
         raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ")
 
-    conn = get_conn()
-    record = conn.execute(
-        "SELECT password, data_json FROM salaries WHERE employee_code=? AND month=?",
-        (req.employee_code, req.month)
-    ).fetchone()
-    conn.close()
+    record = fetchone(
+        "SELECT password, data_json FROM salaries WHERE employee_code = :emp_code AND month = :month",
+        {"emp_code": req.employee_code, "month": req.month}
+    )
 
     if not record:
         raise HTTPException(status_code=404, detail="Chưa có phiếu lương cho tháng này")
@@ -80,30 +76,23 @@ def verify_salary(req: ViewSalaryReq):
     }
 
 
-# ─── Employee: Danh sách tháng đã có phiếu lương ─────────────
-
 @router.get("/available-months")
 def get_available_months(
     employee_code: str = None,
     token: str = None,
     role: str = None
 ):
-    """Trả về danh sách các tháng đã có phiếu lương của employee."""
     if not employee_code:
         raise HTTPException(status_code=400, detail="Missing employee_code")
     if not verify_token(employee_code, token, role):
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    conn = get_conn()
-    rows = conn.execute(
-        "SELECT month, created_at FROM salaries WHERE employee_code=? ORDER BY month DESC",
-        (employee_code,)
-    ).fetchall()
-    conn.close()
-    return {"data": [dict(r) for r in rows], "total": len(rows)}
+    rows = fetchall(
+        "SELECT month, created_at FROM salaries WHERE employee_code = :emp_code ORDER BY month DESC",
+        {"emp_code": employee_code}
+    )
+    return {"data": rows, "total": len(rows)}
 
-
-# ─── Employee: Tải PDF phiếu lương (có mật khẩu) ─────────────
 
 class ExportPdfReq(BaseModel):
     employee_code: str
@@ -112,9 +101,9 @@ class ExportPdfReq(BaseModel):
     token: str = ""
     role: str = ""
 
+
 @router.post("/export-pdf")
 def employee_export_pdf(req: ExportPdfReq, background_tasks: BackgroundTasks):
-    """Employee tải phiếu lương PDF (có thể có mật khẩu)."""
     if not req.employee_code or not req.month:
         raise HTTPException(status_code=400, detail="Thiếu employee_code hoặc month")
     if not verify_token(req.employee_code, req.token, req.role):
@@ -124,12 +113,10 @@ def employee_export_pdf(req: ExportPdfReq, background_tasks: BackgroundTasks):
     if not TEMPLATE_PATH or not TEMPLATE_PATH.exists():
         raise HTTPException(status_code=500, detail="Template file luong.docx not found")
 
-    conn = get_conn()
-    record = conn.execute(
-        "SELECT password, data_json FROM salaries WHERE employee_code=? AND month=?",
-        (req.employee_code, req.month)
-    ).fetchone()
-    conn.close()
+    record = fetchone(
+        "SELECT password, data_json FROM salaries WHERE employee_code = :emp_code AND month = :month",
+        {"emp_code": req.employee_code, "month": req.month}
+    )
 
     if not record:
         raise HTTPException(status_code=404, detail="Chưa có phiếu lương cho tháng này")

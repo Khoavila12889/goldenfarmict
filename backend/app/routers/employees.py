@@ -1,140 +1,127 @@
 from fastapi import APIRouter, Query
-from ..core.database import get_conn
+from ..core.db import fetchall, fetchone, execute, insert
 
 router = APIRouter(prefix="/api/employees", tags=["employees"])
 
 
 @router.get("")
 def list_employees(keyword: str = "", department: str = "", status: str = ""):
-    conn = get_conn()
+    params = {}
     sql = """
         SELECT e.*,
-               (SELECT COUNT(*) FROM equipment WHERE employee_id=e.id) as eq_count,
-               (SELECT group_concat(product_name || ' (' || license_key || ')', '; ')
+               (SELECT COUNT(*) FROM equipment WHERE employee_id = e.id) AS eq_count,
+               (SELECT string_agg(product_name || ' (' || license_key || ')', '; ')
                 FROM licenses
-                WHERE equipment_id IN (SELECT id FROM equipment WHERE employee_id=e.id)) as license_keys
+                WHERE equipment_id IN (SELECT id FROM equipment WHERE employee_id = e.id)) AS license_keys
         FROM employees e WHERE 1=1
     """
-    params = []
     if keyword:
-        sql += " AND (e.full_name LIKE ? OR e.employee_code LIKE ? OR e.department LIKE ? OR e.phone LIKE ?)"
-        kw = f"%{keyword}%"
-        params.extend([kw, kw, kw, kw])
+        sql += " AND (e.full_name ILIKE :kw OR e.employee_code ILIKE :kw OR e.department ILIKE :kw OR e.phone ILIKE :kw)"
+        params["kw"] = f"%{keyword}%"
     if department and department != "Tất cả":
-        sql += " AND e.department = ?"
-        params.append(department)
+        sql += " AND e.department = :dept"
+        params["dept"] = department
     if status and status != "Tất cả":
-        sql += " AND e.status = ?"
-        params.append(status)
+        sql += " AND e.status = :status"
+        params["status"] = status
     sql += " ORDER BY e.full_name ASC"
 
-    rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    rows = fetchall(sql, params)
     return {"data": rows, "total": len(rows)}
 
 
 @router.get("/{employee_id}")
 def get_employee(employee_id: int):
-    conn = get_conn()
-    row = conn.execute("SELECT * FROM employees WHERE id=?", (employee_id,)).fetchone()
+    row = fetchone("SELECT * FROM employees WHERE id = :id", {"id": employee_id})
     if not row:
         return {"error": "Not found"}
-    return dict(row)
+    return row
 
 
 @router.get("/{employee_id}/equipment")
 def get_employee_equipment(employee_id: int):
-    conn = get_conn()
-    eqs = [dict(r) for r in conn.execute(
-        "SELECT eq.*, (SELECT COUNT(*) FROM licenses WHERE equipment_id=eq.id) as lic_count "
-        "FROM equipment eq WHERE eq.employee_id=? ORDER BY eq.id ASC",
-        (employee_id,)
-    ).fetchall()]
+    eqs = fetchall(
+        "SELECT eq.*, (SELECT COUNT(*) FROM licenses WHERE equipment_id = eq.id) AS lic_count "
+        "FROM equipment eq WHERE eq.employee_id = :id ORDER BY eq.id ASC",
+        {"id": employee_id}
+    )
     return {"data": eqs}
 
 
 @router.post("")
 def create_employee(body: dict):
-    conn = get_conn()
-    conn.execute(
-        "INSERT INTO employees (employee_code, full_name, department, position, handover_date, phone, email, notes, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            body.get("employee_code", ""),
-            body.get("full_name", ""),
-            body.get("department", ""),
-            body.get("position", ""),
-            body.get("handover_date", ""),
-            body.get("phone", ""),
-            body.get("email", ""),
-            body.get("notes", ""),
-            body.get("status", "active"),
-        ),
-    )
-    conn.commit()
-    return {"success": True, "id": conn.execute("SELECT last_insert_rowid()").fetchone()[0]}
+    new_id = insert("""
+        INSERT INTO employees (employee_code, full_name, department, position, handover_date, phone, email, notes, status)
+        VALUES (:code, :name, :dept, :pos, :handover, :phone, :email, :notes, :status)
+    """, {
+        "code": body.get("employee_code", ""),
+        "name": body.get("full_name", ""),
+        "dept": body.get("department", ""),
+        "pos": body.get("position", ""),
+        "handover": body.get("handover_date", ""),
+        "phone": body.get("phone", ""),
+        "email": body.get("email", ""),
+        "notes": body.get("notes", ""),
+        "status": body.get("status", "active"),
+    })
+    return {"success": True, "id": new_id}
 
 
 @router.put("/{employee_id}")
 def update_employee(employee_id: int, body: dict):
-    conn = get_conn()
     fields = []
-    params = []
+    params = {}
     for col in ["employee_code", "full_name", "department", "position", "handover_date", "phone", "email", "notes", "status"]:
         if col in body:
-            fields.append(f"{col}=?")
-            params.append(body[col])
+            fields.append(f"{col} = :{col}")
+            params[col] = body[col]
     if not fields:
         return {"success": False, "error": "No fields to update"}
-    params.append(employee_id)
-    conn.execute(
-        f"UPDATE employees SET {', '.join(fields)}, updated_at=datetime('now','localtime') WHERE id=?",
-        params,
+    params["id"] = employee_id
+    execute(
+        f"UPDATE employees SET {', '.join(fields)}, updated_at = CURRENT_TIMESTAMP WHERE id = :id",
+        params
     )
-    conn.commit()
     return {"success": True}
 
 
 @router.delete("/{employee_id}")
 def delete_employee(employee_id: int):
-    conn = get_conn()
-    conn.execute("UPDATE tickets SET employee_id=NULL, full_name='', department='', employee_code='' WHERE employee_id=?", (employee_id,))
-    conn.execute("UPDATE bookings SET employee_id=NULL, full_name='', department='' WHERE employee_id=?", (employee_id,))
-    # Revoke equipment back to storage instead of deleting
-    old = conn.execute("SELECT employee_code FROM employees WHERE id=?", (employee_id,)).fetchone()
+    execute("UPDATE tickets SET employee_id = NULL, full_name = '', department = '', employee_code = '' WHERE employee_id = :id", {"id": employee_id})
+    execute("UPDATE bookings SET employee_id = NULL, full_name = '', department = '' WHERE employee_id = :id", {"id": employee_id})
+    old = fetchone("SELECT employee_code FROM employees WHERE id = :id", {"id": employee_id})
     if old:
         emp_code = old["employee_code"]
-        for eq in conn.execute("SELECT id FROM equipment WHERE employee_id=?", (employee_id,)).fetchall():
-            conn.execute(
-                "UPDATE equipment_history SET return_date=date('now','localtime') "
-                "WHERE equipment_id=? AND employee_code=? AND return_date=''",
-                (eq["id"], emp_code)
-            )
-    conn.execute("UPDATE equipment SET employee_id=NULL, issued_date='', updated_at=datetime('now','localtime') WHERE employee_id=?", (employee_id,))
-    conn.execute("DELETE FROM employees WHERE id=?", (employee_id,))
-    conn.commit()
+        eqs = fetchall("SELECT id FROM equipment WHERE employee_id = :id", {"id": employee_id})
+        for eq in eqs:
+            execute("""
+                UPDATE equipment_history SET return_date = CURRENT_DATE
+                WHERE equipment_id = :eqid AND employee_code = :code AND return_date = ''
+            """, {"eqid": eq["id"], "code": emp_code})
+    execute("UPDATE equipment SET employee_id = NULL, issued_date = '', updated_at = CURRENT_TIMESTAMP WHERE employee_id = :id", {"id": employee_id})
+    execute("DELETE FROM employees WHERE id = :id", {"id": employee_id})
     return {"success": True}
 
 
 @router.get("/by-code/{code}")
 def get_employee_by_code(code: str):
-    conn = get_conn()
-    row = conn.execute(
-        "SELECT id, full_name, department, employee_code FROM employees WHERE employee_code=?",
-        (code,)
-    ).fetchone()
+    row = fetchone(
+        "SELECT id, full_name, department, employee_code FROM employees WHERE employee_code = :code",
+        {"code": code}
+    )
     if not row:
         return {"error": "Not found"}
-    return dict(row)
+    return row
 
 
 @router.get("/departments/list")
 def list_departments():
-    conn = get_conn()
-    rows = conn.execute("""
+    rows = fetchall("""
         SELECT d.name,
-               e.full_name as head_name, e.employee_code as head_code,
-               (SELECT COUNT(*) FROM employees WHERE department=d.name) as emp_count
+               e.full_name AS head_name, e.employee_code AS head_code,
+               (SELECT COUNT(*) FROM employees WHERE department = d.name) AS emp_count
         FROM departments d
         LEFT JOIN employees e ON e.id = d.head_id
         ORDER BY d.name
-    """).fetchall()
-    return {"data": [dict(r) for r in rows]}
+    """)
+    return {"data": rows}

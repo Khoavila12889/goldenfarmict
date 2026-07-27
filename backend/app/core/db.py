@@ -1,25 +1,21 @@
 """
 DB Abstraction Layer — SQLAlchemy engine.
-
-Module MỚI dùng file này.
-Module CŨ vẫn dùng get_conn() — không ảnh hưởng.
-
-Khi migrate sang PostgreSQL:
-  - Chỉ cần đổi DATABASE_URL trong session.py
-  - File này không cần sửa
 """
 
 from sqlalchemy import text
-from .session import SessionLocal
+from .session import SessionLocal, DATABASE_URL
 
 
-def fetchall(sql: str, params: tuple | list | None = None):
+_IS_POSTGRES = DATABASE_URL.startswith("postgresql")
+
+
+def fetchall(sql: str, params: dict | list | None = None):
     with SessionLocal() as sess:
         rows = sess.execute(text(sql), params or {}).mappings().all()
         return [dict(r) for r in rows]
 
 
-def fetchone(sql: str, params: tuple | list | None = None):
+def fetchone(sql: str, params: dict | list | None = None):
     with SessionLocal() as sess:
         row = sess.execute(text(sql), params or {}).mappings().first()
         if row is None:
@@ -27,22 +23,23 @@ def fetchone(sql: str, params: tuple | list | None = None):
         return dict(row)
 
 
-def execute(sql: str, params: tuple | list | None = None):
+def execute(sql: str, params: dict | list | None = None):
     with SessionLocal() as sess:
         sess.execute(text(sql), params or {})
         sess.commit()
 
 
-def insert(sql: str, params: tuple | list | None = None):
+def insert(sql: str, params: dict | list | None = None):
     with SessionLocal() as sess:
-        sess.execute(text(sql), params or {})
+        result = sess.execute(text(sql), params or {})
         sess.commit()
-        # SQLite-specific: PostgreSQL dùng RETURNING id
-        row = sess.execute(text("SELECT last_insert_rowid()")).scalar()
-        return row
+        if _IS_POSTGRES:
+            return result.inserted_primary_key[0] if result.inserted_primary_key else None
+        else:
+            return sess.execute(text("SELECT last_insert_rowid()")).scalar()
 
 
-def execute_many(sql: str, seq_params: list[tuple | list]):
+def execute_many(sql: str, seq_params: list[dict | list]):
     with SessionLocal() as sess:
         for params in seq_params:
             sess.execute(text(sql), params)

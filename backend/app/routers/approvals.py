@@ -6,21 +6,17 @@ Approval Workflow Module
 """
 import json
 from fastapi import APIRouter, Query, HTTPException
-from ..core.database import get_conn
+from ..core.db import fetchall, fetchone, execute, insert
 from ..core.events import publish_sync
 
 router = APIRouter(prefix="/api", tags=["approvals"])
 
 
-def _conn():
-    return get_conn()
-
-
-def _employee(conn, code):
-    return conn.execute(
-        "SELECT id, full_name, department, position, employee_code FROM employees WHERE employee_code=?",
-        (code,)
-    ).fetchone()
+def _employee(code):
+    return fetchone(
+        "SELECT id, full_name, department, position, employee_code FROM employees WHERE employee_code=:code",
+        {"code": code}
+    )
 
 
 # ─── WORKFLOW TEMPLATES ─────────────────────────────────────────
@@ -28,17 +24,17 @@ def _employee(conn, code):
 
 @router.get("/workflows")
 def list_workflows(active: bool = Query(True)):
-    conn = _conn()
-    rows = [dict(r) for r in conn.execute(
-        "SELECT * FROM workflow_templates WHERE is_active=? ORDER BY id", (1 if active else 0,)
-    ).fetchall()]
+    rows = fetchall(
+        "SELECT * FROM workflow_templates WHERE is_active=:active ORDER BY id",
+        {"active": 1 if active else 0}
+    )
     for r in rows:
-        r["steps"] = [dict(s) for s in conn.execute(
-            "SELECT * FROM workflow_steps WHERE template_id=? ORDER BY step_order", (r["id"],)
-        ).fetchall()]
+        r["steps"] = fetchall(
+            "SELECT * FROM workflow_steps WHERE template_id=:id ORDER BY step_order",
+            {"id": r["id"]}
+        )
     if active:
         rows = [r for r in rows if r["steps"]]
-    conn.close()
     return {"data": rows}
 
 
@@ -47,59 +43,45 @@ def create_workflow(body: dict):
     name = body.get("name", "").strip()
     if not name:
         raise HTTPException(400, "Missing workflow name")
-    conn = _conn()
-    conn.execute(
-        "INSERT INTO workflow_templates (name, description, icon) VALUES (?, ?, ?)",
-        (name, body.get("description", ""), body.get("icon", "FileCheck"))
+    new_id = insert(
+        "INSERT INTO workflow_templates (name, description, icon) VALUES (:name, :description, :icon) RETURNING id",
+        {"name": name, "description": body.get("description", ""), "icon": body.get("icon", "FileCheck")}
     )
-    conn.commit()
-    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    conn.close()
     publish_sync("workflow_created", {"id": new_id})
     return {"success": True, "id": new_id}
 
 
 @router.get("/workflows/{wf_id}")
 def get_workflow(wf_id: int):
-    conn = _conn()
-    row = conn.execute("SELECT * FROM workflow_templates WHERE id=?", (wf_id,)).fetchone()
+    row = fetchone("SELECT * FROM workflow_templates WHERE id=:id", {"id": wf_id})
     if not row:
-        conn.close()
         raise HTTPException(404, "Workflow not found")
-    r = dict(row)
-    r["steps"] = [dict(s) for s in conn.execute(
-        "SELECT * FROM workflow_steps WHERE template_id=? ORDER BY step_order", (wf_id,)
-    ).fetchall()]
-    conn.close()
-    return r
+    row["steps"] = fetchall(
+        "SELECT * FROM workflow_steps WHERE template_id=:id ORDER BY step_order",
+        {"id": wf_id}
+    )
+    return row
 
 
 @router.put("/workflows/{wf_id}")
 def update_workflow(wf_id: int, body: dict):
-    conn = _conn()
-    fields, params = [], []
+    fields, params = [], {}
     for col in ["name", "description", "icon", "is_active"]:
         if col in body:
-            fields.append(f"{col}=?")
-            params.append(body[col])
+            fields.append(f"{col}=:{col}")
+            params[col] = body[col]
     if not fields:
-        conn.close()
         return {"success": False, "error": "No fields"}
-    params.append(wf_id)
-    conn.execute(f"UPDATE workflow_templates SET {', '.join(fields)}, updated_at=datetime('now','localtime') WHERE id=?", params)
-    conn.commit()
-    conn.close()
+    params["wf_id"] = wf_id
+    execute(f"UPDATE workflow_templates SET {', '.join(fields)}, updated_at=CURRENT_TIMESTAMP WHERE id=:wf_id", params)
     publish_sync("workflow_updated", {"id": wf_id})
     return {"success": True}
 
 
 @router.delete("/workflows/{wf_id}")
 def delete_workflow(wf_id: int):
-    conn = _conn()
-    conn.execute("DELETE FROM workflow_steps WHERE template_id=?", (wf_id,))
-    conn.execute("DELETE FROM workflow_templates WHERE id=?", (wf_id,))
-    conn.commit()
-    conn.close()
+    execute("DELETE FROM workflow_steps WHERE template_id=:id", {"id": wf_id})
+    execute("DELETE FROM workflow_templates WHERE id=:id", {"id": wf_id})
     return {"success": True}
 
 
@@ -108,48 +90,38 @@ def delete_workflow(wf_id: int):
 
 @router.post("/workflows/{wf_id}/steps")
 def add_step(wf_id: int, body: dict):
-    conn = _conn()
-    max_order = conn.execute(
-        "SELECT COALESCE(MAX(step_order),0) FROM workflow_steps WHERE template_id=?", (wf_id,)
-    ).fetchone()[0]
-    new_order = max_order + 1
-    conn.execute(
-        "INSERT INTO workflow_steps (template_id, step_order, approver_type, approver_value, department_match, can_edit) VALUES (?,?,?,?,?,?)",
-        (wf_id, new_order, body.get("approver_type", "role"),
-         body.get("approver_value", ""), body.get("department_match", 1), body.get("can_edit", 0))
+    result = fetchone(
+        "SELECT COALESCE(MAX(step_order),0) AS max_order FROM workflow_steps WHERE template_id=:id",
+        {"id": wf_id}
     )
-    conn.commit()
-    step_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    conn.execute("UPDATE workflow_templates SET updated_at=datetime('now','localtime') WHERE id=?", (wf_id,))
-    conn.commit()
-    conn.close()
+    new_order = (result["max_order"] if result else 0) + 1
+    step_id = insert(
+        "INSERT INTO workflow_steps (template_id, step_order, approver_type, approver_value, department_match, can_edit) VALUES (:template_id, :step_order, :approver_type, :approver_value, :department_match, :can_edit) RETURNING id",
+        {"template_id": wf_id, "step_order": new_order, "approver_type": body.get("approver_type", "role"),
+         "approver_value": body.get("approver_value", ""), "department_match": body.get("department_match", 1),
+         "can_edit": body.get("can_edit", 0)}
+    )
+    execute("UPDATE workflow_templates SET updated_at=CURRENT_TIMESTAMP WHERE id=:id", {"id": wf_id})
     return {"success": True, "id": step_id, "step_order": new_order}
 
 
 @router.put("/workflows/steps/{step_id}")
 def update_step(step_id: int, body: dict):
-    conn = _conn()
-    fields, params = [], []
+    fields, params = [], {}
     for col in ["step_order", "approver_type", "approver_value", "department_match", "can_edit"]:
         if col in body:
-            fields.append(f"{col}=?")
-            params.append(body[col])
+            fields.append(f"{col}=:{col}")
+            params[col] = body[col]
     if not fields:
-        conn.close()
         return {"success": False}
-    params.append(step_id)
-    conn.execute(f"UPDATE workflow_steps SET {', '.join(fields)} WHERE id=?", params)
-    conn.commit()
-    conn.close()
+    params["step_id"] = step_id
+    execute(f"UPDATE workflow_steps SET {', '.join(fields)} WHERE id=:step_id", params)
     return {"success": True}
 
 
 @router.delete("/workflows/steps/{step_id}")
 def delete_step(step_id: int):
-    conn = _conn()
-    conn.execute("DELETE FROM workflow_steps WHERE id=?", (step_id,))
-    conn.commit()
-    conn.close()
+    execute("DELETE FROM workflow_steps WHERE id=:id", {"id": step_id})
     return {"success": True}
 
 
@@ -164,34 +136,30 @@ def create_request(body: dict):
     template_id = body.get("template_id")
     if not template_id:
         raise HTTPException(400, "Missing template_id")
-    conn = _conn()
-    tmpl = conn.execute("SELECT * FROM workflow_templates WHERE id=?", (template_id,)).fetchone()
+    tmpl = fetchone("SELECT * FROM workflow_templates WHERE id=:id", {"id": template_id})
     if not tmpl:
-        conn.close()
         raise HTTPException(404, "Workflow template not found")
-    steps = conn.execute(
-        "SELECT * FROM workflow_steps WHERE template_id=? ORDER BY step_order", (template_id,)
-    ).fetchall()
+    steps = fetchall(
+        "SELECT * FROM workflow_steps WHERE template_id=:id ORDER BY step_order",
+        {"id": template_id}
+    )
     if not steps:
-        conn.close()
         raise HTTPException(400, "Workflow has no steps")
     requester_code = body.get("requester_code", "")
     requester_name = ""
     requester_dept = ""
     if requester_code:
-        emp = _employee(conn, requester_code)
+        emp = _employee(requester_code)
         if emp:
             requester_name = emp["full_name"]
             requester_dept = emp["department"]
-    conn.execute(
-        "INSERT INTO approval_requests (template_id, title, description, requester_code, requester_name, requester_dept, status, current_step, total_steps, metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (template_id, title, body.get("description", ""), requester_code,
-         requester_name, requester_dept, "draft", 1, len(steps),
-         json.dumps(body.get("metadata", {}), ensure_ascii=False))
+    new_id = insert(
+        "INSERT INTO approval_requests (template_id, title, description, requester_code, requester_name, requester_dept, status, current_step, total_steps, metadata_json) VALUES (:template_id, :title, :description, :requester_code, :requester_name, :requester_dept, :status, :current_step, :total_steps, :metadata_json) RETURNING id",
+        {"template_id": template_id, "title": title, "description": body.get("description", ""),
+         "requester_code": requester_code, "requester_name": requester_name,
+         "requester_dept": requester_dept, "status": "draft", "current_step": 1,
+         "total_steps": len(steps), "metadata_json": json.dumps(body.get("metadata", {}), ensure_ascii=False)}
     )
-    conn.commit()
-    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    conn.close()
     return {"success": True, "id": new_id}
 
 
@@ -202,29 +170,27 @@ def list_requests(
     template_id: int | None = Query(None),
     search: str = Query(""),
 ):
-    conn = _conn()
     sql = "SELECT * FROM approval_requests WHERE 1=1"
-    params = []
+    params = {}
     if status != "all":
-        sql += " AND status=?"
-        params.append(status)
+        sql += " AND status=:status"
+        params["status"] = status
     if requester:
-        sql += " AND requester_code=?"
-        params.append(requester)
+        sql += " AND requester_code=:requester"
+        params["requester"] = requester
     if template_id:
-        sql += " AND template_id=?"
-        params.append(template_id)
+        sql += " AND template_id=:template_id"
+        params["template_id"] = template_id
     if search:
-        sql += " AND (title LIKE ? OR requester_name LIKE ? OR requester_code LIKE ?)"
-        kw = f"%{search}%"
-        params.extend([kw, kw, kw])
+        sql += " AND (title ILIKE :search OR requester_name ILIKE :search OR requester_code ILIKE :search)"
+        params["search"] = f"%{search}%"
     sql += " ORDER BY id DESC"
-    rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    rows = fetchall(sql, params)
     for r in rows:
-        r["logs"] = [dict(l) for l in conn.execute(
-            "SELECT * FROM approval_logs WHERE request_id=? ORDER BY id", (r["id"],)
-        ).fetchall()]
-    conn.close()
+        r["logs"] = fetchall(
+            "SELECT * FROM approval_logs WHERE request_id=:id ORDER BY id",
+            {"id": r["id"]}
+        )
     return {"data": rows}
 
 
@@ -233,33 +199,32 @@ def pending_requests(user_code: str = Query("")):
     """Get all approval requests awaiting action from the specified user (by role/dept match)."""
     if not user_code:
         raise HTTPException(400, "Missing user_code")
-    conn = _conn()
-    emp = _employee(conn, user_code)
+    emp = _employee(user_code)
     if not emp:
-        conn.close()
         return {"data": []}
     rows = []
-    all_reqs = [dict(r) for r in conn.execute(
+    all_reqs = fetchall(
         "SELECT * FROM approval_requests WHERE status IN ('pending','in_progress') ORDER BY id DESC"
-    ).fetchall()]
+    )
     for req in all_reqs:
-        steps = conn.execute(
-            "SELECT * FROM workflow_steps WHERE template_id=? ORDER BY step_order", (req["template_id"],)
-        ).fetchall()
+        steps = fetchall(
+            "SELECT * FROM workflow_steps WHERE template_id=:id ORDER BY step_order",
+            {"id": req["template_id"]}
+        )
         current = next((s for s in steps if s["step_order"] == req["current_step"]), None)
         if not current:
             continue
-        if _is_approver(conn, current, req, emp):
-            req["logs"] = [dict(l) for l in conn.execute(
-                "SELECT * FROM approval_logs WHERE request_id=? ORDER BY id", (req["id"],)
-            ).fetchall()]
-            req["current_step_info"] = dict(current)
+        if _is_approver(current, req, emp):
+            req["logs"] = fetchall(
+                "SELECT * FROM approval_logs WHERE request_id=:id ORDER BY id",
+                {"id": req["id"]}
+            )
+            req["current_step_info"] = current
             rows.append(req)
-    conn.close()
     return {"data": rows}
 
 
-def _is_approver(conn, step, request, emp):
+def _is_approver(step, request, emp):
     if step["approver_type"] == "specific":
         return emp["employee_code"] == step["approver_value"]
     elif step["approver_type"] == "role":
@@ -270,17 +235,17 @@ def _is_approver(conn, step, request, emp):
     return False
 
 
-def _get_approval_request(conn, req_id):
-    req = conn.execute(
-        "SELECT * FROM approval_requests WHERE id=? AND status IN ('pending','in_progress')",
-        (req_id,)
-    ).fetchone()
+def _get_approval_request(req_id):
+    req = fetchone(
+        "SELECT * FROM approval_requests WHERE id=:id AND status IN ('pending','in_progress')",
+        {"id": req_id}
+    )
     if not req:
         raise HTTPException(400, "Request not found or not pending")
-    steps = conn.execute(
-        "SELECT * FROM workflow_steps WHERE template_id=? ORDER BY step_order",
-        (req["template_id"],)
-    ).fetchall()
+    steps = fetchall(
+        "SELECT * FROM workflow_steps WHERE template_id=:id ORDER BY step_order",
+        {"id": req["template_id"]}
+    )
     current_step = next((s for s in steps if s["step_order"] == req["current_step"]), None)
     if not current_step:
         raise HTTPException(400, "Invalid current step")
@@ -289,83 +254,68 @@ def _get_approval_request(conn, req_id):
 
 @router.get("/requests/{req_id}")
 def get_request(req_id: int):
-    conn = _conn()
-    row = conn.execute("SELECT * FROM approval_requests WHERE id=?", (req_id,)).fetchone()
+    row = fetchone("SELECT * FROM approval_requests WHERE id=:id", {"id": req_id})
     if not row:
-        conn.close()
         raise HTTPException(404, "Request not found")
-    r = dict(row)
-    r["logs"] = [dict(l) for l in conn.execute(
-        "SELECT * FROM approval_logs WHERE request_id=? ORDER BY id", (req_id,)
-    ).fetchall()]
-    tmpl = conn.execute("SELECT * FROM workflow_templates WHERE id=?", (r["template_id"],)).fetchone()
-    r["template"] = dict(tmpl) if tmpl else None
-    r["steps"] = [dict(s) for s in conn.execute(
-        "SELECT * FROM workflow_steps WHERE template_id=? ORDER BY step_order", (r["template_id"],)
-    ).fetchall()]
-    conn.close()
-    return r
+    row["logs"] = fetchall(
+        "SELECT * FROM approval_logs WHERE request_id=:id ORDER BY id",
+        {"id": req_id}
+    )
+    tmpl = fetchone("SELECT * FROM workflow_templates WHERE id=:id", {"id": row["template_id"]})
+    row["template"] = tmpl
+    row["steps"] = fetchall(
+        "SELECT * FROM workflow_steps WHERE template_id=:id ORDER BY step_order",
+        {"id": row["template_id"]}
+    )
+    return row
 
 
 @router.put("/requests/{req_id}")
 def update_request(req_id: int, body: dict):
-    conn = _conn()
-    existing = conn.execute(
-        "SELECT * FROM approval_requests WHERE id=? AND status='draft'", (req_id,)
-    ).fetchone()
+    existing = fetchone(
+        "SELECT * FROM approval_requests WHERE id=:id AND status='draft'", {"id": req_id}
+    )
     if not existing:
-        conn.close()
         raise HTTPException(400, "Only draft requests can be edited")
-    fields, params = [], []
+    fields, params = [], {}
     for col in ["title", "description", "metadata_json"]:
         if col in body:
-            fields.append(f"{col}=?")
-            params.append(body[col])
+            fields.append(f"{col}=:{col}")
+            params[col] = body[col]
     if not fields:
-        conn.close()
         return {"success": False}
-    params.append(req_id)
-    conn.execute(f"UPDATE approval_requests SET {', '.join(fields)}, updated_at=datetime('now','localtime') WHERE id=?", params)
-    conn.commit()
-    conn.close()
+    params["req_id"] = req_id
+    execute(f"UPDATE approval_requests SET {', '.join(fields)}, updated_at=CURRENT_TIMESTAMP WHERE id=:req_id", params)
     return {"success": True}
 
 
 @router.put("/requests/{req_id}/submit")
 def submit_request(req_id: int):
-    conn = _conn()
-    req = conn.execute(
-        "SELECT * FROM approval_requests WHERE id=? AND status='draft'", (req_id,)
-    ).fetchone()
-    if not req:
-        conn.close()
-        raise HTTPException(400, "Request not found or not in draft status")
-    conn.execute(
-        "UPDATE approval_requests SET status='pending', updated_at=datetime('now','localtime') WHERE id=?",
-        (req_id,)
+    req = fetchone(
+        "SELECT * FROM approval_requests WHERE id=:id AND status='draft'", {"id": req_id}
     )
-    conn.commit()
-    conn.close()
+    if not req:
+        raise HTTPException(400, "Request not found or not in draft status")
+    execute(
+        "UPDATE approval_requests SET status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=:id",
+        {"id": req_id}
+    )
     publish_sync("request_submitted", {"id": req_id, "title": req["title"]})
     return {"success": True}
 
 
 @router.put("/requests/{req_id}/cancel")
 def cancel_request(req_id: int):
-    conn = _conn()
-    req = conn.execute(
-        "SELECT * FROM approval_requests WHERE id=? AND status IN ('draft','pending','in_progress')",
-        (req_id,)
-    ).fetchone()
-    if not req:
-        conn.close()
-        raise HTTPException(400, "Request cannot be cancelled")
-    conn.execute(
-        "UPDATE approval_requests SET status='cancelled', updated_at=datetime('now','localtime') WHERE id=?",
-        (req_id,)
+    req = fetchone(
+        "SELECT * FROM approval_requests WHERE id=:id AND status IN ('draft','pending','in_progress')",
+        {"id": req_id}
     )
-    conn.commit()
-    conn.close()
+    if not req:
+        raise HTTPException(400, "Request cannot be cancelled")
+    execute(
+        "UPDATE approval_requests SET status='cancelled', updated_at=CURRENT_TIMESTAMP WHERE id=:id",
+        {"id": req_id}
+    )
     return {"success": True}
 
 
@@ -375,34 +325,28 @@ def approve_request(req_id: int, body: dict):
     comment = body.get("comment", "").strip()
     if not approver_code:
         raise HTTPException(400, "Missing approver_code")
-    conn = _conn()
-    try:
-        req, steps, current_step = _get_approval_request(conn, req_id)
-        emp = _employee(conn, approver_code)
-        if not emp:
-            raise HTTPException(400, "Approver not found")
-        if not _is_approver(conn, current_step, req, emp):
-            raise HTTPException(403, "User is not the assigned approver for this step")
-        conn.execute(
-            "INSERT INTO approval_logs (request_id, step_order, approver_code, approver_name, action, comment) VALUES (?,?,?,?,?,?)",
-            (req_id, req["current_step"], approver_code, emp["full_name"], "approved", comment)
+    req, steps, current_step = _get_approval_request(req_id)
+    emp = _employee(approver_code)
+    if not emp:
+        raise HTTPException(400, "Approver not found")
+    if not _is_approver(current_step, req, emp):
+        raise HTTPException(403, "User is not the assigned approver for this step")
+    execute(
+        "INSERT INTO approval_logs (request_id, step_order, approver_code, approver_name, action, comment) VALUES (:request_id, :step_order, :approver_code, :approver_name, :action, :comment)",
+        {"request_id": req_id, "step_order": req["current_step"], "approver_code": approver_code,
+         "approver_name": emp["full_name"], "action": "approved", "comment": comment}
+    )
+    next_step = req["current_step"] + 1
+    if next_step > req["total_steps"]:
+        execute(
+            "UPDATE approval_requests SET status='approved', updated_at=CURRENT_TIMESTAMP WHERE id=:id",
+            {"id": req_id}
         )
-        next_step = req["current_step"] + 1
-        if next_step > req["total_steps"]:
-            conn.execute(
-                "UPDATE approval_requests SET status='approved', updated_at=datetime('now','localtime') WHERE id=?",
-                (req_id,)
-            )
-        else:
-            conn.execute(
-                "UPDATE approval_requests SET status='in_progress', current_step=?, updated_at=datetime('now','localtime') WHERE id=?",
-                (next_step, req_id)
-            )
-        conn.commit()
-    except HTTPException:
-        raise
-    finally:
-        conn.close()
+    else:
+        execute(
+            "UPDATE approval_requests SET status='in_progress', current_step=:step, updated_at=CURRENT_TIMESTAMP WHERE id=:id",
+            {"step": next_step, "id": req_id}
+        )
     publish_sync("request_approved", {"id": req_id})
     return {"success": True}
 
@@ -413,26 +357,20 @@ def reject_request(req_id: int, body: dict):
     comment = body.get("comment", "").strip()
     if not approver_code:
         raise HTTPException(400, "Missing approver_code")
-    conn = _conn()
-    try:
-        req, steps, current_step = _get_approval_request(conn, req_id)
-        emp = _employee(conn, approver_code)
-        if not emp:
-            raise HTTPException(400, "Approver not found")
-        if not _is_approver(conn, current_step, req, emp):
-            raise HTTPException(403, "User is not the assigned approver for this step")
-        conn.execute(
-            "INSERT INTO approval_logs (request_id, step_order, approver_code, approver_name, action, comment) VALUES (?,?,?,?,?,?)",
-            (req_id, req["current_step"], approver_code, emp["full_name"], "rejected", comment)
-        )
-        conn.execute(
-            "UPDATE approval_requests SET status='rejected', updated_at=datetime('now','localtime') WHERE id=?",
-            (req_id,)
-        )
-        conn.commit()
-    except HTTPException:
-        raise
-    finally:
-        conn.close()
+    req, steps, current_step = _get_approval_request(req_id)
+    emp = _employee(approver_code)
+    if not emp:
+        raise HTTPException(400, "Approver not found")
+    if not _is_approver(current_step, req, emp):
+        raise HTTPException(403, "User is not the assigned approver for this step")
+    execute(
+        "INSERT INTO approval_logs (request_id, step_order, approver_code, approver_name, action, comment) VALUES (:request_id, :step_order, :approver_code, :approver_name, :action, :comment)",
+        {"request_id": req_id, "step_order": req["current_step"], "approver_code": approver_code,
+         "approver_name": emp["full_name"], "action": "rejected", "comment": comment}
+    )
+    execute(
+        "UPDATE approval_requests SET status='rejected', updated_at=CURRENT_TIMESTAMP WHERE id=:id",
+        {"id": req_id}
+    )
     publish_sync("request_rejected", {"id": req_id})
     return {"success": True}
