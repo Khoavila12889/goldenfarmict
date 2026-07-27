@@ -6,6 +6,8 @@ dist/
 .vscode/
 *.db
 !backend/company.db
+!backend/data/
+!backend/data/*.db
 *.db-shm
 *.db-wal
 db.sqlite3
