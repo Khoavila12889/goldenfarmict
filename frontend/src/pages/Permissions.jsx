@@ -18,6 +18,7 @@ const MODULES = [
   { key: 'bookings', label: 'Lịch', group: 'support', desc: 'Đặt lịch xe & phòng họp' },
   { key: 'documents', label: 'Tài liệu', group: 'support', desc: 'Truy cập tài liệu dùng chung' },
   { key: 'salary', label: 'Phiếu lương', group: 'support', desc: 'Xem phiếu lương cá nhân' },
+  { key: 'salary-pdf', label: 'Tải PDF lương', group: 'support', desc: 'Cho phép tải PDF phiếu lương' },
 ]
 
 

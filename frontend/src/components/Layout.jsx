@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, Users, Monitor, Key, Ticket, CheckCircle, Settings, Calendar, Receipt, Folder, Shield, Menu, X, User, Lock, Eye, EyeOff, CheckSquare, HelpCircle } from 'lucide-react'
 import { changePassword } from '../services/api'
+import { driver } from 'driver.js'
+import 'driver.js/dist/driver.css'
 
 const iconMap = {
   dashboard: LayoutDashboard,
@@ -93,6 +95,90 @@ export default function Layout() {
       .then(d => setUserPerms(d.data || {}))
       .catch(() => setUserPerms({}))
   }, [userCode, userRole])
+
+  useEffect(() => {
+    if (localStorage.getItem('has_seen_welcome_tour')) return
+
+    let welcomeDriver = null
+    let sidebarDriver = null
+    let dismissTimer = null
+
+    const startSidebarTour = () => {
+      setIsSidebarOpen(true)
+
+      setTimeout(() => {
+        const salaryEl = document.querySelector('[data-tour="salary"]')
+        if (!salaryEl) {
+          navigate('/salary-slip')
+          return
+        }
+
+        sidebarDriver = driver({
+          animate: true,
+          popoverClass: 'tour-popover',
+          steps: [{
+            element: '[data-tour="salary"]',
+            popover: {
+              title: 'Phiếu lương',
+              description: 'Nhấn "Xem ngay" để đến trang Phiếu lương và nhập mật khẩu.',
+              side: 'right',
+              showButtons: ['close'],
+              doneBtnText: 'Xem ngay',
+            },
+          }],
+          onDoneClick: () => {
+            sidebarDriver.destroy()
+            navigate('/salary-slip')
+          },
+          onDestroyed: () => {
+            localStorage.setItem('has_seen_welcome_tour', 'true')
+          },
+        })
+        sidebarDriver.drive()
+      }, 400)
+    }
+
+    const showTimer = setTimeout(() => {
+      welcomeDriver = driver({
+        animate: true,
+        popoverClass: 'tour-popover',
+        steps: [{
+          element: '.bk-topbar',
+          popover: {
+            title: 'Chào mừng bạn đến với GOLDENFARM ICT!',
+            description: 'Hệ thống quản lý tập trung dành cho doanh nghiệp.',
+            doneBtnText: 'Bắt đầu',
+            showButtons: ['next'],
+            side: 'bottom',
+            align: 'center',
+          },
+        }],
+        onDoneClick: () => {
+          clearTimeout(dismissTimer)
+          if (welcomeDriver) welcomeDriver.destroy()
+          startSidebarTour()
+        },
+        onDestroyed: () => {
+          localStorage.setItem('has_seen_welcome_tour', 'true')
+        },
+      })
+      welcomeDriver.drive()
+
+      dismissTimer = setTimeout(() => {
+        if (welcomeDriver && welcomeDriver.isActive()) {
+          welcomeDriver.destroy()
+          startSidebarTour()
+        }
+      }, 5000)
+    }, 500)
+
+    return () => {
+      clearTimeout(showTimer)
+      clearTimeout(dismissTimer)
+      if (welcomeDriver && welcomeDriver.isActive()) welcomeDriver.destroy()
+      if (sidebarDriver && sidebarDriver.isActive()) sidebarDriver.destroy()
+    }
+  }, [navigate, userRole])
 
   function hasModuleAccess(path) {
     const moduleKey = MODULE_MAP[path]
@@ -323,6 +409,7 @@ export default function Layout() {
                 end={item.path === '/'}
                 className={({ isActive }) => `menu-item${isActive ? ' active' : ''}`}
                 onClick={closeMenu}
+                data-tour={item.icon}
               >
                 {IconComp && <IconComp size={18} />} {item.label}
               </NavLink>

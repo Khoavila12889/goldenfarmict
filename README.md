@@ -201,6 +201,70 @@ Chia sẻ tài liệu theo phòng ban (quản lý qua giao diện **Phân quyề
 - **Kiểm tra server-side**: `_check_folder_permission` (can_read) khi browse, `_check_download_allowed` (allow_download) khi download
 - Admin/head **luôn bypass** mọi kiểm tra quyền — thấy toàn bộ dữ liệu
 
+## 🎯 Onboarding Tour (Hướng dẫn người dùng mới)
+
+Hệ thống tích hợp **driver.js** để tạo tour hướng dẫn tương tác, tự động highlight từng menu trên Sidebar khi user đăng nhập lần đầu.
+
+### Cách hoạt động
+
+1. **Tự động kích hoạt**: Khi user đăng nhập lần đầu, tour tự động chạy sau ~1.2s. Sidebar mở ra → driver.js highlight lần lượt Topbar → từng menu (theo quyền RBAC) → Footer.
+2. **Lưu trạng thái**: `localStorage.setItem('has_seen_onboarding_tour', 'true')` sau khi tour khởi chạy → lần sau không tự động chạy nữa.
+3. **Xem lại tour**: Nhấn nút **"Xem lại hướng dẫn"** (icon 🔄) ở cuối Sidebar để kích hoạt lại bất cứ lúc nào.
+4. **Tương tác trong tour**: Người dùng có thể **click trực tiếp vào menu** đang được highlight để truy cập trang đó mà không cần đóng tour.
+
+### Cấu hình (dành cho Developer)
+
+**Chỉ hiển thị tour cho một số module nhất định:**
+
+Mở `frontend/src/components/Layout.jsx`, thêm prop `enabledIcons`:
+
+```jsx
+const { startTour } = useOnboardingTour({
+  navItems,
+  setIsSidebarOpen,
+  enabledIcons: ['salary'],         // ← chỉ show tour cho Phiếu lương
+  // enabledIcons: ['dashboard', 'todos', 'salary'],  // hoặc nhiều module
+  // Bỏ qua prop (undefined) → show tất cả
+})
+```
+
+**Danh sách icon name** (giá trị `icon` trong `allNavItems` tại `Layout.jsx`):
+
+| Icon | Module |
+|------|--------|
+| `dashboard` | Dashboard |
+| `todos` | Công việc (Todos) |
+| `employees` | Nhân viên |
+| `equipment` | Thiết bị |
+| `licenses` | License Keys |
+| `tickets` | Tickets |
+| `approvals` | Phê duyệt |
+| `workflows` | Quy trình |
+| `bookings` | Lịch |
+| `documents` | Tài liệu |
+| `salary` | Phiếu lương |
+| `salaryAdmin` | Quản lý lương |
+| `permissions` | Phân quyền |
+| `help` | Trợ giúp |
+
+**Tuỳ chỉnh nội dung popover** cho từng module:
+
+Mở `frontend/src/hooks/useOnboardingTour.js`, sửa object `tourLabels`:
+
+```js
+const tourLabels = {
+  salary: 'Xem Phiếu Lương',
+  dashboard: 'Tổng quan hệ thống',
+  todos: 'Quản lý công việc',
+  // thêm các module khác ...
+}
+```
+
+### Công nghệ sử dụng
+
+- **driver.js** ^1.3+ — thư viện highlight & popover tour
+- **lucide-react** — icon nút "Xem lại hướng dẫn" (`RefreshCw`)
+
 ## Installation
 
 ### Yêu cầu

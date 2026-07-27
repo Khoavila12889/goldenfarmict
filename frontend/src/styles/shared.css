@@ -182,3 +182,32 @@
     font-size: 0.8rem;
   }
 }
+
+/* ─── Onboarding Tour (driver.js) ─────────────────────────── */
+.tour-popover {
+  --driver-popover-background-color: #fef3c7;
+  --driver-popover-border-color: #f59e0b;
+  --driver-popover-border-width: 2px;
+  --driver-popover-border-radius: 12px;
+  --driver-popover-box-shadow: 0 8px 32px rgba(245, 158, 11, 0.2);
+  --driver-popover-title-color: #0a5b35;
+  --driver-popover-description-color: #12804b;
+  --driver-popover-font-family: 'Inter', system-ui, sans-serif;
+  --driver-popover-font-size: 0.875rem;
+  --driver-popover-padding: 1.25rem;
+  --driver-popover-close-button-color: #12804b;
+  --driver-popover-close-button-hover-color: #0a5b35;
+  --driver-popover-close-button-size: 20px;
+  --driver-popover-btn-background-color: #0a5b35;
+  --driver-popover-btn-color: #ffffff;
+  --driver-popover-btn-border-radius: 8px;
+  --driver-popover-btn-padding: 0.5rem 1rem;
+  --driver-popover-btn-font-size: 0.85rem;
+  --driver-popover-btn-font-weight: 600;
+  --driver-popover-btn-cursor: pointer;
+  --driver-popover-progress-color: #f59e0b;
+  --driver-popover-arrow-color: #fef3c7;
+  --driver-popover-arrow-border-color: #f59e0b;
+}
+
+

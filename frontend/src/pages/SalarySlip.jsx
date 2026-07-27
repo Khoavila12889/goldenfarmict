@@ -1,5 +1,7 @@
-import React, { useEffect, useState, useRef } from 'react'
-import { Loader, Lock, ChevronLeft, ChevronRight, Download, Check, AlertCircle } from 'lucide-react'
+import React, { useEffect, useState, useRef, useCallback } from 'react'
+import { Loader, Lock, ChevronLeft, ChevronRight, Download, Check, AlertCircle, RefreshCw } from 'lucide-react'
+import { driver } from 'driver.js'
+import 'driver.js/dist/driver.css'
 import useSalarySlip from '../hooks/useSalarySlip'
 import './SalarySlip.css'
 
@@ -13,7 +15,7 @@ function parseMonth(monthStr) {
 export default function SalarySlip() {
   const {
     selectedMonth, salaryData, isLoading, error, needPassword,
-    availableMonths, monthsLoading, pdfExporting,
+    availableMonths, monthsLoading, pdfExporting, pdfEnabled,
     fetchSalarySlip, fetchAvailableMonths, downloadPdf, changeMonth,
   } = useSalarySlip()
 
@@ -21,6 +23,36 @@ export default function SalarySlip() {
   const [pwdError, setPwdError] = useState('')
   const [pdfMsg, setPdfMsg] = useState(null)
   const [showMonths, setShowMonths] = useState(false)
+
+  const startTour = useCallback(() => {
+    if (!document.querySelector('.salary-pwd-wrap')) return
+
+    const d = driver({
+      showProgress: false,
+      animate: true,
+      popoverClass: 'tour-popover',
+      steps: [{
+        element: '.salary-pwd-wrap',
+        popover: {
+          title: 'Nhập mật khẩu để xem Phiếu lương',
+          description: 'Vui lòng nhập mật khẩu được cung cấp để mở khóa và xem phiếu lương của bạn.',
+          side: 'top',
+          showButtons: ['close'],
+        },
+      }],
+    })
+
+    localStorage.setItem('has_seen_salary_tour', 'true')
+    d.drive()
+  }, [])
+
+  useEffect(() => {
+    if (isLoading) return
+    const hasSeen = localStorage.getItem('has_seen_salary_tour')
+    if (hasSeen) return
+    const timer = setTimeout(startTour, 600)
+    return () => clearTimeout(timer)
+  }, [startTour, isLoading])
 
   useEffect(() => { fetchSalarySlip(selectedMonth); fetchAvailableMonths() }, [])
 
@@ -118,12 +150,18 @@ export default function SalarySlip() {
             </button>
           </div>
 
-          <button className={`salary-btn salary-btn-pdf${!salaryData ? ' disabled' : ''}`}
-            onClick={handleDownloadPdf}
-            disabled={!salaryData || pdfExporting}
-            title="Tải PDF phiếu lương">
-            {pdfExporting ? <><Loader size={14} className="spin" /> Đang xuất...</> : <><Download size={14} /> PDF</>}
-          </button>
+          {salaryData && !pdfEnabled ? (
+            <span className="salary-pdf-disabled" title="Liên hệ Admin để được cấp quyền">
+              <Download size={14} /> PDF 
+            </span>
+          ) : (
+            <button className={`salary-btn salary-btn-pdf${!salaryData ? ' disabled' : ''}`}
+              onClick={handleDownloadPdf}
+              disabled={!salaryData || pdfExporting}
+              title="Tải PDF phiếu lương">
+              {pdfExporting ? <><Loader size={14} className="spin" /> Đang xuất...</> : <><Download size={14} /> PDF</>}
+            </button>
+          )}
         </div>
       </div>
 
@@ -168,8 +206,7 @@ export default function SalarySlip() {
         {/* Password form */}
         {!isLoading && needPassword && (
           <div className="salary-pwd-wrap">
-            <Lock size={56} className="salary-lock-icon" />
-            <p className="salary-state-title">Nhập mật khẩu để xem phiếu lương</p>
+            <Lock size={80} className="salary-lock-icon" />
             <div className="salary-pwd-row">
               <input
                 type="password"
@@ -370,6 +407,7 @@ export default function SalarySlip() {
         )}
 
       </div>{/* end salary-content */}
+
     </div>
   )
 }

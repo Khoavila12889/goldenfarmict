@@ -14,12 +14,14 @@ export default function useSalarySlip() {
   const [availableMonths, setAvailableMonths] = useState([])
   const [monthsLoading, setMonthsLoading] = useState(false)
   const [pdfExporting, setPdfExporting] = useState(false)
+  const [pdfEnabled, setPdfEnabled] = useState(false)
 
   const fetchSalarySlip = useCallback(async (month, password) => {
     setIsLoading(true)
     setError(null)
     setNeedPassword(false)
     setSalaryData(null)
+    setPdfEnabled(false)
 
     const userCode = sessionStorage.getItem('user_code')
     const token = sessionStorage.getItem('token') || ''
@@ -35,6 +37,7 @@ export default function useSalarySlip() {
       })
       if (res.data.status === 'success') {
         setSalaryData(res.data.data)
+        setPdfEnabled(res.data.pdf_enabled === true)
       }
     } catch (err) {
       if (err.response?.status === 401) {
@@ -115,6 +118,7 @@ export default function useSalarySlip() {
     availableMonths,
     monthsLoading,
     pdfExporting,
+    pdfEnabled,
     fetchSalarySlip,
     fetchAvailableMonths,
     downloadPdf,

@@ -35,21 +35,18 @@ class ViewSalaryReq(BaseModel):
     role: str = ""
 
 
+def _check_pdf_permission(employee_code: str) -> bool:
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT can_view FROM user_permissions WHERE employee_code=? AND module=?",
+        (employee_code, "salary-pdf")
+    ).fetchone()
+    conn.close()
+    return bool(row["can_view"]) if row else False
+
+
 @router.post("/verify-and-view")
 def verify_salary(req: ViewSalaryReq):
-    """
-    Employee: Xem phiếu lương dạng JSON (không cần PDF).
-
-    1. Xác thực token
-    2. Query bảng salaries lấy data_json
-    3. Kiểm tra password (nếu có, so với PASSWORD từ file Excel)
-    4. Trả về context JSON → Frontend render HTML đẹp
-
-    Lợi ích:
-    - Không cần PDF viewer → hoạt động trên mọi trình duyệt mobile
-    - Tận dụng create_salary_context từ tool .py cũ
-    - Dữ liệu format sẵn (VD: 15,000,000)
-    """
     if not req.employee_code or not req.month:
         raise HTTPException(status_code=400, detail="Thiếu employee_code hoặc month")
 
@@ -78,7 +75,8 @@ def verify_salary(req: ViewSalaryReq):
         "status": "success",
         "employee_code": req.employee_code,
         "month": req.month,
-        "data": salary_data
+        "data": salary_data,
+        "pdf_enabled": _check_pdf_permission(req.employee_code)
     }
 
 
@@ -121,6 +119,8 @@ def employee_export_pdf(req: ExportPdfReq, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=400, detail="Thiếu employee_code hoặc month")
     if not verify_token(req.employee_code, req.token, req.role):
         raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ")
+    if not _check_pdf_permission(req.employee_code):
+        raise HTTPException(status_code=403, detail="Bạn không có quyền tải PDF. Vui lòng liên hệ Admin.")
     if not TEMPLATE_PATH or not TEMPLATE_PATH.exists():
         raise HTTPException(status_code=500, detail="Template file luong.docx not found")
 

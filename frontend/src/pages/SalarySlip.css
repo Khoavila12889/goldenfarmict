@@ -82,6 +82,7 @@
 .salary-btn-pdf { background: #dc2626; color: #fff; }
 .salary-btn-pdf:hover:not(:disabled) { background: #b91c1c; }
 .salary-btn-pdf.disabled { opacity: 0.35; cursor: not-allowed; }
+.salary-pdf-disabled { display: inline-flex; align-items: center; gap: 0.35rem; color: #94a3b8; font-size: 0.8rem; cursor: not-allowed; user-select: none; }
 
 .salary-pdf-msg {
   display: flex; align-items: center; gap: 0.35rem;
@@ -163,7 +164,7 @@
 
 /* ─── Password form ────────────────────────────────────────── */
 
-.salary-pwd-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 1.25rem; padding: 2rem 1rem; text-align: center; }
+.salary-pwd-wrap { display: flex; flex-direction: column; align-items: center; gap: 1.25rem; padding: 0 1rem 2rem; text-align: center; margin-top: 30px; }
 .salary-lock-icon { color: var(--bk-primary, #00468C); }
 .salary-pwd-row { display: flex; align-items: center; gap: 0.5rem; width: 100%; max-width: 380px; }
 .salary-pwd-input { flex: 1; padding: 0.6rem 0.85rem; border: 1.5px solid var(--bk-border, #cbd5e1); border-radius: var(--bk-radius-sm, 8px); font-size: 0.9rem; font-family: inherit; outline: none; background: var(--bk-surface, #fff); transition: border-color 0.15s, box-shadow 0.15s; }
@@ -764,4 +765,31 @@
   .sa-pwd-wrap { width: 100%; }
   .sa-pwd-input { width: 100%; }
   .sa-btn { justify-content: center; }
+}
+
+/* ─── Salary Tour Button ──────────────────────────────────── */
+.salary-tour-btn {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 50%;
+  background: var(--bk-primary, #0a5b35);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(10, 91, 53, 0.35);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.salary-tour-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 24px rgba(10, 91, 53, 0.45);
+}
+.salary-tour-btn:active {
+  transform: scale(0.95);
 }
