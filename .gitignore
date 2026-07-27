@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+node_modules/
+dist/
+.vscode/
+*.db
+!backend/company.db
+!backend/data/
+!backend/data/*.db
+*.db-shm
+*.db-wal
+db.sqlite3
+temp_pdf_gen/
