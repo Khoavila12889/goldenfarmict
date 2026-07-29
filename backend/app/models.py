@@ -1,5 +1,5 @@
 """
-SQLAlchemy ORM Models — 18 tables.
+SQLAlchemy ORM Models — 21+ tables.
 
 Khi migrate sang PostgreSQL:
   - Đổi `DATABASE_URL` trong `core/session.py`
@@ -8,7 +8,7 @@ Khi migrate sang PostgreSQL:
   - `server_default` dùng text() để không phụ thuộc dialect.
 """
 
-from sqlalchemy import Column, Integer, String, Float, Text, Boolean
+from sqlalchemy import Column, Integer, String, Float, Text, Boolean, UniqueConstraint
 from .core.session import Base
 
 
@@ -295,7 +295,16 @@ class StoragePermission(Base):
     employee_code = Column(String, default='', index=True)
     department = Column(String, default='')
     permission = Column(String, nullable=False, default='read')
+    target_type = Column(String, default='DEPARTMENT')
+    can_read = Column(Integer, default=1)
+    can_write = Column(Integer, default=0)
+    can_edit = Column(Integer, default=0)
+    can_delete = Column(Integer, default=0)
+    allow_download = Column(Integer, default=1)
+    can_reshare = Column(Integer, default=0)
+    expires_at = Column(String, default='')
     created_at = Column(String, default='')
+    updated_at = Column(String, default='')
 
 
 class Todo(Base):
@@ -326,3 +335,59 @@ class TodoSubtask(Base):
     sort_order = Column(Integer, default=0)
     created_at = Column(String, default='')
 
+
+class LicCategory(Base):
+    __tablename__ = 'lic_categories'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)
+    icon = Column(String, default='')
+    sort_order = Column(Integer, default=0)
+
+
+class LicItem(Base):
+    __tablename__ = 'lic_items'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    category_id = Column(Integer, nullable=False)
+    name = Column(String, nullable=False, default='')
+    registered_date = Column(String, default='')
+    expiry_date = Column(String, default='')
+    notes = Column(Text, default='')
+    contract_file = Column(String, default='')
+    created_at = Column(String, default='')
+    updated_at = Column(String, default='')
+
+
+class UserPermission(Base):
+    __tablename__ = 'user_permissions'
+    __table_args__ = (UniqueConstraint('employee_code', 'module', name='uq_user_perm'),)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    employee_code = Column(String, nullable=False, index=True)
+    module = Column(String, nullable=False, index=True)
+    can_view = Column(Integer, default=1)
+    can_edit = Column(Integer, default=0)
+    created_at = Column(String, default='')
+    updated_at = Column(String, default='')
+
+
+class RolePermission(Base):
+    __tablename__ = 'role_permissions'
+    __table_args__ = (UniqueConstraint('role', 'module', name='uq_role_perm'),)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    role = Column(String, nullable=False, index=True)
+    module = Column(String, nullable=False, index=True)
+    can_view = Column(Integer, default=1)
+    can_edit = Column(Integer, default=0)
+    created_at = Column(String, default='')
+    updated_at = Column(String, default='')
+
+
+class DepartmentPermission(Base):
+    __tablename__ = 'department_permissions'
+    __table_args__ = (UniqueConstraint('department', 'module', name='uq_dept_perm'),)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    department = Column(String, nullable=False, index=True)
+    module = Column(String, nullable=False, index=True)
+    can_view = Column(Integer, default=1)
+    can_edit = Column(Integer, default=0)
+    created_at = Column(String, default='')
+    updated_at = Column(String, default='')

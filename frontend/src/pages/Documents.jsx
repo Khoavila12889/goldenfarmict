@@ -1,16 +1,17 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import {
   Folder, File, FolderOpen, Plus, Trash2,
   Server, Wifi, Cloud, RefreshCw, ChevronRight, Home, Shield,
   MoreVertical, FileText, Archive, Image, Eye,
   FileSpreadsheet, FileCode, Music, Video, FileCog,
-  Download, LayoutGrid, List, Search, X
+  Download, LayoutGrid, List, Search, X, Upload
 } from 'lucide-react'
 import '../styles/shared.css'
 import './Documents.css'
 import FileViewer from '../components/FileViewer'
+import OnlyOfficeViewer from '../components/OnlyOfficeViewer'
 import { getStorageConfigs, browseStorage, getStoragePermissions, createStoragePermission, deleteStoragePermission, createStorageConfig, updateStorageConfig, deleteStorageConfig, testStorageConnection, testStorageConnectionDirect, getStorageDepartments } from '../services/api'
-
+import { formatDate } from '../utils/date'
 const INITIAL_CONFIG = { name: '', type: 'smb', host: '', port: 445, username: '', password: '', remote_path: '', domain: '' }
 
 function getFileIcon(name, isDir) {
@@ -59,7 +60,7 @@ function formatSize(bytes) {
   return (i === 0 ? size.toFixed(0) : size.toFixed(1)) + ' ' + units[i]
 }
 
-import { formatDate } from '../utils/date'
+
 
 function SkeletonRows({ count = 5 }) {
   return (
@@ -113,7 +114,12 @@ export default function Documents() {
 
   const [viewerFile, setViewerFile] = useState(null)
   const [viewerOpen, setViewerOpen] = useState(false)
+  const [ooFile, setOoFile] = useState(null)
+  const [ooOpen, setOoOpen] = useState(false)
+  const [ooConfigId, setOoConfigId] = useState(null)
   const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, file: null })
+
+  const fileInputRef = useRef(null)
 
   // View mode & search
   const [viewMode, setViewMode] = useState('grid')
@@ -185,9 +191,23 @@ export default function Documents() {
     return previewable.includes(ext)
   }
 
+  const officeExts = new Set(['docx','xlsx','pptx','doc','xls','ppt','odt','ods','odp','csv','txt','rtf','pdf'])
+
+  function isOfficeFile(name) {
+    return officeExts.has(name.split('.').pop().toLowerCase())
+  }
+
   async function handlePreviewFile(entry) {
     if (entry.is_dir) return
     const currentPath = breadcrumbs.at(-1).id
+
+    if (isOfficeFile(entry.name)) {
+      setOoFile({ ...entry, browsePath: currentPath })
+      setOoConfigId(activeConfig.id)
+      setOoOpen(true)
+      return
+    }
+
     const normalizedPath = currentPath === '/'
       ? entry.name
       : `${currentPath.replace(/\/$/, '')}/${entry.name}`
@@ -306,6 +326,38 @@ export default function Documents() {
     setShowPerms(true)
   }
 
+  function exportConfigToFile() {
+    const json = JSON.stringify(configForm, null, 2)
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    const safeName = (configForm.name || 'storage_config').replace(/[^a-zA-Z0-9_\-]/g, '_')
+    link.href = url
+    link.download = `storage_config_${safeName}.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    setTimeout(() => URL.revokeObjectURL(url), 2000)
+  }
+
+  function importConfigFromFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result)
+        setConfigForm({ ...INITIAL_CONFIG, ...data })
+        setTestMsg('')
+        setTestOk(false)
+      } catch {
+        alert('File JSON không hợp lệ')
+      }
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }
+
   async function addPerm() {
     if (!permForm.folder_path.trim()) return
     if (!permForm.role && !permForm.employee_code && !permForm.department) { alert('Chọn ít nhất Role, Mã NV hoặc Bộ phận'); return }
@@ -353,7 +405,6 @@ export default function Documents() {
               >
                 <IconComp size={14} />
                 <span className="doc-tab-label">{cfg.name}</span>
-                <span className="doc-tab-meta">{cfg.type === 'gdrive' ? cfg.remote_path : cfg.host}</span>
                 {isAdmin && (
                   <button className="doc-tab-close" onClick={e => { e.stopPropagation(); removeConfig(cfg.id) }} title="Xóa">
                     <Trash2 size={12} />
@@ -565,78 +616,88 @@ export default function Documents() {
       {showConfig && (
         <div className="side-panel open panel-config">
           <div className="panel-body">
-            <h3 style={{ marginBottom: '1rem' }}>{editingConfig ? 'Sửa cấu hình' : 'Thêm cấu hình Storage'}</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <div>
-                <label className="doc-label">Tên</label>
-                <input className="salary-pwd-input" value={configForm.name} onChange={e => setConfigForm({ ...configForm, name: e.target.value })} placeholder="VD: File Server Sản xuất" />
-              </div>
-              <div>
-                <label className="doc-label">Loại Storage</label>
-                <select className="salary-pwd-input" value={configForm.type}
-                  onChange={e => {
-                    const t = e.target.value
-                    setConfigForm({ ...configForm, type: t, port: t === 'smb' ? 445 : (t === 'ftp' ? 21 : 0), host: t === 'gdrive' ? '' : configForm.host, remote_path: t === 'gdrive' ? '' : (t === 'smb' ? '' : '/'), username: '', password: '', domain: '' })
-                  }}>
-                  <option value="smb">SMB (Windows Share)</option>
-                  <option value="ftp">FTP</option>
-                  <option value="gdrive">Google Drive</option>
-                </select>
-              </div>
+            <h3>{editingConfig ? 'Sửa cấu hình' : 'Thêm cấu hình Storage'}</h3>
+            <p className="panel-subtitle">Cấu hình kết nối tới máy chủ file qua SMB, FTP, hoặc Google Drive.</p>
 
-              {configForm.type !== 'gdrive' ? (
-                <>
+            <div className="btn-import-export">
+              <button className="btn-ie" onClick={() => fileInputRef.current?.click()}>
+                <Upload size={13} /> Import JSON
+              </button>
+              <button className="btn-ie" onClick={exportConfigToFile}>
+                <Download size={13} /> Export JSON
+              </button>
+            </div>
+            <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={importConfigFromFile} />
+
+            <div className="form-group">
+              <label className="doc-label">Tên</label>
+              <input className="salary-pwd-input" value={configForm.name} onChange={e => setConfigForm({ ...configForm, name: e.target.value })} placeholder="VD: File Server Sản xuất" />
+            </div>
+            <div className="form-group">
+              <label className="doc-label">Loại Storage</label>
+              <select className="salary-pwd-input" value={configForm.type}
+                onChange={e => {
+                  const t = e.target.value
+                  setConfigForm({ ...configForm, type: t, port: t === 'smb' ? 445 : (t === 'ftp' ? 21 : 0), host: t === 'gdrive' ? '' : configForm.host, remote_path: t === 'gdrive' ? '' : (t === 'smb' ? '' : '/'), username: '', password: '', domain: '' })
+                }}>
+                <option value="smb">SMB (Windows Share)</option>
+                <option value="ftp">FTP</option>
+                <option value="gdrive">Google Drive</option>
+              </select>
+            </div>
+
+            {configForm.type !== 'gdrive' ? (
+              <>
+                <div className="form-group">
+                  <label className="doc-label">Host</label>
+                  <input className="salary-pwd-input" value={configForm.host} onChange={e => setConfigForm({ ...configForm, host: e.target.value })} placeholder="10.0.0.1" />
+                </div>
+                <div className="form-row">
                   <div>
-                    <label className="doc-label">Host</label>
-                    <input className="salary-pwd-input" value={configForm.host} onChange={e => setConfigForm({ ...configForm, host: e.target.value })} placeholder="10.0.0.1" />
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <div style={{ flex: 1 }}>
-                      <label className="doc-label">Port</label>
-                      <input className="salary-pwd-input" type="number" value={configForm.port} onChange={e => setConfigForm({ ...configForm, port: parseInt(e.target.value) || (configForm.type === 'smb' ? 445 : 21) })} />
-                    </div>
-                    <div style={{ flex: 2 }}>
-                      <label className="doc-label">Username</label>
-                      <input className="salary-pwd-input" value={configForm.username} onChange={e => setConfigForm({ ...configForm, username: e.target.value })} placeholder={configForm.type === 'smb' ? 'goldenfarm\\user' : 'anonymous'} />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="doc-label">Password</label>
-                    <input className="salary-pwd-input" type="password" value={configForm.password} onChange={e => setConfigForm({ ...configForm, password: e.target.value })} placeholder="********" />
-                  </div>
-                  <div>
-                    <label className="doc-label">Remote Path / Share</label>
-                    <input className="salary-pwd-input" value={configForm.remote_path} onChange={e => setConfigForm({ ...configForm, remote_path: e.target.value })} placeholder={configForm.type === 'smb' ? 'Tên Share (VD: goldenfarm)' : '/'} />
-                  </div>
-                  {configForm.type === 'smb' && (
-                    <div>
-                      <label className="doc-label">Domain (tùy chọn)</label>
-                      <input className="salary-pwd-input" value={configForm.domain} onChange={e => setConfigForm({ ...configForm, domain: e.target.value })} placeholder="WORKGROUP" />
-                    </div>
-                  )}
-                </>
-              ) : (
-                <>
-                  <div>
-                    <label className="doc-label">Service Account Email (Tùy chọn ghi chú)</label>
-                    <input className="salary-pwd-input" value={configForm.username} onChange={e => setConfigForm({ ...configForm, username: e.target.value })} placeholder="ict-service@goldenfarm.iam.gserviceaccount.com" />
-                  </div>
-                  <div>
-                    <label className="doc-label">Service Account JSON (Dán toàn bộ nội dung file JSON vào đây)</label>
-                    <textarea className="salary-pwd-input" style={{ minHeight: 120, fontFamily: 'monospace', fontSize: '0.8rem', resize: 'vertical' }} value={configForm.password} onChange={e => setConfigForm({ ...configForm, password: e.target.value })} placeholder='{ "type": "service_account", "project_id": "...", "private_key": "..." }' />
+                    <label className="doc-label">Port</label>
+                    <input className="salary-pwd-input" type="number" value={configForm.port} onChange={e => setConfigForm({ ...configForm, port: parseInt(e.target.value) || (configForm.type === 'smb' ? 445 : 21) })} />
                   </div>
                   <div>
-                    <label className="doc-label">Folder ID (Thư mục gốc)</label>
-                    <input className="salary-pwd-input" value={configForm.remote_path} onChange={e => setConfigForm({ ...configForm, remote_path: e.target.value })} placeholder="1A2B3C4D5E6F7G8H9I0J" />
+                    <label className="doc-label">Username</label>
+                    <input className="salary-pwd-input" value={configForm.username} onChange={e => setConfigForm({ ...configForm, username: e.target.value })} placeholder={configForm.type === 'smb' ? 'goldenfarm\\user' : 'anonymous'} />
                   </div>
-                </>
-              )}
-              {testMsg && <div className={`doc-test-msg ${testOk ? 'ok' : 'err'}`}>{testMsg}</div>}
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="salary-btn salary-btn-secondary" onClick={testConn} style={{ flex: 1 }}>Test Connection</button>
-                <button className="salary-btn salary-btn-primary" onClick={saveConfig} style={{ flex: 1 }}>Lưu</button>
-                <button className="salary-btn salary-btn-secondary" onClick={() => setShowConfig(false)}>Hủy</button>
-              </div>
+                </div>
+                <div className="form-group">
+                  <label className="doc-label">Password</label>
+                  <input className="salary-pwd-input" type="password" value={configForm.password} onChange={e => setConfigForm({ ...configForm, password: e.target.value })} placeholder="********" />
+                </div>
+                <div className="form-group">
+                  <label className="doc-label">Remote Path / Share</label>
+                  <input className="salary-pwd-input" value={configForm.remote_path} onChange={e => setConfigForm({ ...configForm, remote_path: e.target.value })} placeholder={configForm.type === 'smb' ? 'Tên Share (VD: goldenfarm)' : '/'} />
+                </div>
+                {configForm.type === 'smb' && (
+                  <div className="form-group">
+                    <label className="doc-label">Domain (tùy chọn)</label>
+                    <input className="salary-pwd-input" value={configForm.domain} onChange={e => setConfigForm({ ...configForm, domain: e.target.value })} placeholder="WORKGROUP" />
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="form-group">
+                  <label className="doc-label">Service Account Email</label>
+                  <input className="salary-pwd-input" value={configForm.username} onChange={e => setConfigForm({ ...configForm, username: e.target.value })} placeholder="ict-service@goldenfarm.iam.gserviceaccount.com" />
+                </div>
+                <div className="form-group">
+                  <label className="doc-label">Service Account JSON</label>
+                  <textarea className="salary-pwd-input" style={{ minHeight: 120, resize: 'vertical' }} value={configForm.password} onChange={e => setConfigForm({ ...configForm, password: e.target.value })} placeholder='{ "type": "service_account", "project_id": "...", "private_key": "..." }' />
+                </div>
+                <div className="form-group">
+                  <label className="doc-label">Folder ID (Thư mục gốc)</label>
+                  <input className="salary-pwd-input" value={configForm.remote_path} onChange={e => setConfigForm({ ...configForm, remote_path: e.target.value })} placeholder="1A2B3C4D5E6F7G8H9I0J" />
+                </div>
+              </>
+            )}
+            {testMsg && <div className={`doc-test-msg ${testOk ? 'ok' : 'err'}`}>{testMsg}</div>}
+            <div className="form-actions">
+              <button className="salary-btn salary-btn-secondary" onClick={testConn}>Test Connection</button>
+              <button className="salary-btn salary-btn-primary" onClick={saveConfig}>Lưu</button>
+              <button className="salary-btn salary-btn-secondary" onClick={() => setShowConfig(false)}>Hủy</button>
             </div>
           </div>
         </div>
@@ -726,6 +787,18 @@ export default function Documents() {
         onClose={() => {
           setViewerOpen(false)
           setViewerFile(null)
+        }}
+      />
+
+      {/* ─── ONLYOFFICE Editor ──────────────────────────────────── */}
+      <OnlyOfficeViewer
+        file={ooFile}
+        configId={ooConfigId}
+        isOpen={ooOpen}
+        onClose={() => {
+          setOoOpen(false)
+          setOoFile(null)
+          setOoConfigId(null)
         }}
       />
     </div>

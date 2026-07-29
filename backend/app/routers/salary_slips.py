@@ -85,7 +85,7 @@ async def list_salary_slips(
     if month:
         sql += " AND s.month = :month"; params["month"] = month
     if employee_code:
-        sql += " AND s.employee_code ILIKE :employee_code"; params["employee_code"] = f"%{employee_code}%"
+        sql += " AND LOWER(s.employee_code) LIKE LOWER(:employee_code)"; params["employee_code"] = f"%{employee_code}%"
     if department:
         sql += " AND e.department = :department"; params["department"] = department
     sql += " ORDER BY s.month DESC, e.full_name ASC"
@@ -604,7 +604,7 @@ async def admin_get_employees_with_salary(
     if department and department != "Tất cả":
         sql += " AND e.department = :department"; params["department"] = department
     if search:
-        sql += " AND (e.full_name ILIKE :search OR s.employee_code ILIKE :search)"
+        sql += " AND (LOWER(e.full_name) LIKE LOWER(:search) OR LOWER(s.employee_code) LIKE LOWER(:search))"
         params["search"] = f"%{search}%"
     sql += " ORDER BY e.department, e.full_name"
     rows = fetchall(sql, params)

@@ -46,21 +46,36 @@ export default function Todos() {
   const canEditTodo = (todo) => {
     if (userRole === 'admin') return true
     if (userRole === 'head') {
-      if (todo.scope === 'department' && todo.department === userDept) return true
-      if (todo.creator_code === userCode || todo.assignee_code === userCode) return true
+      if (todo.scope === 'department' && String(todo.department) === userDept) return true
+      if (String(todo.creator_code) === userCode || String(todo.assignee_code) === userCode) return true
       return false
     }
-    return todo.creator_code === userCode || todo.assignee_code === userCode
+    return String(todo.creator_code) === userCode || String(todo.assignee_code) === userCode
   }
 
   const canDeleteTodo = (todo) => {
     if (userRole === 'admin') return true
     if (userRole === 'head') {
-      if (todo.scope === 'department' && todo.department === userDept) return true
-      if (todo.creator_code === userCode) return true
+      if (todo.scope === 'department' && String(todo.department) === userDept) return true
+      if (todo.scope === 'personal' && String(todo.creator_code) === userCode) return true
       return false
     }
     return false
+  }
+
+  const canChangeStatus = (todo) => {
+    if (userRole === 'admin') return true
+    if (userRole === 'head') {
+      if (todo.scope === 'department' && String(todo.department) === userDept) return true
+      if (String(todo.creator_code) === userCode || String(todo.assignee_code) === userCode) return true
+      return false
+    }
+    return String(todo.creator_code) === userCode || String(todo.assignee_code) === userCode
+  }
+
+  const canSeeCancelledOption = (todo) => {
+    // Chỉ admin và head được thấy và chọn option 'cancelled'
+    return userRole === 'admin' || userRole === 'head'
   }
 
   const readonlyWarning = (todo) => {
@@ -78,19 +93,45 @@ export default function Todos() {
 
   // Realtime SSE event listener for instant updates across team
   useEffect(() => {
-    const sse = new EventSource('/api/events')
-    sse.onmessage = (event) => {
+    let sse = null
+    
+    function connectSSE() {
       try {
-        const data = JSON.parse(event.data)
-        if (['todo_created', 'todo_updated', 'todo_deleted'].includes(data.event || data.type)) {
-          fetchData()
+        sse = new EventSource('/api/events')
+        
+        sse.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data)
+            if (['todo_created', 'todo_updated', 'todo_deleted'].includes(data.event || data.type)) {
+              console.log('SSE event:', data.event, 'refetching todos...')
+              fetchData()
+            }
+          } catch (err) {
+            console.error('SSE Parse Error:', err, 'Raw data:', event.data)
+          }
+        }
+        
+        sse.onerror = (err) => {
+          console.error('SSE Error:', err)
+          // Auto reconnect after 3 seconds
+          setTimeout(() => {
+            if (sse) sse.close()
+            connectSSE()
+          }, 3000)
         }
       } catch (err) {
-        console.error('SSE Error', err)
+        console.error('SSE Connection Error:', err)
       }
     }
-    return () => sse.close()
-  }, [])
+    
+    connectSSE()
+    
+    return () => {
+      if (sse) {
+        sse.close()
+      }
+    }
+  }, []) // Only connect once on mount
 
   const loadAuxData = async () => {
     try {
@@ -143,7 +184,7 @@ export default function Todos() {
     setFormDesc(todo.description || '')
     setFormScope(todo.scope)
     setFormDept(todo.department || '')
-    setFormAssigneeCode(todo.assignee_code || '')
+    setFormAssigneeCode(todo.assignee_code ? String(todo.assignee_code) : '')
     setFormPriority(todo.priority)
     setFormDueDate(todo.due_date || '')
     setFormTags(todo.tags || '')
@@ -158,9 +199,9 @@ export default function Todos() {
   }
 
   const handleToggleSubtask = (index) => {
-    const updated = [...formSubtasks]
-    updated[index].is_completed = updated[index].is_completed ? 0 : 1
-    setFormSubtasks(updated)
+    setFormSubtasks(formSubtasks.map((sub, i) =>
+      i === index ? { ...sub, is_completed: sub.is_completed ? 0 : 1 } : sub
+    ))
   }
 
   const handleRemoveSubtask = (index) => {
@@ -171,7 +212,7 @@ export default function Todos() {
     e.preventDefault()
     if (!formTitle.trim()) return
 
-    const selectedEmp = employees.find(e => e.employee_code === formAssigneeCode)
+    const selectedEmp = employees.find(e => String(e.employee_code) === String(formAssigneeCode))
     const payload = {
       title: formTitle,
       description: formDesc,
@@ -204,6 +245,7 @@ export default function Todos() {
       fetchData()
     } catch (err) {
       console.error(err)
+      alert(err.response?.data?.detail || 'Không thể cập nhật trạng thái công việc')
     }
   }
 
@@ -385,6 +427,9 @@ export default function Todos() {
                               <Trash2 size={13} />
                             </button>
                           ) : null}
+                          {!canDeleteTodo(todo) && todo.creator_code === userCode && (
+                            <span style={{ color: '#94a3b8', fontSize: '0.65rem', padding: '2px', cursor: 'default' }} title="Tự tạo không được xóa (để xem report)">🔒</span>
+                          )}
                         </div>
                       </div>
 
@@ -408,16 +453,21 @@ export default function Todos() {
                       <div style={{ marginTop: '4px' }}>
                         <select
                           value={todo.status}
-                          onChange={(e) => handleStatusChange(todo.id, e.target.value)}
+                          onChange={(e) => {
+                            console.log('Status change:', todo.id, e.target.value, 'canChange:', canChangeStatus(todo))
+                            if (canChangeStatus(todo)) {
+                              handleStatusChange(todo.id, e.target.value)
+                            }
+                          }}
                           className={`form-control status-${todo.status}`}
-                          disabled={!canEditTodo(todo)}
-                          title={!canEditTodo(todo) ? 'Chỉ xem, không có quyền thay đổi trạng thái' : ''}
+                          disabled={!canChangeStatus(todo)}
+                          title={!canChangeStatus(todo) ? 'Chỉ xem, không có quyền thay đổi trạng thái' : ''}
                         >
                           <option value="todo">Cần làm</option>
                           <option value="in_progress">Đang xử lý</option>
                           <option value="review">Chờ duyệt</option>
                           <option value="completed">Hoàn thành</option>
-                          <option value="cancelled">Hủy</option>
+                          {canSeeCancelledOption(todo) && <option value="cancelled">Hủy</option>}
                         </select>
                       </div>
 
@@ -627,7 +677,7 @@ export default function Todos() {
               </div>
 
               <div className="todo-modal-footer">
-                <button type="button" className="scope-btn" onClick={() => setShowModal(false)}>Hủy</button>
+                <button type="button" className="scope-btn" onClick={() => setShowModal(false)}>Đóng</button>
                 <button type="submit" className="btn-primary">
                   {editingTodo ? 'Lưu thay đổi' : 'Tạo mới'}
                 </button>

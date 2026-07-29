@@ -404,7 +404,18 @@ export function updateTodo(id, data) {
 }
 
 export function updateTodoStatus(id, status) {
-  return api.patch(`/todos/${id}/status`, { status })
+  const userCode = sessionStorage.getItem('user_code') || ''
+  const userRole = sessionStorage.getItem('user_role') || ''
+  const userDept = sessionStorage.getItem('user_department') || ''
+  const userToken = sessionStorage.getItem('token') || ''
+  return api.patch(`/todos/${id}/status`, { status }, {
+    headers: {
+      'X-User-Code': userCode,
+      'X-User-Role': userRole,
+      'X-User-Dept': userDept,
+      'X-User-Token': userToken
+    }
+  })
 }
 
 export function getTodoAssignees() {
@@ -441,23 +452,30 @@ export function getStorageConfigs(userCode = '', userRole = '') {
     params: { user_code: userCode, user_role: userRole }
   })
 }
+function docAuthParams() {
+  const adminCode = sessionStorage.getItem('user_code') || ''
+  const token = sessionStorage.getItem('token') || ''
+  const role = sessionStorage.getItem('user_role') || ''
+  return { admin_code: adminCode, token, role }
+}
+
 export function getStorageConfig(id) {
-  return api.get(`/documents/config/${id}`)
+  return api.get(`/documents/config/${id}`, { params: docAuthParams() })
 }
 export function createStorageConfig(data) {
-  return api.post('/documents/config', data)
+  return api.post('/documents/config', data, { params: docAuthParams() })
 }
 export function updateStorageConfig(id, data) {
-  return api.put(`/documents/config/${id}`, data)
+  return api.put(`/documents/config/${id}`, data, { params: docAuthParams() })
 }
 export function deleteStorageConfig(id) {
-  return api.delete(`/documents/config/${id}`)
+  return api.delete(`/documents/config/${id}`, { params: docAuthParams() })
 }
 export function testStorageConnection(id) {
-  return api.post(`/documents/config/${id}/test`)
+  return api.post(`/documents/config/${id}/test`, {}, { params: docAuthParams() })
 }
 export function testStorageConnectionDirect(data) {
-  return api.post('/documents/test-connection', data)
+  return api.post('/documents/test-connection', data, { params: docAuthParams() })
 }
 export function browseStorage(id, path = '/', userCode = '', userRole = 'user') {
   return api.get(`/documents/browse/${id}`, {
@@ -465,16 +483,22 @@ export function browseStorage(id, path = '/', userCode = '', userRole = 'user') 
   })
 }
 export function getStoragePermissions(id) {
-  return api.get(`/documents/permissions/${id}`)
+  return api.get(`/documents/permissions/${id}`, { params: docAuthParams() })
 }
 export function createStoragePermission(data) {
-  return api.post('/documents/permissions', data)
+  return api.post('/documents/permissions', data, { params: docAuthParams() })
 }
 export function deleteStoragePermission(id) {
-  return api.delete(`/documents/permissions/${id}`)
+  return api.delete(`/documents/permissions/${id}`, { params: docAuthParams() })
 }
 export function getStorageDepartments() {
   return api.get('/documents/departments')
+}
+
+export function getOnlyOfficeConfig(configId, filePath, userCode, userRole) {
+  return api.get('/documents/onlyoffice/config', {
+    params: { config_id: configId, file_path: filePath, user_code: userCode, user_role: userRole }
+  })
 }
 
 // ─── Auth / Password Reset ──────────────────────────────────────

@@ -6,13 +6,14 @@ Hệ thống quản lý ICT nội bộ — Quản lý nhân viên, thiết bị,
 
 | Tầng | Công nghệ |
 |------|-----------|
-| **Backend** | FastAPI (Python 3.11+) + SQLite (WAL mode) |
+| **Backend** | FastAPI (Python 3.11+) + PostgreSQL 16 |
 | **Frontend** | React 19 + Vite 6 + React Router 7 |
 | **HTTP Client** | Axios 1.7 |
 | **Realtime** | Server-Sent Events (SSE) |
 | **Icons** | lucide-react (50+ icons) |
 | **CSS** | Thuần CSS (CSS Custom Properties — dark/light mode) + `shared.css` cho pattern dùng chung |
 | **Storage** | SMB (`pysmb`), FTP (`ftplib`), Google Drive (`google-api-python-client`, `google-auth`) |
+| **Office Editor** | ONLYOFFICE Document Server + `@onlyoffice/document-editor-react` |
 
 ## Architecture
 
@@ -40,8 +41,8 @@ Hệ thống quản lý ICT nội bộ — Quản lý nhân viên, thiết bị,
 │  └──────────┘  └──────────┘  └──────────┘  └─────────────┘ │
 │                         │                                    │
 │                    ┌────┴────┐                               │
-│                    │ SQLite  │                               │
-│                    │company.db│                              │
+│                    │ PostgreSQL 16 │                               │
+│                    │goldenfarmict│                              │
 │                    └─────────┘                               │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -137,6 +138,7 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 ### 📁 Quản lý tài liệu (Documents) — SMB / FTP / Google Drive
 - **User UI trực quan**: Giao diện dạng card grid (hiển thị file dạng thumbnail lớn) kết hợp list view, cho phép chuyển đổi linh hoạt
 - **File Preview**: Xem trước ảnh, PDF, video, audio, text, code ngay trong trình duyệt (FileViewer component)
+- **Online Office Editor**: Chỉnh sửa .docx/.xlsx/.pptx trực tuyến qua ONLYOFFICE Document Server (`office.goldenfarm.vn`)
 - **Search file**: Tìm kiếm file/thư mục theo tên realtime
 - **Cấu hình storage**: SMB (Windows Share), FTP, Google Drive (Service Account)
 - **Test kết nối** trước khi lưu
@@ -147,6 +149,7 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
   - **Granular permissions**: Read (xem), Create/Write (tạo), Edit (sửa), Delete (xoá), Allow Download (cho phép tải), Reshare (chia sẻ lại)
   - **Expiration date**: Đặt ngày hết hạn cho từng permission
   - **Permission inheritance**: quyền folder cha áp dụng cho folder con
+- **Export/Import Config**: Lưu cấu hình storage dưới dạng file JSON, import lại sau
   ### ✅ Quản lý Công việc & Todos (User & Phòng ban)
 - **Kanban Board 4 cột**: Cần làm, Đang xử lý, Chờ duyệt, Đã hoàn thành với hiệu ứng Glassmorphism hiện đại.
 - **Phạm vi phân quyền (Scope)**: Switch giữa cá nhân (Personal Todos) và phòng ban (Department Shared Todos).
@@ -288,13 +291,17 @@ npm install
 File `.env` tại thư mục gốc:
 
 ```env
-# DATABASE_URL=sqlite:///backend/company.db
+# Local PC (Development): Dùng SQLite - giữ nguyên dòng dưới
+DATABASE_URL=sqlite:///backend/company.db
+
+# VPS/Docker (Production): Uncomment dòng dưới để dùng PostgreSQL
+# DATABASE_URL=postgresql://goldenfarm:your_strong_password@db:5432/goldenfarmict
 ```
 
-- **Chạy trên PC local**: **Comment dòng `DATABASE_URL` lại** (thêm `#` ở đầu) — hệ thống tự động tính đường dẫn tuyệt đối đến `backend/company.db`
-- **Deploy lên VPS (Docker)**: **Bỏ comment** (xóa `#`) — dùng relative path cho SQLAlchemy trong container
+- **Local development**: Hệ thống tự động dùng SQLite với file `backend/company.db`
+- **Docker deployment**: Uncomment `DATABASE_URL` trong `.env` để dùng PostgreSQL
 
-> 💡 Lý do: Trên PC, chạy backend từ thư mục `backend/`, relative path `backend/company.db` sẽ sai thành `backend/backend/company.db`. Khi comment, code tự tính path tuyệt đối đúng.
+> 💡 Khi chạy backend local, SQLite tự động tạo file `company.db` nếu chưa tồn tại.
 
 ## Usage
 
@@ -410,6 +417,8 @@ goldenfarm-ict-web/
 │   ├── src/
 │   │   ├── main.jsx               # Entry point (BrowserRouter + React.StrictMode)
 │   │   ├── App.jsx                # Routing + ProtectedRoute / AdminRoute guards
+│   │   ├── components/
+│   │   │   ├── OnlyOfficeViewer.jsx # ONLYOFFICE document editor overlay
 │   │   ├── pages/
 │   │   │   ├── Login.jsx          # Đăng nhập (employee_code + password/email)
 │   │   │   ├── Dashboard.jsx      # Admin tổng quan / User cá nhân
@@ -420,8 +429,9 @@ goldenfarm-ict-web/
 │   │   │   ├── Tickets.jsx        # User kanban / Admin filter+reply
 │   │   │   ├── Approvals.jsx      # Approval requests: tạo phiếu, duyệt/từ chối, timeline logs
 │   │   │   ├── WorkflowTemplates.jsx # Quản lý quy trình phê duyệt & bước duyệt
-│   │   │   ├── Documents.jsx      # Storage browser SMB/FTP/GDrive
-│   │   │   ├── Permissions.jsx    # Phân quyền 3 tab: Module + Documents (Nextcloud-style) + Roles
+│   │   │   ├── Documents.jsx      # Storage browser SMB/FTP/GDrive + ONLYOFFICE
+│   │   │   ├── Todos.jsx, Todos.css # Kanban quản lý công việc
+│   │   │   ├── Permissions.jsx    # Phân quyền 3 tab: Module + Documents (Nextcloud-style) + Roles + RBAC 3-Tier
 │   │   │   ├── Profile.jsx        # Hồ sơ cá nhân, đổi mật khẩu
 │   │   │   ├── SalarySlip.jsx     # Employee: xem phiếu lương JSON dạng HTML
 │   │   │   ├── SalarySlipAdmin.jsx # Admin: import Excel, chỉnh sửa, xuất PDF
@@ -454,10 +464,11 @@ goldenfarm-ict-web/
 │   │   │   └── api.js             # Axios instance + 93+ API functions (all modules)
 │   │   ├── styles/
 │   │   │   ├── booking.css        # Booking module styles (~960 dòng, CSS vars)
-│   │   │   ├── Documents.css      # Document storage styles
+│   │   │   ├── Documents.css      # Document storage styles (revamped: cards, tabs, OO overlay)
 │   │   │   ├── Login.css          # Login page styles
 │   │   │   ├── Profile.css        # Profile page styles
 │   │   │   ├── SalarySlip.css     # Salary slip styles
+│   │   │   ├── Todos.css          # Kanban board styles
 │   │   │   └── shared.css         # Shared patterns: .tbl, .side-panel, .panel-overlay
 │   │   └── utils/
 │   │       ├── bookingUtils.js    # Helper: isExpired, isUpcoming, getStatusLabel, getBookingStats, validate
@@ -636,6 +647,9 @@ goldenfarm-ict-web/
 | `POST` | `/api/documents/config/{id}/test` | Test kết nối với config đã lưu |
 | `GET` | `/api/documents/browse/{id}` | Duyệt thư mục (path/folder_id) — có permission check |
 | `GET` | `/api/documents/download` | Download file stream (FTP/SMB/GDrive) — có permission check |
+| `GET` | `/api/documents/onlyoffice/config` | Lấy editor config cho ONLYOFFICE (JWT-signed) |
+| `GET` | `/api/documents/onlyoffice/download` | Stream file cho ONLYOFFICE Document Server (temporary JWT token) |
+| `POST` | `/api/documents/onlyoffice/callback` | Webhook từ ONLYOFFICE — lưu file sau khi chỉnh sửa (status 2/6) |
 | `GET` | `/api/documents/departments` | Danh sách phòng ban (cho dropdown) |
 | `GET` | `/api/documents/permissions/{config_id}` | Danh sách phân quyền (granular fields) |
 | `POST` | `/api/documents/permissions` | Thêm phân quyền (legacy) |
@@ -748,6 +762,57 @@ useCurrentTime
 ### CSS Variables
 
 Booking module dùng `--bk-*` CSS custom properties, hỗ trợ dark mode qua class `.dark-mode` trên `html`.
+
+---
+
+## 🛡️ RBAC Permission System (3-Tier)
+
+Hệ thống phân quyền module sử dụng mô hình **3-Tier Role-Based Access Control với User Overrides**.
+
+### Kiến trúc
+
+```
+Effective Permission = Role_Perm || Department_Perm || Individual_Override_Perm
+```
+
+| Tier | Target | Bảng CSDL | Mô tả |
+|------|--------|-----------|-------|
+| **Tier 1** | Vai trò (`admin`, `head`, `user`) | `role_permissions` | Quyền mặc định theo role |
+| **Tier 2** | Phòng ban (`IT`, `HR`, ...) | `department_permissions` | Quyền áp dụng cho toàn bộ phòng ban |
+| **Tier 3** | Cá nhân (từng user) | `user_permissions` | Ghi đè riêng cho từng người |
+
+### Cơ chế kế thừa
+
+1. Hệ thống tra cứu quyền theo thứ tự: **User Override > Department > Role**
+2. Nếu user có override (Tier 3), giá trị đó được dùng ngay lập tức
+3. Nếu không có override, hệ thống kiểm tra department permissions (Tier 2)
+4. Nếu department cũng không có quyền cho module đó, dùng role permissions (Tier 1)
+5. Nếu cả 3 tier đều không có → mặc định là không có quyền
+
+### API Endpoints
+
+| Method | Endpoint | Mục đích |
+|--------|----------|----------|
+| `GET` | `/api/auth/permissions/role/{role}` | Lấy quyền của vai trò |
+| `PUT` | `/api/auth/permissions/role/{role}` | Cập nhật quyền cho vai trò |
+| `GET` | `/api/auth/permissions/department/{department}` | Lấy quyền của phòng ban |
+| `PUT` | `/api/auth/permissions/department/{department}` | Cập nhật quyền cho phòng ban |
+| `GET` | `/api/auth/permissions/{employee_code}` | Lấy quyền tổng hợp (merged role + dept + user) |
+| `PUT` | `/api/auth/permissions/{employee_code}` | Lưu override cho cá nhân |
+
+### Frontend — ModulePermissionsTab
+
+- **Left sidebar**: 3 accordion sections — **Vai trò**, **Phòng ban**, **Cá nhân**
+- **Right panel**: Permission checkboxes cho module đã chọn
+- **Individual view**: Hiển thị nguồn gốc quyền (inherited từ role/dept) và overrides
+- Có thể bulk-update toàn bộ một role hoặc department chỉ với 1 click Save
+
+### Luồng UI
+
+1. Mở tab "Phân quyền Module"
+2. Chọn **Vai trò** → chỉnh sửa quyền mặc định cho Admin/Head/Nhân viên → Save
+3. Hoặc chọn **Phòng ban** → chỉnh sửa quyền cho cả phòng → Save
+4. Hoặc chọn **Cá nhân** → tìm user → chỉnh sửa override → Save
 
 ## Maintenance
 

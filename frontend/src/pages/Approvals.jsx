@@ -670,7 +670,7 @@ export default function Approvals() {
                   <label className="ap-form-label">Tiêu đề *</label>
                   <input type="text" className="ap-form-input" value={form.title}
                     onChange={e => setForm({ ...form, title: e.target.value })} required
-                    placeholder="VD: Đề nghị mua máy tính cho nhân viên mới" />
+                    placeholder="VD: Đề nghị cấp phát thiết bị" />
                 </div>
                 <div className="ap-form-group">
                   <label className="ap-form-label">Mô tả chi tiết</label>

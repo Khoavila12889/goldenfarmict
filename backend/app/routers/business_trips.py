@@ -81,9 +81,9 @@ def update_trip(trip_id: int, body: dict):
         return {"success": False, "error": "No fields to update"}
 
     if body.get("status") == "finished":
-        fields.append("completed_at=CURRENT_TIMESTAMP")
+        fields.append("completed_at=CURRENT_TIMESTAMP::text")
 
-    fields.append("updated_at=CURRENT_TIMESTAMP")
+    fields.append("updated_at=CURRENT_TIMESTAMP::text")
     params["trip_id"] = trip_id
 
     execute(f"UPDATE business_trips SET {', '.join(fields)} WHERE id=:trip_id", params)
@@ -100,6 +100,6 @@ def delete_trip(trip_id: int, user_code: str = Query(""), user_role: str = Query
     if user_role != "admin" and trip["employee_code"] != user_code:
         raise HTTPException(status_code=403, detail="Bạn không có quyền xóa lịch này")
 
-    execute("UPDATE business_trips SET status='cancelled', updated_at=CURRENT_TIMESTAMP WHERE id=:trip_id", {"trip_id": trip_id})
+    execute("UPDATE business_trips SET status='cancelled', updated_at=CURRENT_TIMESTAMP::text WHERE id=:trip_id", {"trip_id": trip_id})
     publish_sync("trip_deleted", {"id": trip_id})
     return {"success": True}

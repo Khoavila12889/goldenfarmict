@@ -20,7 +20,7 @@ def list_tickets(
         sql += " AND priority=:priority"
         params["priority"] = priority
     if search:
-        sql += " AND (full_name ILIKE :search OR department ILIKE :search OR title ILIKE :search OR resolution ILIKE :search)"
+        sql += " AND (LOWER(full_name) LIKE LOWER(:search) OR LOWER(department) LIKE LOWER(:search) OR LOWER(title) LIKE LOWER(:search) OR LOWER(resolution) LIKE LOWER(:search))"
         params["search"] = f"%{search}%"
     sql += " ORDER BY id DESC"
 

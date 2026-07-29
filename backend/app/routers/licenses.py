@@ -18,7 +18,7 @@ def list_licenses(search: str = ""):
     """
     params = {}
     if search:
-        sql += " WHERE lic.license_key ILIKE :search OR lic.product_name ILIKE :search OR emp.full_name ILIKE :search"
+        sql += " WHERE LOWER(lic.license_key) LIKE LOWER(:search) OR LOWER(lic.product_name) LIKE LOWER(:search) OR LOWER(emp.full_name) LIKE LOWER(:search)"
         params["search"] = f"%{search}%"
     sql += " ORDER BY lic.id DESC"
     rows = fetchall(sql, params)
@@ -162,7 +162,7 @@ def list_items(cat_id: int, search: str = ""):
     sql = "SELECT * FROM lic_items WHERE category_id=:cat_id"
     params = {"cat_id": cat_id}
     if search:
-        sql += " AND name ILIKE :search"
+        sql += " AND LOWER(name) LIKE LOWER(:search)"
         params["search"] = f"%{search}%"
     sql += " ORDER BY id DESC"
     rows = fetchall(sql, params)

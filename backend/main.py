@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
+from sqlalchemy import text
 from app.core.auth import hash_password
 from app.core import events
 from app.routers import auth, employees, equipment, tickets, bookings, dashboard, licenses, software, approvals, business_trips, departments, salary_slips, salary_user, documents, todos
@@ -47,10 +48,13 @@ def on_startup():
     events.init(asyncio.get_event_loop())
 
     from app.models import Base
-    from app.core.session import engine, SessionLocal, DATABASE_URL
+    from app.core.session import engine, SessionLocal
 
-    # Create all tables via ORM (works for both SQLite and PostgreSQL)
-    Base.metadata.create_all(bind=engine)
+    # Create all tables via ORM (PostgreSQL)
+    Base.metadata.create_all(bind=engine, checkfirst=True)
+
+    # Ensure unique constraints exist for permission tables (needed for ON CONFLICT upsert)
+    _ensure_permission_constraints(engine)
 
     # Seed default admin user if not exists
     session = SessionLocal()
@@ -62,12 +66,59 @@ def on_startup():
                 employee_code='admin',
                 password_hash=hash_password('admin'),
                 role='admin',
-                full_name='Administrator',
+                created_at=datetime.utcnow().isoformat()
+            ))
+            session.commit()
+            
+        # Also seed administrator user
+        existing = session.query(User).filter(User.employee_code == 'administrator').count()
+        if existing == 0:
+            session.add(User(
+                employee_code='administrator',
+                password_hash=hash_password('administrator'),
+                role='admin',
                 created_at=datetime.utcnow().isoformat()
             ))
             session.commit()
     finally:
         session.close()
+
+    # Fix existing storage_config rows where is_active is NULL
+    try:
+        with SessionLocal() as s:
+            s.execute(text(
+                "UPDATE storage_config SET is_active = TRUE WHERE is_active IS NULL"
+            ))
+            s.commit()
+    except Exception as e:
+        print(f"  → storage_config is_active migration: {e}")
+
+
+def _ensure_permission_constraints(engine):
+    from sqlalchemy import text
+    from app.core.session import SessionLocal
+    constraints = [
+        ("user_permissions", "uq_user_perm", "employee_code, module"),
+        ("role_permissions", "uq_role_perm", "role, module"),
+        ("department_permissions", "uq_dept_perm", "department, module"),
+    ]
+    sess = SessionLocal()
+    try:
+        for table, cname, cols in constraints:
+            try:
+                sess.execute(text(f"""
+                    DO $$ BEGIN
+                        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '{cname}') THEN
+                            ALTER TABLE {table} ADD CONSTRAINT {cname} UNIQUE ({cols});
+                        END IF;
+                    END $$;
+                """))
+                sess.commit()
+            except Exception as e:
+                sess.rollback()
+                print(f"  → Constraint {cname} on {table}: {e}")
+    finally:
+        sess.close()
 
 
 @app.on_event("shutdown")

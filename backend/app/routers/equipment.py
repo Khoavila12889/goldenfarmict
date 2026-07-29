@@ -9,7 +9,7 @@ def _close_history(equipment_id, old_employee_id):
     old = fetchone("SELECT employee_code FROM employees WHERE id=:eid", {"eid": old_employee_id})
     if old:
         execute(
-            "UPDATE equipment_history SET return_date=CURRENT_DATE "
+            "UPDATE equipment_history SET return_date=CURRENT_DATE::text "
             "WHERE equipment_id=:eid AND employee_code=:code AND return_date=''",
             {"eid": equipment_id, "code": old["employee_code"]}
         )
@@ -18,7 +18,7 @@ def _close_history(equipment_id, old_employee_id):
 def _add_history(equipment_id, employee_code, employee_name):
     execute(
         "INSERT INTO equipment_history (equipment_id, employee_code, employee_name, handover_date) "
-        "VALUES (:eid, :code, :name, CURRENT_DATE)",
+        "VALUES (:eid, :code, :name, CURRENT_DATE::text)",
         {"eid": equipment_id, "code": employee_code, "name": employee_name}
     )
 
@@ -44,7 +44,7 @@ def list_equipment(
     elif storage == "allocated":
         sql += " AND eq.employee_id IS NOT NULL"
     if search:
-        sql += " AND (eq.equipment_type ILIKE :search OR eq.specs ILIKE :search OR eq.serial_number ILIKE :search OR eq.asset_code ILIKE :search)"
+        sql += " AND (LOWER(eq.equipment_type) LIKE LOWER(:search) OR LOWER(eq.specs) LIKE LOWER(:search) OR LOWER(eq.serial_number) LIKE LOWER(:search) OR LOWER(eq.asset_code) LIKE LOWER(:search))"
         params["search"] = f"%{search}%"
     sql += " ORDER BY eq.id DESC"
     rows = fetchall(sql, params)
@@ -91,7 +91,7 @@ def update_equipment(equipment_id: int, body: dict):
     if not fields:
         return {"success": False, "error": "No fields"}
     params["eid"] = equipment_id
-    execute(f"UPDATE equipment SET {', '.join(fields)}, updated_at=CURRENT_TIMESTAMP WHERE id=:eid", params)
+    execute(f"UPDATE equipment SET {', '.join(fields)}, updated_at=CURRENT_TIMESTAMP::text WHERE id=:eid", params)
     return {"success": True}
 
 
@@ -107,7 +107,7 @@ def transfer_equipment(equipment_id: int, body: dict):
         return {"error": "Equipment not found"}
     if eq["employee_id"]:
         _close_history(equipment_id, eq["employee_id"])
-    execute("UPDATE equipment SET employee_id=:eid2, issued_date=CURRENT_DATE WHERE id=:eid",
+    execute("UPDATE equipment SET employee_id=:eid2, issued_date=CURRENT_DATE::text WHERE id=:eid",
             {"eid2": new_employee_id, "eid": equipment_id})
     _add_history(equipment_id, new_employee_code, new_employee_name)
     publish_sync("equipment_updated", {"id": equipment_id, "action": "transfer"})
@@ -121,7 +121,7 @@ def revoke_equipment(equipment_id: int):
         return {"error": "Equipment not found"}
     if eq["employee_id"]:
         _close_history(equipment_id, eq["employee_id"])
-    execute("UPDATE equipment SET employee_id=NULL, issued_date='', updated_at=CURRENT_TIMESTAMP WHERE id=:eid", {"eid": equipment_id})
+    execute("UPDATE equipment SET employee_id=NULL, issued_date='', updated_at=CURRENT_TIMESTAMP::text WHERE id=:eid", {"eid": equipment_id})
     publish_sync("equipment_updated", {"id": equipment_id, "action": "revoke"})
     return {"success": True}
 
@@ -136,7 +136,7 @@ def allocate_equipment(equipment_id: int, body: dict):
     eq = fetchone("SELECT employee_id FROM equipment WHERE id=:eid", {"eid": equipment_id})
     if not eq:
         return {"error": "Equipment not found"}
-    execute("UPDATE equipment SET employee_id=:eid2, issued_date=CURRENT_DATE, updated_at=CURRENT_TIMESTAMP WHERE id=:eid",
+    execute("UPDATE equipment SET employee_id=:eid2, issued_date=CURRENT_DATE::text, updated_at=CURRENT_TIMESTAMP::text WHERE id=:eid",
             {"eid2": employee_id, "eid": equipment_id})
     _add_history(equipment_id, employee_code, employee_name)
     publish_sync("equipment_updated", {"id": equipment_id, "action": "allocate"})

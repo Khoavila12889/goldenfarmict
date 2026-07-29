@@ -72,7 +72,7 @@ def list_items(cat_id: int, search: str = ""):
     sql = "SELECT * FROM software_items WHERE category_id=:cat_id"
     params = {"cat_id": cat_id}
     if search:
-        sql += " AND name ILIKE :search"
+        sql += " AND LOWER(name) LIKE LOWER(:search)"
         params["search"] = f"%{search}%"
     sql += " ORDER BY id DESC"
     rows = fetchall(sql, params)

@@ -3,7 +3,7 @@ import os
 import json
 from datetime import datetime
 from urllib.parse import unquote
-from fastapi import APIRouter, Query, HTTPException, Body
+from fastapi import APIRouter, Query, HTTPException, Body, Request
 from pydantic import BaseModel
 from ..core.db import fetchall, fetchone, execute, insert
 from ..core.auth import verify_token
@@ -32,15 +32,21 @@ def list_configs(user_code: str = Query(''), user_role: str = Query('')):
     if user_role in ('admin', 'head'):
         rows = fetchall("SELECT * FROM storage_config ORDER BY name")
     else:
+        emp = fetchone("SELECT department FROM employees WHERE employee_code=:code", {"code": user_code})
+        user_dept = (emp['department'] or '') if emp else ''
         rows = fetchall("""
             SELECT DISTINCT sc.* FROM storage_config sc
             JOIN storage_permissions sp ON sp.storage_id = sc.id
-            WHERE sc.is_active=1
-              AND (sp.role=:role OR sp.employee_code=:code
-                   OR sp.department IN (SELECT COALESCE(department,'') FROM employees WHERE employee_code=:code)
-                   OR (sp.department='' AND sp.role='' AND sp.employee_code=''))
+            WHERE sc.is_active = TRUE
+              AND (
+                sp.target_type = 'EVERYONE'
+                OR (sp.target_type = 'DEPARTMENT' AND sp.department != '' AND sp.department = :dept)
+                OR sp.employee_code = :code
+                OR sp.role = :role
+                OR (sp.department = '' AND sp.role = '' AND sp.employee_code = '')
+              )
             ORDER BY sc.name
-        """, {"role": user_role, "code": user_code})
+        """, {"role": user_role, "code": user_code, "dept": user_dept})
     for r in rows:
         if r.get('password'):
             r['password'] = '********'
@@ -64,8 +70,8 @@ def create_config(
 ):
     _require_auth(admin_code, token, role)
     new_id = insert("""
-        INSERT INTO storage_config (name, type, host, port, username, password, remote_path, domain)
-        VALUES (:name, :type, :host, :port, :username, :password, :remote_path, :domain)
+        INSERT INTO storage_config (name, type, host, port, username, password, remote_path, domain, is_active)
+        VALUES (:name, :type, :host, :port, :username, :password, :remote_path, :domain, TRUE)
         RETURNING id
     """, {
         "name": body.get('name', ''),
@@ -179,7 +185,8 @@ def test_connection(config_id: int):
 
 @router.get("/browse/{config_id}")
 def browse(config_id: int, path: str = Query('/'), user_code: str = Query(''), user_role: str = Query('user')):
-    cfg = fetchone("SELECT * FROM storage_config WHERE id=:id AND is_active=1", {"id": config_id})
+    active_sql = "" if user_role in ('admin', 'head') else "AND is_active = TRUE"
+    cfg = fetchone(f"SELECT * FROM storage_config WHERE id=:id {active_sql}", {"id": config_id})
     if not cfg:
         raise HTTPException(404, "Storage not found or inactive")
 
@@ -372,16 +379,39 @@ def create_permission(
     role: str = Query('')
 ):
     _require_auth(admin_code, token, role)
+    perm = body.get('permission', 'read')
+    role_val = body.get('role', '')
+    ec = body.get('employee_code', '')
+    dept = body.get('department', '')
+    # Determine target_type from the inputs
+    if not role_val and not ec and not dept:
+        tt = 'EVERYONE'
+    elif dept and not role_val and not ec:
+        tt = 'DEPARTMENT'
+    else:
+        tt = ''  # individual/role override
+    can_read = 1 if perm in ('read', 'write') else 0
+    can_write = 1 if perm == 'write' else 0
+    can_edit = 1 if perm == 'write' else 0
+    can_delete = 1 if perm == 'write' else 0
     new_id = insert("""
-        INSERT INTO storage_permissions (storage_id, folder_path, role, employee_code, department, permission)
-        VALUES (:sid, :fp, :role, :ec, :dept, :perm) RETURNING id
+        INSERT INTO storage_permissions
+            (storage_id, folder_path, role, employee_code, department, permission,
+             target_type, can_read, can_write, can_edit, can_delete, allow_download, can_reshare)
+        VALUES (:sid, :fp, :role, :ec, :dept, :perm,
+                :tt, :cr, :cw, :ce, :cd, 1, 0) RETURNING id
     """, {
         "sid": body.get('storage_id'),
         "fp": body.get('folder_path', '/'),
-        "role": body.get('role', ''),
-        "ec": body.get('employee_code', ''),
-        "dept": body.get('department', ''),
-        "perm": body.get('permission', 'read'),
+        "role": role_val,
+        "ec": ec,
+        "dept": dept,
+        "perm": perm,
+        "tt": tt,
+        "cr": can_read,
+        "cw": can_write,
+        "ce": can_edit,
+        "cd": can_delete,
     })
     return {"success": True, "id": new_id}
 
@@ -398,13 +428,13 @@ def create_share_permission(
     target_type = body.get('target_type', 'DEPARTMENT')
     department = body.get('department', '')
     perm_data = {
-        'can_read': 1 if body.get('can_read', True) else 0,
-        'can_write': 1 if body.get('can_write', False) else 0,
-        'can_edit': 1 if body.get('can_edit', False) else 0,
-        'can_delete': 1 if body.get('can_delete', False) else 0,
-        'allow_download': 1 if body.get('allow_download', True) else 0,
-        'can_reshare': 1 if body.get('can_reshare', False) else 0,
-        'expires_at': body.get('expires_at', ''),
+        'can_read': bool(body.get('can_read', True)),
+        'can_write': bool(body.get('can_write', False)),
+        'can_edit': bool(body.get('can_edit', False)),
+        'can_delete': bool(body.get('can_delete', False)),
+        'allow_download': bool(body.get('allow_download', True)),
+        'can_reshare': bool(body.get('can_reshare', False)),
+        'expires_at': body.get('expires_at', '') or None,
     }
     if not storage_id:
         raise HTTPException(400, "Missing storage_id")
@@ -477,10 +507,12 @@ def update_permission(
     for k in ('can_read','can_write','can_edit','can_delete','allow_download','can_reshare'):
         if k in updates:
             updates[k] = 1 if updates[k] else 0
+    if 'expires_at' in updates and not updates['expires_at']:
+        updates['expires_at'] = None
     set_clause = ", ".join(f"{k}=:{k}" for k in updates)
     params = {k: v for k, v in updates.items()}
     params['perm_id'] = perm_id
-    execute(f"UPDATE storage_permissions SET {set_clause}, updated_at=CURRENT_TIMESTAMP WHERE id=:perm_id", params)
+    execute(f"UPDATE storage_permissions SET {set_clause}, updated_at=CURRENT_TIMESTAMP::text WHERE id=:perm_id", params)
     return {"success": True}
 
 @router.delete("/permissions/{perm_id}")
@@ -518,8 +550,8 @@ def _check_folder_permission(storage_id, folder_path, user_code, user_role):
             OR (employee_code=:code)
             OR (department='' AND role='' AND employee_code='')
           )
-          AND (:fp = folder_path OR :fp2 ILIKE folder_path || '/%' OR folder_path = '/')
-          AND (expires_at = '' OR expires_at > :now)
+          AND (:fp = folder_path OR LOWER(:fp2) LIKE LOWER(folder_path || '/%') OR folder_path = '/')
+          AND (expires_at IS NULL OR expires_at > :now)
         ORDER BY
           CASE target_type WHEN 'EVERYONE' THEN 0 ELSE 1 END,
           length(folder_path) DESC
@@ -552,8 +584,8 @@ def _check_download_allowed(storage_id, folder_path, user_code, user_role):
             OR (role=:role)
             OR (employee_code=:code)
           )
-          AND (:fp = folder_path OR :fp2 ILIKE folder_path || '/%' OR folder_path = '/')
-          AND (expires_at = '' OR expires_at > :now)
+          AND (:fp = folder_path OR LOWER(:fp2) LIKE LOWER(folder_path || '/%') OR folder_path = '/')
+          AND (expires_at IS NULL OR expires_at > :now)
         ORDER BY length(folder_path) DESC
         LIMIT 1
     """, {
@@ -580,7 +612,8 @@ async def download_file(
     import logging
     logging.info(f"[DOWNLOAD] config_id={config_id}, file_path={file_path}")
 
-    cfg = fetchone("SELECT * FROM storage_config WHERE id=:id AND is_active=1", {"id": config_id})
+    active_sql = "" if user_role in ('admin', 'head') else "AND is_active = TRUE"
+    cfg = fetchone(f"SELECT * FROM storage_config WHERE id=:id {active_sql}", {"id": config_id})
     if not cfg:
         raise HTTPException(404, "Storage not found or inactive")
 
@@ -759,3 +792,459 @@ def test_download(
         "file_path": file_path,
         "message": "Connection OK - check logs for full download flow"
     }
+
+
+# ═══════════════════════════════════════════════════════════════
+# ONLYOFFICE Document Server Integration
+# ═══════════════════════════════════════════════════════════════
+
+import hashlib
+import hmac
+import base64
+import time as _time
+import threading
+import jwt as pyjwt
+
+_ONLYOFFICE_URL = os.environ.get('ONLYOFFICE_URL', 'https://office.goldenfarm.vn')
+_ONLYOFFICE_PUBLIC_URL = os.environ.get('ONLYOFFICE_PUBLIC_URL', _ONLYOFFICE_URL)
+_ONLYOFFICE_SECRET = os.environ.get('ONLYOFFICE_SECRET', 'MySuperSecret123456')
+_ONLYOFFICE_ENABLED = os.environ.get('ONLYOFFICE_ENABLED', 'true').lower() == 'true'
+_TEMP_TOKEN_EXPIRE = 3600  # 1 hour (download token — DS may retry)
+_DOC_KEY_EXPIRE = 86400  # 24h (edit session)
+
+# In-memory map for long file paths that cannot fit in a 128-char document key
+_oo_doc_keys: dict[str, dict] = {}
+_oo_doc_keys_lock = threading.Lock()
+
+_OFFICE_EXTS = {
+    'docx', 'xlsx', 'pptx', 'doc', 'xls', 'ppt',
+    'odt', 'ods', 'odp', 'csv', 'txt', 'rtf', 'pdf',
+}
+
+_OO_MIME = {
+    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'doc': 'application/msword',
+    'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'xls': 'application/vnd.ms-excel',
+    'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'ppt': 'application/vnd.ms-powerpoint',
+    'odt': 'application/vnd.oasis.opendocument.text',
+    'ods': 'application/vnd.oasis.opendocument.spreadsheet',
+    'odp': 'application/vnd.oasis.opendocument.presentation',
+    'pdf': 'application/pdf',
+    'csv': 'text/csv',
+    'txt': 'text/plain',
+    'rtf': 'application/rtf',
+}
+
+
+def _sign_doc_token(payload: dict) -> str:
+    token = pyjwt.encode(payload, _ONLYOFFICE_SECRET, algorithm="HS256")
+    if isinstance(token, bytes):
+        token = token.decode('utf-8')
+    return token
+
+
+def _verify_doc_token(token: str) -> dict | None:
+    try:
+        return pyjwt.decode(token, _ONLYOFFICE_SECRET, algorithms=["HS256"])
+    except Exception:
+        return None
+
+
+def _oo_document_type(ext: str) -> str:
+    """Map file extension to OnlyOffice documentType."""
+    if ext in ('xlsx', 'xls', 'ods', 'csv'):
+        return 'cell'
+    if ext in ('pptx', 'ppt', 'odp'):
+        return 'slide'
+    if ext == 'pdf':
+        return 'pdf'
+    return 'word'
+
+
+def _cleanup_oo_keys():
+    now = _time.time()
+    expired = [k for k, v in _oo_doc_keys.items() if v.get('exp', 0) < now]
+    for k in expired:
+        del _oo_doc_keys[k]
+
+
+def _make_doc_key(config_id: int, file_path: str) -> str:
+    """Build an OnlyOffice document key.
+
+    Constraints (OnlyOffice API):
+      - max 128 characters
+      - allowed chars: 0-9, a-z, A-Z, -._=
+
+    Prefer a compact signed payload so callback works after backend restart.
+    Fall back to a short hash + in-memory map when the path is too long.
+    """
+    ts = int(_time.time())
+    raw = json.dumps({"c": config_id, "p": file_path, "t": ts}, separators=(',', ':'))
+    b64 = base64.urlsafe_b64encode(raw.encode()).decode().rstrip('=')
+    sig = hmac.new(
+        _ONLYOFFICE_SECRET.encode(), raw.encode(), hashlib.sha256
+    ).hexdigest()[:16]
+    key = f"{b64}.{sig}"
+    if len(key) <= 128:
+        return key
+
+    # Path too long for inline key — use hash lookup (survives only while process lives)
+    h = hashlib.sha256(f"{config_id}:{file_path}:{ts}:{sig}".encode()).hexdigest()[:40]
+    with _oo_doc_keys_lock:
+        _cleanup_oo_keys()
+        _oo_doc_keys[h] = {
+            "config_id": config_id,
+            "file_path": file_path,
+            "exp": ts + _DOC_KEY_EXPIRE,
+        }
+    return h
+
+
+def _resolve_doc_key(key: str) -> dict | None:
+    """Recover config_id + file_path from an OnlyOffice document key."""
+    if not key:
+        return None
+
+    with _oo_doc_keys_lock:
+        meta = _oo_doc_keys.get(key)
+        if meta:
+            if meta.get('exp', 0) < _time.time():
+                del _oo_doc_keys[key]
+                return None
+            return {"config_id": meta["config_id"], "file_path": meta["file_path"]}
+
+    # Compact signed form: base64url(json).sig16
+    if '.' not in key:
+        return None
+    try:
+        b64, sig = key.rsplit('.', 1)
+        pad = '=' * (-len(b64) % 4)
+        raw = base64.urlsafe_b64decode(b64 + pad)
+        expected = hmac.new(
+            _ONLYOFFICE_SECRET.encode(), raw, hashlib.sha256
+        ).hexdigest()[:16]
+        if not hmac.compare_digest(sig, expected):
+            return None
+        data = json.loads(raw)
+        return {"config_id": data["c"], "file_path": data["p"]}
+    except Exception:
+        return None
+
+
+def _get_file_bytes(cfg, file_path: str) -> bytes:
+    """Download file from storage and return raw bytes."""
+    import io as _io
+    buf = _io.BytesIO()
+    try:
+        if cfg['type'] == 'ftp':
+            ftp = ftplib.FTP()
+            ftp.connect(cfg['host'], cfg['port'] or 21, timeout=15)
+            ftp.login(cfg['username'] or 'anonymous', cfg['password'] or '')
+            base = cfg['remote_path'] or '/'
+            full = os.path.join(base, file_path.lstrip('/')).replace('\\', '/')
+            ftp.retrbinary(f'RETR {full}', buf.write)
+            ftp.quit()
+        elif cfg['type'] == 'smb':
+            from smb.SMBConnection import SMBConnection
+            conn = SMBConnection(cfg['username'], cfg['password'], 'goldenfarm', cfg['host'], domain=cfg.get('domain', ''))
+            if conn.connect(cfg['host'], cfg['port'] or 445):
+                share = cfg.get('remote_path', '').strip('/')
+                smb_p = file_path.lstrip('/').replace('/', '\\')
+                conn.retrieveFile(share, smb_p, buf)
+                conn.close()
+        elif cfg['type'] == 'gdrive':
+            creds_dict = json.loads(cfg['password'])
+            creds = service_account.Credentials.from_service_account_info(creds_dict)
+            svc = build('drive', 'v3', credentials=creds)
+            request = svc.files().get_media(fileId=file_path)
+            from googleapiclient.http import MediaIoBaseDownload
+            dl = MediaIoBaseDownload(buf, request)
+            done = False
+            while not done:
+                _, done = dl.next_chunk()
+    except Exception as e:
+        raise HTTPException(502, f"Failed to read file: {str(e)}")
+    buf.seek(0)
+    return buf.read()
+
+
+def _put_file_bytes(cfg, file_path: str, data: bytes):
+    """Write raw bytes back to storage, overwriting the original file."""
+    import io as _io
+    try:
+        if cfg['type'] == 'ftp':
+            ftp = ftplib.FTP()
+            ftp.connect(cfg['host'], cfg['port'] or 21, timeout=15)
+            ftp.login(cfg['username'] or 'anonymous', cfg['password'] or '')
+            base = cfg['remote_path'] or '/'
+            full = os.path.join(base, file_path.lstrip('/')).replace('\\', '/')
+            ftp.storbinary(f'STOR {full}', _io.BytesIO(data))
+            ftp.quit()
+        elif cfg['type'] == 'smb':
+            from smb.SMBConnection import SMBConnection
+            conn = SMBConnection(cfg['username'], cfg['password'], 'goldenfarm', cfg['host'], domain=cfg.get('domain', ''))
+            if conn.connect(cfg['host'], cfg['port'] or 445):
+                share = cfg.get('remote_path', '').strip('/')
+                smb_p = file_path.lstrip('/').replace('/', '\\')
+                conn.storeFile(share, smb_p, _io.BytesIO(data))
+                conn.close()
+        elif cfg['type'] == 'gdrive':
+            creds_dict = json.loads(cfg['password'])
+            creds = service_account.Credentials.from_service_account_info(creds_dict)
+            svc = build('drive', 'v3', credentials=creds)
+            from googleapiclient.http import MediaIoBaseUpload
+            media = MediaIoBaseUpload(_io.BytesIO(data), mimetype='application/octet-stream', resumable=True)
+            svc.files().update(fileId=file_path, media_body=media).execute()
+    except Exception as e:
+        raise HTTPException(502, f"Failed to write file: {str(e)}")
+
+
+@router.get("/onlyoffice/config")
+def onlyoffice_config(
+    request: Request,
+    config_id: int = Query(...),
+    file_path: str = Query(...),
+    user_code: str = Query(''),
+    user_role: str = Query('user')
+):
+    # Check if OnlyOffice is enabled
+    if not _ONLYOFFICE_ENABLED:
+        raise HTTPException(503, "OnlyOffice Document Server không được bật. Vui lòng cấu hình ONLYOFFICE_ENABLED=true trong .env")
+    
+    cfg = fetchone(f"SELECT * FROM storage_config WHERE id=:id", {"id": config_id})
+    if not cfg:
+        raise HTTPException(404, "Storage not found")
+
+    folder_path = os.path.dirname(file_path).replace('\\', '/')
+    allowed = _check_folder_permission(config_id, folder_path, user_code, user_role)
+    if not allowed:
+        raise HTTPException(403, "No permission to access this file")
+
+    filename = os.path.basename(file_path)
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+
+    if ext not in _OFFICE_EXTS:
+        raise HTTPException(400, f"Unsupported file type: .{ext}")
+
+    can_edit = allowed and _check_can_edit(config_id, folder_path, user_code, user_role)
+    # Legacy binary formats + PDF: view-only (DS converts .doc/.xls/.ppt; PDF is not a full editor)
+    if ext in ('pdf', 'doc', 'xls', 'ppt'):
+        can_edit = False
+
+    download_token = _sign_doc_token({
+        "config_id": config_id,
+        "file_path": file_path,
+        "exp": int(_time.time()) + _TEMP_TOKEN_EXPIRE,
+    })
+
+    user_name = user_code
+    user_rows = fetchall("SELECT full_name FROM employees WHERE employee_code=:code", {"code": user_code})
+    if user_rows and user_rows[0].get('full_name'):
+        user_name = user_rows[0]['full_name']
+
+    # URL that OnlyOffice Document Server uses to fetch the file + send callbacks.
+    # Must be reachable FROM the OnlyOffice container/server (not from the browser).
+    backend_public_url = os.environ.get('BACKEND_PUBLIC_URL', '').strip()
+    if backend_public_url:
+        base_url = backend_public_url.rstrip('/')
+    else:
+        forwarded_proto = request.headers.get("x-forwarded-proto", "http")
+        forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "localhost:8000"
+        base_url = f"{forwarded_proto}://{forwarded_host}".rstrip('/')
+    
+    # Public URL the BROWSER uses to load DocsAPI JS
+    doc_service = _ONLYOFFICE_PUBLIC_URL.rstrip('/')
+    document_type = _oo_document_type(ext)
+    doc_key = _make_doc_key(config_id, file_path)
+
+    # Build config WITHOUT token / custom fields first — JWT must sign only the public payload
+    editor_config = {
+        "document": {
+            "fileType": ext,
+            "key": doc_key,
+            "title": filename,
+            "url": f"{base_url}/api/documents/onlyoffice/download?token={download_token}",
+            "permissions": {
+                "edit": can_edit,
+                "download": True,
+                "print": True,
+                "review": can_edit,
+                "comment": True,
+                "copy": True,
+            },
+        },
+        "editorConfig": {
+            "callbackUrl": f"{base_url}/api/documents/onlyoffice/callback",
+            "lang": "vi",
+            "mode": "edit" if can_edit else "view",
+            "user": {
+                "id": user_code or "anonymous",
+                "name": user_name or "User",
+            },
+            "customization": {
+                "autosave": can_edit,
+                "forcesave": can_edit,
+                "chat": False,
+                "compactHeader": False,
+                "compactToolbar": False,
+                "help": False,
+                "plugins": False,
+                "goback": {
+                    "url": "/documents",
+                    "text": "Quay lại Tài liệu",
+                },
+                "review": {"reviewDisplay": "original", "showReviewChanges": can_edit},
+                "statusBar": True,
+                "toolbarDocked": "top",
+            },
+        },
+        "documentType": document_type,
+        "height": "100%",
+        "width": "100%",
+        "type": "desktop",
+    }
+
+    # Sign the clean config, then attach token + internal helper field for the React client
+    editor_config["token"] = _sign_doc_token(editor_config)
+    editor_config["_docsApiUrl"] = f"{doc_service}/web-apps/apps/api/documents/api.js"
+
+    return editor_config
+
+
+def _check_can_edit(storage_id, folder_path, user_code, user_role):
+    """Check if user has can_edit permission on the folder."""
+    folder_path = folder_path.replace('\\', '/').rstrip('/') or '/'
+    if user_role in ('admin', 'head'):
+        return True
+    row = fetchone("SELECT COUNT(*) AS cnt FROM storage_permissions WHERE storage_id=:id", {"id": storage_id})
+    if row["cnt"] == 0:
+        return True
+    user_dept = ''
+    emp = fetchone("SELECT department FROM employees WHERE employee_code=:code", {"code": user_code})
+    if emp:
+        user_dept = emp['department'] or ''
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    row = fetchone("""
+        SELECT can_edit FROM storage_permissions
+        WHERE storage_id=:sid
+          AND (
+            target_type='EVERYONE'
+            OR (target_type='DEPARTMENT' AND department != '' AND department=:dept)
+            OR (role=:role)
+            OR (employee_code=:code)
+            OR (department='' AND role='' AND employee_code='')
+          )
+          AND (:fp = folder_path OR LOWER(:fp2) LIKE LOWER(folder_path || '/%') OR folder_path = '/')
+          AND (expires_at IS NULL OR expires_at > :now)
+        ORDER BY
+          CASE target_type WHEN 'EVERYONE' THEN 0 ELSE 1 END,
+          length(folder_path) DESC
+        LIMIT 1
+    """, {
+        "sid": storage_id, "dept": user_dept, "role": user_role, "code": user_code,
+        "fp": folder_path, "fp2": folder_path, "now": now_str
+    })
+    if not row:
+        return False
+    return bool(row['can_edit'])
+
+
+@router.get("/onlyoffice/download")
+def onlyoffice_download(token: str = Query(...)):
+    payload = _verify_doc_token(token)
+    if not payload:
+        raise HTTPException(401, "Invalid or expired download token")
+
+    # Reject expired download tokens (exp is unix seconds)
+    exp = payload.get("exp")
+    if exp is not None and int(exp) < int(_time.time()):
+        raise HTTPException(401, "Download token expired")
+
+    config_id = payload.get("config_id")
+    file_path = payload.get("file_path")
+    if not config_id or not file_path:
+        raise HTTPException(400, "Invalid token payload")
+
+    cfg = fetchone("SELECT * FROM storage_config WHERE id=:id", {"id": config_id})
+    if not cfg:
+        raise HTTPException(404, "Storage not found")
+
+    filename = os.path.basename(file_path)
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+    mime_type = _OO_MIME.get(ext)
+    if not mime_type:
+        import mimetypes
+        mime_type, _ = mimetypes.guess_type(filename)
+    if not mime_type:
+        mime_type = 'application/octet-stream'
+
+    data = _get_file_bytes(cfg, file_path)
+
+    # ASCII-safe Content-Disposition; non-ASCII names use filename*
+    safe_name = filename.encode('ascii', 'ignore').decode('ascii') or 'document'
+    from urllib.parse import quote
+    cd = f"inline; filename=\"{safe_name}\"; filename*=UTF-8''{quote(filename)}"
+
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type=mime_type,
+        headers={
+            "Content-Disposition": cd,
+            "Content-Length": str(len(data)),
+            "Access-Control-Allow-Origin": "*",
+        }
+    )
+
+
+class OnlyOfficeCallback(BaseModel):
+    status: int = 0
+    key: str = ''
+    url: str = ''
+    token: str = ''
+    users: list[str] = []
+    history: dict | None = None
+    historyData: dict | None = None
+
+
+@router.post("/onlyoffice/callback")
+def onlyoffice_callback(body: OnlyOfficeCallback):
+    import logging
+    logging.info(f"[ONLYOFFICE] Callback: status={body.status}, key={body.key[:40] if body.key else ''}...")
+
+    # status 1 = editing, 2 = ready for save, 6 = force-save, 7 = error force-save
+    if body.status in (2, 6):
+        if not body.url:
+            raise HTTPException(400, "No download URL provided for saving")
+
+        payload = _resolve_doc_key(body.key) if body.key else None
+        if not payload:
+            raise HTTPException(400, "Invalid document key")
+
+        config_id = payload.get("config_id")
+        file_path = payload.get("file_path")
+        if not config_id or not file_path:
+            raise HTTPException(400, "Invalid key payload")
+
+        cfg = fetchone("SELECT * FROM storage_config WHERE id=:id", {"id": config_id})
+        if not cfg:
+            raise HTTPException(404, "Storage config not found")
+
+        import requests
+        resp = requests.get(body.url, timeout=60)
+        if resp.status_code != 200:
+            raise HTTPException(502, f"Failed to download saved file from ONLYOFFICE: HTTP {resp.status_code}")
+
+        _put_file_bytes(cfg, file_path, resp.content)
+
+        from ..core.events import publish_sync
+        publish_sync("document_updated", {
+            "config_id": config_id,
+            "file_path": file_path,
+            "ts": datetime.now().isoformat(),
+        })
+
+        logging.info(f"[ONLYOFFICE] File saved successfully: {file_path}")
+
+    return {"error": 0}

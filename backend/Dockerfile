@@ -1,4 +1,4 @@
-# Optimized Dockerfile for FastAPI + SQLite
+# Optimized Dockerfile for FastAPI + PostgreSQL
 FROM python:3.11-slim
 
 # Set environment variables

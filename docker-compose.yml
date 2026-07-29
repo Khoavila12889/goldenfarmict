@@ -50,6 +50,16 @@ services:
       # Chuỗi kết nối đến container Postgres (tên host là 'db')
       - DATABASE_URL=postgresql://goldenfarm:your_strong_password@db:5432/goldenfarmict
       - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:8088
+      # OnlyOffice Document Server configuration
+      # BACKEND_PUBLIC_URL: URL để OnlyOffice Document Server gọi callback tải file (Docker internal network)
+      - BACKEND_PUBLIC_URL=http://backend:8000
+      # ONLYOFFICE_URL: Backend kết nối tới OnlyOffice Document Server (Docker internal network)
+      - ONLYOFFICE_URL=http://onlyoffice:80
+      # ONLYOFFICE_PUBLIC_URL: Trình duyệt tải OnlyOffice API JS (phải truy cập được từ browser)
+      # Nếu dùng Docker trên máy chủ, thay 10.0.0.9 bằng IP thật của máy chủ hoặc domain
+      - ONLYOFFICE_PUBLIC_URL=http://10.0.0.9:8080
+      - ONLYOFFICE_SECRET=MySuperSecret123456
+      - ONLYOFFICE_ENABLED=true
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
@@ -74,10 +84,40 @@ services:
     networks:
       - goldenfarm-network
 
+  # 4. OnlyOffice Document Server (for viewing/editing Office files)
+  # OnlyOffice Document Server cho phép xem/chỉnh sửa file Office trực tiếp trong browser
+  # Yêu cầu: Tối thiểu 4GB RAM
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    container_name: goldenfarm-onlyoffice
+    ports:
+      - "8080:80"
+    environment:
+      - JWT_ENABLED=true
+      - JWT_SECRET=MySuperSecret123456
+      - JWT_HEADER=AuthorizationJwt
+      - JWT_IN_BODY=true
+    volumes:
+      - onlyoffice-data:/var/www/onlyoffice/Data
+      - onlyoffice-logs:/var/log/onlyoffice
+    restart: unless-stopped
+    networks:
+      - goldenfarm-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
 networks:
   goldenfarm-network:
     driver: bridge
 
 volumes:
   postgres-data:
+    driver: local
+  onlyoffice-data:
+    driver: local
+  onlyoffice-logs:
     driver: local

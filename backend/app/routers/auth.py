@@ -248,7 +248,7 @@ def search_users(
         WHERE 1=1
     """
     if q:
-        sql += " AND (u.employee_code ILIKE :q OR e.full_name ILIKE :q OR e.department ILIKE :q)"
+        sql += " AND (LOWER(u.employee_code) LIKE LOWER(:q) OR LOWER(e.full_name) LIKE LOWER(:q) OR LOWER(e.department) LIKE LOWER(:q))"
         params["q"] = f"%{q}%"
     if department:
         sql += " AND e.department = :dept"
@@ -267,37 +267,49 @@ def list_modules():
 def get_my_permissions(employee_code: str = None):
     if not employee_code:
         raise HTTPException(400, "employee_code is required")
-    rows = fetchall(
-        "SELECT module, can_view, can_edit FROM user_permissions WHERE employee_code = :code",
-        {"code": employee_code.strip()}
+    code = employee_code.strip()
+    user_info = fetchone(
+        "SELECT u.role, e.department FROM users u LEFT JOIN employees e ON e.employee_code = u.employee_code WHERE u.employee_code = :code",
+        {"code": code}
     )
-    perms = {r["module"]: {"can_view": bool(r["can_view"]), "can_edit": bool(r["can_edit"])} for r in rows}
-    return {"data": perms}
+    user_role = (user_info or {}).get("role", "user")
+    user_dept = (user_info or {}).get("department", "")
 
-
-@router.get("/permissions/{target_code}")
-def get_user_permissions(
-    target_code: str,
-    admin_code: str = None,
-    token: str = None,
-    role: str = None
-):
-    if role not in ("admin", "head"):
-        raise HTTPException(403, "Admin access required")
-    if not verify_token(admin_code, token, role):
-        raise HTTPException(401, "Invalid token")
-    user_info = fetchone("""
-        SELECT u.role, e.full_name, e.department, e.position
-        FROM users u
-        LEFT JOIN employees e ON e.employee_code = u.employee_code
-        WHERE u.employee_code = :code
-    """, {"code": target_code.strip()})
-    rows = fetchall(
-        "SELECT module, can_view, can_edit FROM user_permissions WHERE employee_code = :code",
-        {"code": target_code.strip()}
+    role_rows = fetchall(
+        "SELECT module, can_view, can_edit FROM role_permissions WHERE role = :role",
+        {"role": user_role}
     )
-    perms = {r["module"]: {"can_view": bool(r["can_view"]), "can_edit": bool(r["can_edit"])} for r in rows}
-    return {"data": perms, "employee_code": target_code, "user": user_info}
+    role_perms = {r["module"]: {"can_view": bool(r["can_view"]), "can_edit": bool(r["can_edit"])} for r in role_rows}
+
+    dept_perms = {}
+    if user_dept:
+        dept_rows = fetchall(
+            "SELECT module, can_view, can_edit FROM department_permissions WHERE department = :dept",
+            {"dept": user_dept}
+        )
+        dept_perms = {r["module"]: {"can_view": bool(r["can_view"]), "can_edit": bool(r["can_edit"])} for r in dept_rows}
+
+    user_rows = fetchall(
+        "SELECT module, can_view, can_edit FROM user_permissions WHERE employee_code = :code",
+        {"code": code}
+    )
+    user_override = {r["module"]: {"can_view": bool(r["can_view"]), "can_edit": bool(r["can_edit"])} for r in user_rows}
+
+    all_modules = set()
+    for d in (role_perms, dept_perms, user_override):
+        all_modules.update(d.keys())
+
+    effective = {}
+    for mod in all_modules:
+        rp = role_perms.get(mod, {})
+        dp = dept_perms.get(mod, {})
+        up = user_override.get(mod, {})
+        effective[mod] = {
+            "can_view": up.get("can_view", dp.get("can_view", rp.get("can_view", False))),
+            "can_edit": up.get("can_edit", dp.get("can_edit", rp.get("can_edit", False))),
+        }
+
+    return {"data": effective}
 
 
 class PermissionUpdate(BaseModel):
@@ -333,6 +345,167 @@ def update_user_permissions(
             "edit": int(perm.can_edit)
         })
     return {"success": True, "message": f"Đã cập nhật phân quyền cho {target_code}"}
+
+
+@router.get("/permissions/role/{role}")
+def get_role_permissions(
+    role: str,
+    admin_code: str = None,
+    token: str = None,
+    admin_role: str = None
+):
+    if admin_role not in ("admin", "head"):
+        raise HTTPException(403, "Admin access required")
+    if not verify_token(admin_code, token, admin_role):
+        raise HTTPException(401, "Invalid token")
+    rows = fetchall(
+        "SELECT module, can_view, can_edit FROM role_permissions WHERE role = :role",
+        {"role": role}
+    )
+    perms = {r["module"]: {"can_view": bool(r["can_view"]), "can_edit": bool(r["can_edit"])} for r in rows}
+    return {"data": perms, "role": role}
+
+
+@router.put("/permissions/role/{role}")
+def update_role_permissions(
+    role: str,
+    body: list[PermissionUpdate],
+    admin_code: str = None,
+    token: str = None,
+    admin_role: str = None
+):
+    if admin_role not in ("admin", "head"):
+        raise HTTPException(403, "Admin access required")
+    if not verify_token(admin_code, token, admin_role):
+        raise HTTPException(401, "Invalid token")
+    for perm in body:
+        execute("""
+            INSERT INTO role_permissions (role, module, can_view, can_edit)
+            VALUES (:role, :module, :view, :edit)
+            ON CONFLICT (role, module) DO UPDATE SET
+                can_view = EXCLUDED.can_view,
+                can_edit = EXCLUDED.can_edit,
+                updated_at = CURRENT_TIMESTAMP
+        """, {
+            "role": role,
+            "module": perm.module,
+            "view": int(perm.can_view),
+            "edit": int(perm.can_edit)
+        })
+    return {"success": True, "message": f"Đã cập nhật phân quyền cho vai trò {role}"}
+
+
+@router.get("/permissions/department/{department}")
+def get_department_permissions(
+    department: str,
+    admin_code: str = None,
+    token: str = None,
+    admin_role: str = None
+):
+    if admin_role not in ("admin", "head"):
+        raise HTTPException(403, "Admin access required")
+    if not verify_token(admin_code, token, admin_role):
+        raise HTTPException(401, "Invalid token")
+    rows = fetchall(
+        "SELECT module, can_view, can_edit FROM department_permissions WHERE department = :dept",
+        {"dept": department}
+    )
+    perms = {r["module"]: {"can_view": bool(r["can_view"]), "can_edit": bool(r["can_edit"])} for r in rows}
+    return {"data": perms, "department": department}
+
+
+@router.put("/permissions/department/{department}")
+def update_department_permissions(
+    department: str,
+    body: list[PermissionUpdate],
+    admin_code: str = None,
+    token: str = None,
+    admin_role: str = None
+):
+    if admin_role not in ("admin", "head"):
+        raise HTTPException(403, "Admin access required")
+    if not verify_token(admin_code, token, admin_role):
+        raise HTTPException(401, "Invalid token")
+    for perm in body:
+        execute("""
+            INSERT INTO department_permissions (department, module, can_view, can_edit)
+            VALUES (:dept, :module, :view, :edit)
+            ON CONFLICT (department, module) DO UPDATE SET
+                can_view = EXCLUDED.can_view,
+                can_edit = EXCLUDED.can_edit,
+                updated_at = CURRENT_TIMESTAMP
+        """, {
+            "dept": department,
+            "module": perm.module,
+            "view": int(perm.can_view),
+            "edit": int(perm.can_edit)
+        })
+    return {"success": True, "message": f"Đã cập nhật phân quyền cho phòng ban {department}"}
+
+
+@router.get("/permissions/{target_code}")
+def get_user_permissions(
+    target_code: str,
+    admin_code: str = None,
+    token: str = None,
+    role: str = None
+):
+    if role not in ("admin", "head"):
+        raise HTTPException(403, "Admin access required")
+    if not verify_token(admin_code, token, role):
+        raise HTTPException(401, "Invalid token")
+    user_info = fetchone("""
+        SELECT u.role, e.full_name, e.department, e.position
+        FROM users u
+        LEFT JOIN employees e ON e.employee_code = u.employee_code
+        WHERE u.employee_code = :code
+    """, {"code": target_code.strip()})
+
+    user_role = (user_info or {}).get("role", "user")
+    user_dept = (user_info or {}).get("department", "")
+
+    role_perms_raw = fetchall(
+        "SELECT module, can_view, can_edit FROM role_permissions WHERE role = :role",
+        {"role": user_role}
+    )
+    role_perms = {r["module"]: {"can_view": bool(r["can_view"]), "can_edit": bool(r["can_edit"])} for r in role_perms_raw}
+
+    dept_perms = {}
+    if user_dept:
+        dept_raw = fetchall(
+            "SELECT module, can_view, can_edit FROM department_permissions WHERE department = :dept",
+            {"dept": user_dept}
+        )
+        dept_perms = {r["module"]: {"can_view": bool(r["can_view"]), "can_edit": bool(r["can_edit"])} for r in dept_raw}
+
+    user_overrides_raw = fetchall(
+        "SELECT module, can_view, can_edit FROM user_permissions WHERE employee_code = :code",
+        {"code": target_code.strip()}
+    )
+    user_overrides = {r["module"]: {"can_view": bool(r["can_view"]), "can_edit": bool(r["can_edit"])} for r in user_overrides_raw}
+
+    all_modules = set()
+    for d in (role_perms, dept_perms, user_overrides):
+        all_modules.update(d.keys())
+
+    effective = {}
+    for mod in all_modules:
+        rp = role_perms.get(mod, {})
+        dp = dept_perms.get(mod, {})
+        up = user_overrides.get(mod, {})
+        effective[mod] = {
+            "can_view": up.get("can_view", dp.get("can_view", rp.get("can_view", False))),
+            "can_edit": up.get("can_edit", dp.get("can_edit", rp.get("can_edit", False))),
+        }
+
+    return {
+        "data": effective,
+        "role_permissions": role_perms,
+        "department_permissions": dept_perms,
+        "user_overrides": user_overrides,
+        "employee_code": target_code,
+        "user": user_info,
+    }
 
 
 class RoleUpdate(BaseModel):

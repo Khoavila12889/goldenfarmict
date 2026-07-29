@@ -24,7 +24,7 @@ def dashboard_stats():
 
     bookings_today = fetchall(
         "SELECT b.*, r.name as resource_name, r.type as resource_type FROM bookings b "
-        "JOIN resources r ON r.id=b.resource_id WHERE b.book_date=CURRENT_DATE "
+        "JOIN resources r ON r.id=b.resource_id WHERE b.book_date::date = CURRENT_DATE "
         "ORDER BY b.start_time"
     )
 

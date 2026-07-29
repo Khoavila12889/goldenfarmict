@@ -122,7 +122,7 @@ def get_todos(
         params['priority'] = priority
 
     if search:
-        query += " AND (title ILIKE :term OR description ILIKE :term OR tags ILIKE :term OR assignee_name ILIKE :term OR creator_name ILIKE :term)"
+        query += " AND (LOWER(title) LIKE LOWER(:term) OR LOWER(description) LIKE LOWER(:term) OR LOWER(tags) LIKE LOWER(:term) OR LOWER(assignee_name) LIKE LOWER(:term) OR LOWER(creator_name) LIKE LOWER(:term))"
         params['term'] = f"%{search}%"
 
     query += " ORDER BY CASE WHEN status = 'completed' THEN 1 ELSE 0 END, updated_at DESC"
@@ -299,9 +299,11 @@ def update_todo(
     if u_role == 'admin':
         pass
     elif u_role == 'head':
+        if todo['scope'] == 'department' and todo['department'] != u_dept:
+            raise HTTPException(403, "Trưởng phòng chỉ có thể cập nhật công việc trong phòng ban của mình")
         if todo['scope'] == 'personal' and todo['creator_code'] != u_code and todo['assignee_code'] != u_code:
             if todo['department'] and todo['department'] != u_dept:
-                raise HTTPException(403, "Trưởng phòng chỉ có thể cập nhật công việc trong phòng ban của mình hoặc công việc của chính mình")
+                raise HTTPException(403, "Trưởng phòng chỉ có thể cập nhật công việc của phòng ban mình hoặc công việc cá nhân của mình")
     else:
         if todo['creator_code'] != u_code and todo['assignee_code'] != u_code:
             raise HTTPException(403, "Bạn chỉ có thể cập nhật công việc của chính mình")
@@ -390,9 +392,10 @@ def update_todo_status(
     if u_role == 'admin':
         pass
     elif u_role == 'head':
+        if todo['scope'] == 'department' and todo['department'] != u_dept:
+            raise HTTPException(403, "Trưởng phòng chỉ có thể cập nhật trạng thái công việc trong phòng ban của mình")
         if todo['scope'] == 'personal' and todo['creator_code'] != u_code and todo['assignee_code'] != u_code:
-            if todo['department'] and todo['department'] != u_dept:
-                raise HTTPException(403, "Trưởng phòng chỉ có thể cập nhật trạng thái công việc trong phòng ban của mình")
+            raise HTTPException(403, "Bạn không có quyền cập nhật trạng thái công việc cá nhân của người khác")
     else:
         if todo['creator_code'] != u_code and todo['assignee_code'] != u_code:
             raise HTTPException(403, "Bạn chỉ có thể cập nhật trạng thái công việc của chính mình")

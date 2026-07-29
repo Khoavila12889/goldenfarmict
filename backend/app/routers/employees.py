@@ -1,5 +1,8 @@
 from fastapi import APIRouter, Query
 from ..core.db import fetchall, fetchone, execute, insert
+from ..core.session import DATABASE_URL
+
+_STR_AGG = "string_agg" if DATABASE_URL.startswith("postgresql") else "group_concat"
 
 router = APIRouter(prefix="/api/employees", tags=["employees"])
 
@@ -7,16 +10,16 @@ router = APIRouter(prefix="/api/employees", tags=["employees"])
 @router.get("")
 def list_employees(keyword: str = "", department: str = "", status: str = ""):
     params = {}
-    sql = """
+    sql = f"""
         SELECT e.*,
                (SELECT COUNT(*) FROM equipment WHERE employee_id = e.id) AS eq_count,
-               (SELECT string_agg(product_name || ' (' || license_key || ')', '; ')
+               (SELECT {_STR_AGG}(product_name || ' (' || license_key || ')', '; ')
                 FROM licenses
                 WHERE equipment_id IN (SELECT id FROM equipment WHERE employee_id = e.id)) AS license_keys
         FROM employees e WHERE 1=1
     """
     if keyword:
-        sql += " AND (e.full_name ILIKE :kw OR e.employee_code ILIKE :kw OR e.department ILIKE :kw OR e.phone ILIKE :kw)"
+        sql += " AND (LOWER(e.full_name) LIKE LOWER(:kw) OR LOWER(e.employee_code) LIKE LOWER(:kw) OR LOWER(e.department) LIKE LOWER(:kw) OR LOWER(e.phone) LIKE LOWER(:kw))"
         params["kw"] = f"%{keyword}%"
     if department and department != "Tất cả":
         sql += " AND e.department = :dept"
@@ -79,7 +82,7 @@ def update_employee(employee_id: int, body: dict):
         return {"success": False, "error": "No fields to update"}
     params["id"] = employee_id
     execute(
-        f"UPDATE employees SET {', '.join(fields)}, updated_at = CURRENT_TIMESTAMP WHERE id = :id",
+        f"UPDATE employees SET {', '.join(fields)}, updated_at = CURRENT_TIMESTAMP::text WHERE id = :id",
         params
     )
     return {"success": True}
@@ -95,10 +98,10 @@ def delete_employee(employee_id: int):
         eqs = fetchall("SELECT id FROM equipment WHERE employee_id = :id", {"id": employee_id})
         for eq in eqs:
             execute("""
-                UPDATE equipment_history SET return_date = CURRENT_DATE
+                UPDATE equipment_history SET return_date = CURRENT_DATE::text
                 WHERE equipment_id = :eqid AND employee_code = :code AND return_date = ''
             """, {"eqid": eq["id"], "code": emp_code})
-    execute("UPDATE equipment SET employee_id = NULL, issued_date = '', updated_at = CURRENT_TIMESTAMP WHERE employee_id = :id", {"id": employee_id})
+    execute("UPDATE equipment SET employee_id = NULL, issued_date = '', updated_at = CURRENT_TIMESTAMP::text WHERE employee_id = :id", {"id": employee_id})
     execute("DELETE FROM employees WHERE id = :id", {"id": employee_id})
     return {"success": True}
 

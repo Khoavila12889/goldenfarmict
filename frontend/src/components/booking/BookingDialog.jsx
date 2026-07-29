@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { today } from '../../utils/timeUtils'
 import { validateBookingForm, getResourceIcon } from '../../utils/bookingUtils'
 import { formatDate } from '../../utils/date'
+import DateSelector from './DateSelector'
 
 export default function BookingDialog({
   isOpen, onClose, onSubmit, resources, employee,
@@ -166,13 +167,7 @@ export default function BookingDialog({
 
           <div className="bk-form-group">
             <label className="bk-form-label">Ngày</label>
-            <input
-              type="text"
-              className="bk-input"
-              placeholder="DD/MM/YYYY"
-              value={dateDisplay}
-              onChange={e => handleDateChange(e.target.value)}
-            />
+            <DateSelector value={date} onChange={setDate} />
           </div>
 
           <div className="bk-form-group">

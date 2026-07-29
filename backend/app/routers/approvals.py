@@ -101,7 +101,7 @@ def add_step(wf_id: int, body: dict):
          "approver_value": body.get("approver_value", ""), "department_match": body.get("department_match", 1),
          "can_edit": body.get("can_edit", 0)}
     )
-    execute("UPDATE workflow_templates SET updated_at=CURRENT_TIMESTAMP WHERE id=:id", {"id": wf_id})
+    execute("UPDATE workflow_templates SET updated_at=CURRENT_TIMESTAMP::text WHERE id=:id", {"id": wf_id})
     return {"success": True, "id": step_id, "step_order": new_order}
 
 
@@ -182,7 +182,7 @@ def list_requests(
         sql += " AND template_id=:template_id"
         params["template_id"] = template_id
     if search:
-        sql += " AND (title ILIKE :search OR requester_name ILIKE :search OR requester_code ILIKE :search)"
+        sql += " AND (LOWER(title) LIKE LOWER(:search) OR LOWER(requester_name) LIKE LOWER(:search) OR LOWER(requester_code) LIKE LOWER(:search))"
         params["search"] = f"%{search}%"
     sql += " ORDER BY id DESC"
     rows = fetchall(sql, params)
@@ -285,7 +285,7 @@ def update_request(req_id: int, body: dict):
     if not fields:
         return {"success": False}
     params["req_id"] = req_id
-    execute(f"UPDATE approval_requests SET {', '.join(fields)}, updated_at=CURRENT_TIMESTAMP WHERE id=:req_id", params)
+    execute(f"UPDATE approval_requests SET {', '.join(fields)}, updated_at=CURRENT_TIMESTAMP::text WHERE id=:req_id", params)
     return {"success": True}
 
 
@@ -297,7 +297,7 @@ def submit_request(req_id: int):
     if not req:
         raise HTTPException(400, "Request not found or not in draft status")
     execute(
-        "UPDATE approval_requests SET status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=:id",
+        "UPDATE approval_requests SET status='pending', updated_at=CURRENT_TIMESTAMP::text WHERE id=:id",
         {"id": req_id}
     )
     publish_sync("request_submitted", {"id": req_id, "title": req["title"]})
@@ -313,7 +313,7 @@ def cancel_request(req_id: int):
     if not req:
         raise HTTPException(400, "Request cannot be cancelled")
     execute(
-        "UPDATE approval_requests SET status='cancelled', updated_at=CURRENT_TIMESTAMP WHERE id=:id",
+        "UPDATE approval_requests SET status='cancelled', updated_at=CURRENT_TIMESTAMP::text WHERE id=:id",
         {"id": req_id}
     )
     return {"success": True}
@@ -339,12 +339,12 @@ def approve_request(req_id: int, body: dict):
     next_step = req["current_step"] + 1
     if next_step > req["total_steps"]:
         execute(
-            "UPDATE approval_requests SET status='approved', updated_at=CURRENT_TIMESTAMP WHERE id=:id",
+            "UPDATE approval_requests SET status='approved', updated_at=CURRENT_TIMESTAMP::text WHERE id=:id",
             {"id": req_id}
         )
     else:
         execute(
-            "UPDATE approval_requests SET status='in_progress', current_step=:step, updated_at=CURRENT_TIMESTAMP WHERE id=:id",
+            "UPDATE approval_requests SET status='in_progress', current_step=:step, updated_at=CURRENT_TIMESTAMP::text WHERE id=:id",
             {"step": next_step, "id": req_id}
         )
     publish_sync("request_approved", {"id": req_id})
@@ -369,7 +369,7 @@ def reject_request(req_id: int, body: dict):
          "approver_name": emp["full_name"], "action": "rejected", "comment": comment}
     )
     execute(
-        "UPDATE approval_requests SET status='rejected', updated_at=CURRENT_TIMESTAMP WHERE id=:id",
+        "UPDATE approval_requests SET status='rejected', updated_at=CURRENT_TIMESTAMP::text WHERE id=:id",
         {"id": req_id}
     )
     publish_sync("request_rejected", {"id": req_id})

@@ -15,7 +15,7 @@ def list_departments(search: str = ""):
     """
     params = {}
     if search:
-        sql += " AND d.name ILIKE :search"
+        sql += " AND LOWER(d.name) LIKE LOWER(:search)"
         params["search"] = f"%{search}%"
     sql += " ORDER BY d.name ASC"
     rows = fetchall(sql, params)
