@@ -805,8 +805,8 @@ import time as _time
 import threading
 import jwt as pyjwt
 
-_ONLYOFFICE_URL = os.environ.get('ONLYOFFICE_URL', 'https://office.goldenfarm.vn')
-_ONLYOFFICE_PUBLIC_URL = os.environ.get('ONLYOFFICE_PUBLIC_URL', _ONLYOFFICE_URL)
+_ONLYOFFICE_URL = os.environ.get('ONLYOFFICE_URL', 'http://onlyoffice:80')
+_ONLYOFFICE_PUBLIC_URL = os.environ.get('ONLYOFFICE_PUBLIC_URL', 'http://localhost:8080')
 _ONLYOFFICE_SECRET = os.environ.get('ONLYOFFICE_SECRET', 'MySuperSecret123456')
 _ONLYOFFICE_ENABLED = os.environ.get('ONLYOFFICE_ENABLED', 'true').lower() == 'true'
 _TEMP_TOKEN_EXPIRE = 3600  # 1 hour (download token — DS may retry)
