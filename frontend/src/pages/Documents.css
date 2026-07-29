@@ -769,7 +769,7 @@
 .oov-overlay {
   position: fixed;
   inset: 0;
-  background: #fff; /* Đổi thành nền trắng vì container sẽ che toàn màn hình */
+  background: #fcf9f9; /* Đổi thành nền trắng vì container sẽ che toàn màn hình */
   z-index: 9999; /* Tăng z-index để chắc chắn đè lên sidebar và navbar (header màu xanh) */
   display: flex;
   align-items: flex-start; /* Cho form neo từ sát góc trên thay vì ở giữa */
@@ -893,6 +893,14 @@
   animation: oovSpin 1s linear infinite;
 }
 
+/* Sửa lỗi iframe của ONLYOFFICE bị hở lề phải */
+.oov-editor iframe,
+#onlyoffice-editor-placeholder iframe {
+  width: 100% !important;
+  height: 100% !important;
+  border: none !important;
+  display: block !important;
+}
 @keyframes oovSpin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }

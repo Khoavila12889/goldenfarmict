@@ -42,6 +42,7 @@ services:
       - ./backend/data:/app/data:rw
       # Mount logs directory
       - ./backend/logs:/app/logs:rw
+      - ./backend/uploads:/app/uploads:rw
       # Mount luong.docx template (read-only)
       - ./frontend/src/template:/app/templates:ro
     environment:
@@ -91,7 +92,7 @@ services:
     image: onlyoffice/documentserver:latest
     container_name: goldenfarm-onlyoffice
     ports:
-      - "8080:80"
+      - "8082:80"
     environment:
       - JWT_ENABLED=true
       - JWT_SECRET=MySuperSecret123456
