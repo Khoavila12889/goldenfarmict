@@ -7,11 +7,11 @@ services:
     container_name: goldenfarm-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: goldenfarm
-      POSTGRES_PASSWORD: your_strong_password
-      POSTGRES_DB: goldenfarmict
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
@@ -30,7 +30,7 @@ services:
     platform: linux/amd64  
     container_name: goldenfarm-backend
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT}:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -46,21 +46,15 @@ services:
       # Mount luong.docx template (read-only)
       - ./frontend/src/template:/app/templates:ro
     environment:
-      - APP_ENV=production
+      - APP_ENV=${APP_ENV}
       - PYTHONUNBUFFERED=1
-      # Chuỗi kết nối đến container Postgres (tên host là 'db')
-      - DATABASE_URL=postgresql://goldenfarm:your_strong_password@db:5432/goldenfarmict
-      - CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:8088
-      # OnlyOffice Document Server configuration
-      # BACKEND_PUBLIC_URL: URL để OnlyOffice Document Server gọi callback tải file (Docker internal network)
-      - BACKEND_PUBLIC_URL=http://backend:8000
-      # ONLYOFFICE_URL: Backend kết nối tới OnlyOffice Document Server (Docker internal network)
-      - ONLYOFFICE_URL=http://onlyoffice:80
-      # ONLYOFFICE_PUBLIC_URL: Trình duyệt tải OnlyOffice API JS (phải truy cập được từ browser)
-      # Nếu dùng Docker trên máy chủ, thay 10.0.0.9 bằng IP thật của máy chủ hoặc domain
-      - ONLYOFFICE_PUBLIC_URL=http://10.0.0.9:8080
-      - ONLYOFFICE_SECRET=MySuperSecret123456
-      - ONLYOFFICE_ENABLED=true
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - BACKEND_PUBLIC_URL=${BACKEND_PUBLIC_URL}
+      - ONLYOFFICE_URL=${ONLYOFFICE_URL}
+      - ONLYOFFICE_PUBLIC_URL=${ONLYOFFICE_PUBLIC_URL}
+      - ONLYOFFICE_SECRET=${ONLYOFFICE_SECRET}
+      - ONLYOFFICE_ENABLED=${ONLYOFFICE_ENABLED}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
@@ -78,7 +72,7 @@ services:
       dockerfile: Dockerfile
     container_name: goldenfarm-frontend
     ports:
-      - "8088:80"
+      - "${FRONTEND_PORT}:80"
     depends_on:
       - backend
     restart: unless-stopped
@@ -92,10 +86,10 @@ services:
     image: onlyoffice/documentserver:latest
     container_name: goldenfarm-onlyoffice
     ports:
-      - "8082:80"
+      - "${ONLYOFFICE_PORT}:80"
     environment:
       - JWT_ENABLED=true
-      - JWT_SECRET=MySuperSecret123456
+      - JWT_SECRET=${ONLYOFFICE_SECRET}
       - JWT_HEADER=AuthorizationJwt
       - JWT_IN_BODY=true
     volumes:

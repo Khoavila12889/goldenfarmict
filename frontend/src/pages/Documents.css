@@ -777,11 +777,12 @@
 }
 
 .oov-container {
-  width: 100vw; /* Chiếm 100% chiều rộng màn hình */
-  height: 100vh; /* Chiếm 100% chiều cao màn hình */
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
   background: #fff;
-  border-radius: 0; /* Xóa bo góc */
-  box-shadow: none; /* Xóa đổ bóng vì đã full màn hình */
+  border-radius: 0;
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -863,6 +864,7 @@
 
 .oov-body {
   flex: 1;
+  width: 100%;
   position: relative;
   overflow: hidden;
 }
