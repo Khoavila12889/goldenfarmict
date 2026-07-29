@@ -2,8 +2,14 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   FileText, Upload, Check, Loader, AlertCircle, TriangleAlert, Clock,
   ChevronLeft, ChevronRight, Calendar, Search, Download, Lock, Save,
-  User, Building, Edit3, X, Eye, EyeOff, Printer
+  User, Building, Edit3, X, Eye, EyeOff, Printer, FileDown, Trash2
 } from 'lucide-react'
+import { formatDate } from '../utils/date'
+import {
+  getSalaryEmployees, getSalaryView, updateSalaryFields,
+  exportSalaryPdf, batchExportSalaryPdf, uploadSalaryExcel,
+  getSalaryUploadHistory, deleteSalarySlip, downloadSalaryTemplate,
+} from '../services/api'
 import '../styles/booking.css'
 import './SalarySlip.css'
 
@@ -64,6 +70,7 @@ export default function SalarySlipAdmin() {
 
   const [employees, setEmployees] = useState([])
   const [empLoading, setEmpLoading] = useState(false)
+  const [empError, setEmpError] = useState(null)
   const [selectedEmp, setSelectedEmp] = useState(null)
   const [salaryData, setSalaryData] = useState(null)
   const [salaryLoading, setSalaryLoading] = useState(false)
@@ -73,12 +80,13 @@ export default function SalarySlipAdmin() {
   const [saveMsg, setSaveMsg] = useState(null)
 
   const [searchTerm, setSearchTerm] = useState('')
-  const [departmentFilter, setDepartmentFilter] = useState('Tất cả')
-  const [departments, setDepartments] = useState([])
 
   const [pdfPassword, setPdfPassword] = useState('')
   const [exportingPdf, setExportingPdf] = useState(false)
   const [showPwdField, setShowPwdField] = useState(false)
+  const [batchExporting, setBatchExporting] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [batchExportMsg, setBatchExportMsg] = useState(null)
 
   const [activeTab, setActiveTab] = useState('employees')
 
@@ -96,42 +104,52 @@ export default function SalarySlipAdmin() {
   async function fetchHistory() {
     setHistoryLoading(true)
     try {
-      const params = new URLSearchParams({ admin_code: userCode, token, role })
-      const res = await fetch(`${apiBase}/upload-history?${params}`)
-      const data = await res.json()
-      if (res.ok) setUploadHistory(data.data || [])
+      const res = await getSalaryUploadHistory(userCode, token, role)
+      setUploadHistory(res.data.data || [])
     } catch (_) {} finally {
       setHistoryLoading(false)
     }
   }
 
-  const fetchEmployees = useCallback(async () => {
+  async function fetchEmployees() {
     setEmpLoading(true)
+    setEmpError(null)
     try {
-      const params = new URLSearchParams({
-        admin_code: userCode, token, role,
-        month: selectedMonth,
-        department: departmentFilter,
-        search: searchTerm,
-      })
-      const res = await fetch(`${apiBase}/with-salary?${params}`)
-      const data = await res.json()
-      if (res.ok) setEmployees(data.data || [])
-    } catch (_) {} finally {
+      const res = await getSalaryEmployees(selectedMonth, '', searchTerm, userCode, token, role)
+      setEmployees(res.data.data || [])
+    } catch (err) {
+      const msg = err.response?.data?.detail || 'Lỗi kết nối máy chủ'
+      setEmpError(msg)
+      setEmployees([])
+    } finally {
       setEmpLoading(false)
     }
-  }, [selectedMonth, departmentFilter, searchTerm, userCode, token, role])
+  }
 
-  const fetchDepartments = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/employees/departments/list?admin_code=${userCode}&token=${token}&role=${role}`)
-      const data = await res.json()
-      if (res.ok) setDepartments(data.data || [])
-    } catch (_) {}
-  }, [userCode, token, role])
+  useEffect(() => {
+    fetchHistory()
+  }, [])
 
-  useEffect(() => { fetchHistory(); fetchDepartments() }, [])
-  useEffect(() => { fetchEmployees() }, [fetchEmployees])
+  useEffect(() => {
+    let cancelled = false
+    setEmpLoading(true)
+    setEmpError(null)
+    ;(async () => {
+      try {
+        const res = await getSalaryEmployees(selectedMonth, '', searchTerm, userCode, token, role)
+        if (!cancelled) setEmployees(res.data.data || [])
+      } catch (err) {
+        if (!cancelled) {
+          const msg = err.response?.data?.detail || 'Lỗi kết nối máy chủ'
+          setEmpError(msg)
+          setEmployees([])
+        }
+      } finally {
+        if (!cancelled) setEmpLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [selectedMonth, searchTerm, userCode, token, role])
 
   function navigate(dir) {
     const [y, m] = selectedMonth.split('-').map(Number)
@@ -158,25 +176,38 @@ export default function SalarySlipAdmin() {
     setSaveMsg(null)
   }
 
+  async function handleDownloadTemplate() {
+    try {
+      const res = await downloadSalaryTemplate()
+      const url = URL.createObjectURL(new Blob([res.data]))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'template_luong.xlsx'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (_) {
+      alert('Không thể tải file mẫu')
+    }
+  }
+
   async function handleUpload(force = false) {
     if (!file) return
     setUploading(true)
     setUploadError(null)
     setUploadResult(null)
     setPendingMonth(null)
-    const fd = new FormData()
-    fd.append('excel_file', file)
-    const params = new URLSearchParams({ admin_code: userCode, token, role, month: selectedMonth })
-    if (force) params.set('force', 'true')
     try {
-      const res = await fetch(`${apiBase}/upload-salaries?${params}`, { method: 'POST', body: fd })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.detail || 'Upload thất bại')
+      const res = await uploadSalaryExcel(file, selectedMonth, userCode, token, role, force)
+      const data = res.data
       if (data.has_existing) { setPendingMonth(data); setUploading(false); return }
       setUploadResult(data)
       fetchHistory()
       fetchEmployees()
-    } catch (err) { setUploadError(err.message) } finally { if (!pendingMonth) setUploading(false) }
+    } catch (err) {
+      setUploadError(err.response?.data?.detail || 'Upload thất bại')
+    } finally {
+      if (!pendingMonth) setUploading(false)
+    }
   }
 
   function confirmOverwrite() { handleUpload(true) }
@@ -185,18 +216,21 @@ export default function SalarySlipAdmin() {
 
   async function selectEmployee(emp) {
     setSelectedEmp(emp)
-    setSalaryLoading(true)
-    setSalaryError(null)
+    setSearchTerm('')
     setSalaryData(null)
     setEditedFields({})
     setSaveMsg(null)
+    setSalaryLoading(true)
+    setSalaryError(null)
     try {
-      const params = new URLSearchParams({ admin_code: userCode, token, role, month: selectedMonth })
-      const res = await fetch(`${apiBase}/view/${emp.employee_code}?${params}`)
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.detail || 'Lỗi tải dữ liệu')
-      setSalaryData(data.data)
-    } catch (err) { setSalaryError(err.message) } finally { setSalaryLoading(false) }
+      const res = await getSalaryView(emp.employee_code, selectedMonth, userCode, token, role)
+      setSalaryData(res.data.data)
+    } catch (err) {
+      setSelectedEmp(null)
+      setSalaryError(err.response?.data?.detail || 'Lỗi tải dữ liệu')
+    } finally {
+      setSalaryLoading(false)
+    }
   }
 
   function handleFieldChange(field, value) {
@@ -213,52 +247,87 @@ export default function SalarySlipAdmin() {
     setSaving(true)
     setSaveMsg(null)
     try {
-      const res = await fetch(`${apiBase}/update-fields`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          admin_code: userCode, token, role,
-          employee_code: selectedEmp.employee_code,
-          month: selectedMonth,
-          fields: editedFields,
-        })
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.detail || 'Lỗi lưu')
-      setSalaryData(data.data)
+      const res = await updateSalaryFields(selectedEmp.employee_code, selectedMonth, editedFields, userCode, token, role)
+      setSalaryData(res.data.data)
       setEditedFields({})
       setSaveMsg({ type: 'success', text: 'Đã lưu thay đổi' })
       setTimeout(() => setSaveMsg(null), 3000)
-    } catch (err) { setSaveMsg({ type: 'error', text: err.message }) } finally { setSaving(false) }
+    } catch (err) {
+      setSaveMsg({ type: 'error', text: err.response?.data?.detail || 'Lỗi lưu' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!selectedEmp || !window.confirm(`Xóa phiếu lương của ${selectedEmp.full_name} tháng ${parseMonthLabel(selectedMonth)}?`)) return
+    setDeleting(true)
+    try {
+      await deleteSalarySlip(selectedEmp.employee_code, selectedMonth, userCode, token, role)
+      setSelectedEmp(null)
+      setSalaryData(null)
+      setEditedFields({})
+      setSaveMsg({ type: 'success', text: 'Đã xóa phiếu lương' })
+      fetchEmployees()
+      setTimeout(() => setSaveMsg(null), 3000)
+    } catch (err) {
+      setSaveMsg({ type: 'error', text: err.response?.data?.detail || 'Lỗi xóa' })
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  async function handleBatchExport() {
+    setBatchExporting(true)
+    setBatchExportMsg(null)
+    try {
+      const res = await batchExportSalaryPdf(selectedMonth, '', userCode, token, role)
+      const blob = new Blob([res.data], { type: 'application/zip' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `luong_${selectedMonth}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+      setBatchExportMsg({ type: 'success', text: `Đã xuất PDF cho tháng ${parseMonthLabel(selectedMonth)}` })
+    } catch (err) {
+      setBatchExportMsg({ type: 'error', text: err.response?.data?.detail || 'Lỗi xuất PDF' })
+    } finally {
+      setBatchExporting(false)
+      setTimeout(() => setBatchExportMsg(null), 4000)
+    }
   }
 
   async function exportPdf() {
     if (!selectedEmp) return
     setExportingPdf(true)
     try {
-      const res = await fetch(`${apiBase}/export-pdf`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          admin_code: userCode, token, role,
-          employee_code: selectedEmp.employee_code,
-          month: selectedMonth,
-          password: pdfPassword,
-          fields: Object.keys(editedFields).length > 0 ? editedFields : undefined,
-        })
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.detail || 'Lỗi xuất PDF')
-      }
-      const blob = await res.blob()
+      const res = await exportSalaryPdf(selectedEmp.employee_code, selectedMonth, pdfPassword,
+        userCode, token, role,
+        Object.keys(editedFields).length > 0 ? editedFields : undefined)
+      const blob = new Blob([res.data], { type: 'application/pdf' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
       a.download = `luong_${selectedEmp.employee_code}_${selectedMonth}.pdf`
       a.click()
       URL.revokeObjectURL(url)
-    } catch (err) { setSaveMsg({ type: 'error', text: err.message }) } finally { setExportingPdf(false) }
+    } catch (err) {
+      let msg = 'Lỗi xuất PDF'
+      try {
+        const blob = err.response?.data
+        if (blob instanceof Blob) {
+          const text = await blob.text()
+          const json = JSON.parse(text)
+          msg = json.detail || msg
+        } else {
+          msg = err.response?.data?.detail || err.message || msg
+        }
+      } catch (_) {}
+      setSaveMsg({ type: 'error', text: msg })
+    } finally {
+      setExportingPdf(false)
+    }
   }
 
   function renderField(field, options = {}) {
@@ -283,7 +352,6 @@ export default function SalarySlipAdmin() {
     )
   }
 
-  const hasSalaryForMonth = employees.length > 0
   const hasEdits = Object.keys(editedFields).length > 0
 
   return (
@@ -312,6 +380,13 @@ export default function SalarySlipAdmin() {
         </div>
       </div>
 
+      {batchExportMsg && (
+        <div className={`sa-save-msg ${batchExportMsg.type}`} style={{ margin: '0.5rem 1rem 0' }}>
+          {batchExportMsg.type === 'success' ? <Check size={14} /> : <AlertCircle size={14} />}
+          {batchExportMsg.text}
+        </div>
+      )}
+
       { /* ─── Tab Navigation ─── */ }
       <div className="sa-tabs">
         <button className={`sa-tab${activeTab === 'employees' ? ' active' : ''}`}
@@ -330,64 +405,56 @@ export default function SalarySlipAdmin() {
 
       { /* ─── Tab: Employees ─── */ }
       {activeTab === 'employees' && (
-        <div className="sa-body">
-          { /* Left panel: employee list */ }
-          <div className="sa-sidebar">
-            <div className="sa-sidebar-header">
-              <div className="sa-search-wrap">
-                <Search size={14} className="sa-search-icon" />
-                <input type="text" className="sa-search-input" placeholder="Tìm nhân viên..."
-                  value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                {searchTerm && (
-                  <button className="sa-search-clear" onClick={() => setSearchTerm('')}>
-                    <X size={14} />
-                  </button>
-                )}
-              </div>
-              <select className="sa-dept-select" value={departmentFilter}
-                onChange={e => { setDepartmentFilter(e.target.value); setSelectedEmp(null); setSalaryData(null) }}>
-                <option value="Tất cả">Tất cả phòng ban</option>
-                {departments.map(d => (
-                  <option key={d.id || d.name} value={d.name}>{d.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="sa-emp-list">
-              {empLoading ? (
-                <div className="sa-emp-empty"><Loader size={20} className="spin" /> Đang tải...</div>
-              ) : employees.length === 0 ? (
-                <div className="sa-emp-empty">
-                  <User size={24} />
-                  <p>Chưa có phiếu lương tháng này</p>
-                  <p className="sa-emp-hint">Import Excel ở tab "Import Excel"</p>
-                </div>
-              ) : (
-                employees.map(emp => (
-                  <div key={emp.employee_code}
-                    className={`sa-emp-item${selectedEmp?.employee_code === emp.employee_code ? ' selected' : ''}`}
-                    onClick={() => selectEmployee(emp)}>
-                    <div className="sa-emp-icon"><User size={16} /></div>
-                    <div className="sa-emp-info">
-                      <div className="sa-emp-name">{emp.full_name || emp.employee_code}</div>
-                      <div className="sa-emp-meta">{emp.employee_code} · {emp.department || '—'}</div>
-                    </div>
-                  </div>
-                ))
+        <div className="sa-emp-tab">
+          <div className="sa-emp-search-area">
+            <div className="sa-emp-search-box">
+              <Search size={18} className="sa-emp-search-icon" />
+              <input type="text" className="sa-emp-search-input"
+                placeholder="Tìm theo mã hoặc tên nhân viên..."
+                value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                autoFocus />
+              {searchTerm && (
+                <button className="sa-emp-search-clear" onClick={() => setSearchTerm('')}>
+                  <X size={16} />
+                </button>
               )}
             </div>
+
+            {searchTerm && (
+              <div className="sa-emp-dropdown">
+                {empLoading ? (
+                  <div className="sa-emp-dd-item sa-emp-dd-muted"><Loader size={14} className="spin" /> Đang tìm...</div>
+                ) : empError ? (
+                  <div className="sa-emp-dd-item sa-emp-dd-error"><AlertCircle size={14} /> {empError}</div>
+                ) : employees.length === 0 ? (
+                  <div className="sa-emp-dd-item sa-emp-dd-muted">Không tìm thấy nhân viên</div>
+                ) : (
+                  employees.map(emp => (
+                    <div key={emp.employee_code}
+                      className={`sa-emp-dd-item${selectedEmp?.employee_code === emp.employee_code ? ' selected' : ''}`}
+                      onClick={() => selectEmployee(emp)}>
+                      <div className="sa-emp-dd-avatar"><User size={16} /></div>
+                      <div className="sa-emp-dd-info">
+                        <div className="sa-emp-dd-name">{emp.full_name || emp.employee_code}</div>
+                        <div className="sa-emp-dd-meta">{emp.employee_code} · {emp.department || '—'}</div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
 
-          { /* Right panel: salary slip viewer/editor */ }
-          <div className="sa-main">
+          <div className="sa-emp-result">
             {!selectedEmp ? (
-              <div className="sa-main-empty">
+              <div className="sa-emp-empty-state">
                 <FileText size={48} />
-                <p>Chọn nhân viên để xem và chỉnh sửa phiếu lương</p>
+                <p>Tìm kiếm & chọn nhân viên để xem phiếu lương</p>
               </div>
             ) : salaryLoading ? (
-              <div className="sa-main-loading"><Loader size={32} className="spin" /> Đang tải...</div>
+              <div className="sa-emp-loading"><Loader size={28} className="spin" /> Đang tải...</div>
             ) : salaryError ? (
-              <div className="sa-main-empty">
+              <div className="sa-emp-empty-state">
                 <AlertCircle size={32} />
                 <p style={{ color: 'var(--bk-danger)' }}>{salaryError}</p>
               </div>
@@ -401,7 +468,7 @@ export default function SalarySlipAdmin() {
                   <div className="sa-editor-actions">
                     <div className="sa-pwd-wrap">
                       <input type={showPwdField ? 'text' : 'password'} className="sa-pwd-input"
-                        placeholder="Pass PDF (để trống nếu k cần)" value={pdfPassword}
+                        placeholder="Pass PDF" value={pdfPassword}
                         onChange={e => setPdfPassword(e.target.value)} />
                       <button className="sa-pwd-toggle" onClick={() => setShowPwdField(s => !s)}>
                         {showPwdField ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -414,6 +481,10 @@ export default function SalarySlipAdmin() {
                       disabled={!hasEdits || saving}>
                       {saving ? <><Loader size={14} className="spin" /> Đang lưu...</> : <><Save size={14} /> Lưu</>}
                     </button>
+                    <button className="sa-btn sa-btn-danger" onClick={handleDelete} disabled={deleting}
+                      style={{ borderColor: '#ef4444', color: '#ef4444' }}>
+                      {deleting ? <><Loader size={14} className="spin" /> Đang xóa...</> : <><Trash2 size={14} /> Xóa</>}
+                    </button>
                   </div>
                 </div>
 
@@ -424,7 +495,6 @@ export default function SalarySlipAdmin() {
                   </div>
                 )}
 
-                { /* Editable form */ }
                 <div className="sa-form">
                   <div className="sa-form-section">
                     <h4 className="sa-form-title">Thông tin nhân viên</h4>
@@ -520,6 +590,11 @@ export default function SalarySlipAdmin() {
       {activeTab === 'upload' && (
         <div className="sa-upload-tab">
           <div className="bk-card" style={{ padding: '1.25rem', maxWidth: 600 }}>
+            <div className="bk-form-group" style={{ marginBottom: '1rem' }}>
+              <button className="bk-btn" style={{ width: '100%', height: '36px' }} onClick={handleDownloadTemplate}>
+                <Download size={16} /> Tải file mẫu Excel
+              </button>
+            </div>
             <div className="bk-form-group">
               <label className="bk-form-label">
                 File Excel dữ liệu lương — tháng {parseMonthLabel(selectedMonth)}
@@ -636,7 +711,7 @@ export default function SalarySlipAdmin() {
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
                       <div style={{ fontSize: '0.78rem', color: 'var(--bk-text-secondary)' }}>{h.uploaded_by_name || h.uploaded_by}</div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--bk-text-muted)' }}>{h.created_at?.split(' ')[0]}</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--bk-text-muted)' }}>{formatDate(h.created_at)}</div>
                     </div>
                   </div>
                 ))}

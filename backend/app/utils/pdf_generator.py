@@ -4,7 +4,6 @@ Tạo phiếu lương PDF từ Excel + Template DOCX
 """
 import pandas as pd
 from docxtpl import DocxTemplate
-from docx2pdf import convert
 from PyPDF2 import PdfReader, PdfWriter
 from pathlib import Path
 from datetime import datetime
@@ -13,6 +12,7 @@ import os
 import shutil
 import logging
 import tempfile
+import subprocess
 
 from .ftp_utils import upload_file_to_ftp, upload_excel_to_ftp
 from config.config_manager import read_xml_info
@@ -317,7 +317,17 @@ async def generate_salary_pdfs_from_excel(
                 doc.save(str(temp_docx))
                 
                 # Convert to PDF
-                convert(str(temp_docx), str(pdf_path))
+                output_dir = str(pdf_path.parent)
+                if _find_libreoffice():
+                    _convert_docx_to_pdf_libreoffice(str(temp_docx), output_dir)
+                elif os.name == 'nt':
+                    from docx2pdf import convert as docx2pdf_convert
+                    docx2pdf_convert(str(temp_docx), str(pdf_path))
+                else:
+                    raise RuntimeError(
+                        "LibreOffice not found. Please install LibreOffice "
+                        "(https://www.libreoffice.org/download/) and ensure 'libreoffice' is in your PATH."
+                    )
                 
                 # Encrypt với password nếu có
                 if 'PASSWORD' in row and not pd.isnull(row['PASSWORD']):
@@ -427,6 +437,45 @@ async def generate_salary_pdfs_from_excel(
         }
 
 
+def _find_libreoffice():
+    exe = shutil.which('libreoffice')
+    if exe:
+        return exe
+    if os.name == 'nt':
+        for p in [
+            r'C:\Program Files\LibreOffice\program\soffice.exe',
+            r'C:\Program Files (x86)\LibreOffice\program\soffice.exe',
+            os.path.expandvars(r'%LOCALAPPDATA%\Programs\LibreOffice\program\soffice.exe'),
+        ]:
+            if os.path.exists(p):
+                return p
+    return None
+
+
+def _convert_docx_to_pdf_libreoffice(docx_path: str, output_dir: str):
+    libre_path = _find_libreoffice()
+    if not libre_path:
+        raise RuntimeError(
+            "LibreOffice not found. Please install LibreOffice "
+            "(https://www.libreoffice.org/download/) and ensure 'libreoffice' is in your PATH."
+        )
+    result = subprocess.run(
+        [libre_path, '--headless', '--convert-to', 'pdf',
+         '--outdir', output_dir, docx_path],
+        capture_output=True, text=True, timeout=60
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"LibreOffice failed: {result.stderr or result.stdout}")
+
+
+def _convert_docx_to_pdf_docx2pdf(docx_path: str, output_path: str):
+    try:
+        from docx2pdf import convert
+        convert(docx_path, output_path)
+    except Exception as e:
+        raise RuntimeError(f"docx2pdf failed: {str(e)}")
+
+
 def generate_single_pdf_from_json(salary_context: dict, template_path: str, output_path: str, password: str = ""):
     """
     Generate a single salary slip PDF from a salary context dict (JSON).
@@ -437,10 +486,20 @@ def generate_single_pdf_from_json(salary_context: dict, template_path: str, outp
         doc = DocxTemplate(template_path)
         doc.render(salary_context)
 
-        temp_docx = output_path + '.docx'
+        base = output_path[:-4] if output_path.endswith('.pdf') else output_path
+        temp_docx = base + '.docx'
         doc.save(temp_docx)
 
-        convert(temp_docx, output_path)
+        out_dir = str(Path(output_path).parent)
+        if _find_libreoffice():
+            _convert_docx_to_pdf_libreoffice(temp_docx, out_dir)
+        elif os.name == 'nt':
+            _convert_docx_to_pdf_docx2pdf(temp_docx, output_path)
+        else:
+            raise RuntimeError(
+                "LibreOffice not found. Please install LibreOffice "
+                "(https://www.libreoffice.org/download/) and ensure 'libreoffice' is in your PATH."
+            )
 
         if password:
             pdf_writer = PdfWriter()

@@ -1,9 +1,15 @@
 __pycache__/
 *.pyc
 *.pyo
+
+# Node
 node_modules/
 dist/
+
+# IDE
 .vscode/
+
+# SQLite
 *.db
 !backend/company.db
 !backend/data/
@@ -11,4 +17,27 @@ dist/
 *.db-shm
 *.db-wal
 db.sqlite3
+
+# Temporary
 temp_pdf_gen/
+
+# Local environment
+.env
+.env.*
+
+# Keep example env
+!.env.example
+
+# Database backups
+*.sql
+*.dump
+*.bak
+
+# Logs
+logs/
+backend/logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

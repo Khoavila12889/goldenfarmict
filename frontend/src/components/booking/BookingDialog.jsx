@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { today } from '../../utils/timeUtils'
 import { validateBookingForm, getResourceIcon } from '../../utils/bookingUtils'
+import { formatDate } from '../../utils/date'
+import DateSelector from './DateSelector'
 
 export default function BookingDialog({
   isOpen, onClose, onSubmit, resources, employee,
@@ -9,6 +11,7 @@ export default function BookingDialog({
   const [resourceId, setResourceId] = useState('')
   const [title, setTitle] = useState('')
   const [date, setDate] = useState(initialDate || today())
+  const [dateDisplay, setDateDisplay] = useState('')
   const [startTime, setStartTime] = useState('08:00')
   const [endTime, setEndTime] = useState('09:00')
   const [notes, setNotes] = useState('')
@@ -18,8 +21,10 @@ export default function BookingDialog({
 
   useEffect(() => {
     if (isOpen) {
+      const d = initialDate || today()
       setResourceId(initialResourceId || (resources.length > 0 ? String(resources[0].id) : ''))
-      setDate(initialDate || today())
+      setDate(d)
+      setDateDisplay(formatDate(d))
       setStartTime('08:00')
       setEndTime('09:00')
       setTitle('')
@@ -39,6 +44,20 @@ export default function BookingDialog({
   }, [isOpen, onClose])
 
   if (!isOpen) return null
+
+  function parseDateInput(val) {
+    const parts = val.split('/')
+    if (parts.length === 3 && parts[0].length === 2 && parts[1].length === 2 && parts[2].length === 4) {
+      return `${parts[2]}-${parts[1]}-${parts[0]}`
+    }
+    return null
+  }
+
+  function handleDateChange(val) {
+    setDateDisplay(val)
+    const parsed = parseDateInput(val)
+    if (parsed) setDate(parsed)
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -148,12 +167,7 @@ export default function BookingDialog({
 
           <div className="bk-form-group">
             <label className="bk-form-label">Ngày</label>
-            <input
-              type="date"
-              className="bk-input"
-              value={date}
-              onChange={e => setDate(e.target.value)}
-            />
+            <DateSelector value={date} onChange={setDate} />
           </div>
 
           <div className="bk-form-group">

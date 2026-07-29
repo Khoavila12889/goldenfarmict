@@ -4,6 +4,7 @@ import {
   createApprovalRequest, submitApprovalRequest, cancelApprovalRequest,
   approveRequest, rejectRequest, getWorkflows,
 } from '../services/api'
+import { formatDate } from '../utils/date'
 import {
   FileCheck, FileX, Clock, CheckCircle, XCircle, AlertTriangle,
   Send, Plus, Search, X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Loader2,
@@ -436,7 +437,7 @@ export default function Approvals() {
                     )}
                     <td>{badge(st.label, st.bg, st.color)}</td>
                     <td style={{ fontSize: '0.72rem', color: '#94a3b8', whiteSpace: 'nowrap' }}>
-                      {req.created_at?.split(' ')[0] || '—'}
+                      {formatDate(req.created_at) || '—'}
                     </td>
                     <td style={{ textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem' }}>
                       {sel ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
@@ -493,7 +494,7 @@ export default function Approvals() {
                   const StIcon = st.icon
                   return badge(st.label, st.bg, st.color)
                 })()}
-                <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{reqDetail.created_at}</span>
+                <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{formatDate(reqDetail.created_at)}</span>
               </div>
 
               {/* Step indicator */}
@@ -626,7 +627,7 @@ export default function Approvals() {
                               {' '}{log.action === 'approved' ? 'đã phê duyệt' : log.action === 'rejected' ? 'đã từ chối' : log.action}
                               {log.comment && <span style={{ color: '#64748b' }}>: "{log.comment}"</span>}
                             </div>
-                            <div className="ap-timeline-meta">Bước {log.step_order} — {log.created_at}</div>
+                            <div className="ap-timeline-meta">Bước {log.step_order} — {formatDate(log.created_at)}</div>
                           </div>
                         </div>
                       )
@@ -669,7 +670,7 @@ export default function Approvals() {
                   <label className="ap-form-label">Tiêu đề *</label>
                   <input type="text" className="ap-form-input" value={form.title}
                     onChange={e => setForm({ ...form, title: e.target.value })} required
-                    placeholder="VD: Đề nghị mua máy tính cho nhân viên mới" />
+                    placeholder="VD: Đề nghị cấp phát thiết bị" />
                 </div>
                 <div className="ap-form-group">
                   <label className="ap-form-label">Mô tả chi tiết</label>

@@ -1,10 +1,17 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Users, Monitor, Key, Ticket, CheckCircle, Settings, Calendar, Receipt, Folder, Shield, Menu, X, User, Lock, Eye, EyeOff } from 'lucide-react'
+import { 
+  LayoutDashboard, Users, Monitor, Key, Ticket, CheckCircle, 
+  Settings, Calendar, Receipt, Folder, Shield, Menu, X, User, 
+  Lock, Eye, EyeOff, CheckSquare, HelpCircle 
+} from 'lucide-react'
 import { changePassword } from '../services/api'
+import { driver } from 'driver.js'
+import 'driver.js/dist/driver.css'
 
 const iconMap = {
   dashboard: LayoutDashboard,
+  todos: CheckSquare,
   employees: Users,
   equipment: Monitor,
   licenses: Key,
@@ -17,25 +24,29 @@ const iconMap = {
   salaryAdmin: Receipt,
   profile: User,
   permissions: Shield,
+  help: HelpCircle,
 }
 
 const allNavItems = [
   { path: '/', label: 'Dashboard', icon: 'dashboard', roles: ['user', 'head', 'admin'] },
+  { path: '/todos', label: 'Công việc (Todos)', icon: 'todos', roles: ['user', 'head', 'admin'] },
   { path: '/employees', label: 'Nhân viên', icon: 'employees', roles: ['head', 'admin'] },
   { path: '/equipment', label: 'Thiết bị', icon: 'equipment', roles: ['head', 'admin'] },
   { path: '/licenses', label: 'License Keys', icon: 'licenses', roles: ['head', 'admin'] },
   { path: '/tickets', label: 'Tickets', icon: 'tickets', roles: ['user', 'head', 'admin'] },
   { path: '/approvals', label: 'Phê duyệt', icon: 'approvals', roles: ['user', 'head', 'admin'] },
   { path: '/workflows', label: 'Quy trình', icon: 'workflows', roles: ['head', 'admin'] },
-  { path: '/bookings', label: 'Lịch', icon: 'bookings', roles: ['user', 'head', 'admin'] },
+  { path: '/bookings', label: 'Lịch(Booking)', icon: 'bookings', roles: ['user', 'head', 'admin'] },
   { path: '/documents', label: 'Tài liệu', icon: 'documents', roles: ['user', 'head', 'admin'] },
   { path: '/salary-slip', label: 'Phiếu lương', icon: 'salary', roles: ['user', 'head', 'admin'] },
   { path: '/salary-slip-admin', label: 'Quản lý lương', icon: 'salaryAdmin', roles: ['head', 'admin'] },
   { path: '/permissions', label: 'Phân quyền', icon: 'permissions', roles: ['admin'] },
+  { path: '/help', label: 'Trợ giúp', icon: 'help', roles: ['user', 'head', 'admin'] },
 ]
 
 const MODULE_MAP = {
   '/': 'dashboard',
+  '/todos': 'todos',
   '/employees': 'employees',
   '/equipment': 'equipment',
   '/licenses': 'licenses',
@@ -46,11 +57,18 @@ const MODULE_MAP = {
   '/documents': 'documents',
   '/salary-slip': 'salary',
   '/salary-slip-admin': 'salary-admin',
+  '/permissions': 'permissions',
+  '/help': 'help',
 }
 
 export default function Layout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [showUserPopup, setShowUserPopup] = useState(false)
+  
+  // States cho Topbar Auto-hide
+  const [isTopbarVisible, setIsTopbarVisible] = useState(true)
+  const [isTourActive, setIsTourActive] = useState(() => !localStorage.getItem('has_seen_welcome_tour'))
+
   const [oldPwd, setOldPwd] = useState('')
   const [newPwd, setNewPwd] = useState('')
   const [confirmPwd, setConfirmPwd] = useState('')
@@ -61,6 +79,7 @@ export default function Layout() {
   const [pwdOk, setPwdOk] = useState(false)
   const [pwdLoading, setPwdLoading] = useState(false)
   const [userPerms, setUserPerms] = useState(null)
+  
   const navigate = useNavigate()
   const userCode = sessionStorage.getItem('user_code')
   const userRole = sessionStorage.getItem('user_role')
@@ -69,6 +88,42 @@ export default function Layout() {
   const [userName, setUserName] = useState(
     sessionStorage.getItem('user_name') || sessionStorage.getItem('full_name') || userCode || 'Nhân viên'
   )
+
+  // ─── LOGIC AUTO HIDE TOPBAR BẰNG TỌA ĐỘ CHUỘT ─────────────────
+  useEffect(() => {
+    let hideTimer
+
+    const handleMouseMove = (e) => {
+      if (isTourActive || isSidebarOpen || showUserPopup) {
+        setIsTopbarVisible(true)
+        clearTimeout(hideTimer)
+        return
+      }
+
+      if (e.clientY <= 60) {
+        setIsTopbarVisible(true)
+        clearTimeout(hideTimer)
+      } else {
+        clearTimeout(hideTimer)
+        hideTimer = setTimeout(() => {
+          setIsTopbarVisible(false)
+        }, 2500)
+      }
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+
+    hideTimer = setTimeout(() => {
+      if (!isTourActive && !isSidebarOpen && !showUserPopup) {
+        setIsTopbarVisible(false)
+      }
+    }, 3000)
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      clearTimeout(hideTimer)
+    }
+  }, [isTourActive, isSidebarOpen, showUserPopup])
 
   useEffect(() => {
     const handleProfileUpdate = () => {
@@ -79,6 +134,7 @@ export default function Layout() {
     return () => window.removeEventListener('profileUpdated', handleProfileUpdate)
   }, [userCode])
 
+  // Lấy phân quyền động từ Backend
   useEffect(() => {
     if (userRole === 'admin') return
     const token = sessionStorage.getItem('token')
@@ -88,12 +144,119 @@ export default function Layout() {
       .catch(() => setUserPerms({}))
   }, [userCode, userRole])
 
+  // Tour hướng dẫn
+  useEffect(() => {
+    if (!isTourActive) return
+
+    let welcomeDriver = null
+    let sidebarDriver = null
+    let dismissTimer = null
+
+    const handleTourFinish = () => {
+      localStorage.setItem('has_seen_welcome_tour', 'true')
+      setIsTourActive(false) 
+    }
+
+    const startSidebarTour = () => {
+      setIsSidebarOpen(true)
+
+      setTimeout(() => {
+        const salaryEl = document.querySelector('[data-tour="salary"]')
+        if (!salaryEl) {
+          handleTourFinish()
+          navigate('/salary-slip')
+          return
+        }
+
+        sidebarDriver = driver({
+          animate: true,
+          popoverClass: 'tour-popover',
+          steps: [{
+            element: '[data-tour="salary"]',
+            popover: {
+              title: 'Phiếu lương',
+              description: 'Nhấn "Xem ngay" để đến trang Phiếu lương và nhập mật khẩu.',
+              side: 'right',
+              showButtons: ['close'],
+              doneBtnText: 'Xem ngay',
+            },
+          }],
+          onDoneClick: () => {
+            sidebarDriver.destroy()
+            handleTourFinish()
+            navigate('/salary-slip')
+          },
+          onDestroyed: handleTourFinish,
+        })
+        sidebarDriver.drive()
+      }, 400)
+    }
+
+    const showTimer = setTimeout(() => {
+      welcomeDriver = driver({
+        animate: true,
+        popoverClass: 'tour-popover',
+        steps: [{
+          element: '.bk-topbar',
+          popover: {
+            title: 'Chào mừng bạn đến với GOLDENFARM ICT!',
+            description: 'Hệ thống quản lý tập trung dành cho doanh nghiệp.',
+            doneBtnText: 'Bắt đầu',
+            showButtons: ['next'],
+            side: 'bottom',
+            align: 'center',
+          },
+        }],
+        onDoneClick: () => {
+          clearTimeout(dismissTimer)
+          if (welcomeDriver) welcomeDriver.destroy()
+          startSidebarTour()
+        },
+        onDestroyed: handleTourFinish,
+      })
+      welcomeDriver.drive()
+
+      dismissTimer = setTimeout(() => {
+        if (welcomeDriver && welcomeDriver.isActive()) {
+          welcomeDriver.destroy()
+          startSidebarTour()
+        }
+      }, 5000)
+    }, 500)
+
+    return () => {
+      clearTimeout(showTimer)
+      clearTimeout(dismissTimer)
+      if (welcomeDriver && welcomeDriver.isActive()) welcomeDriver.destroy()
+      if (sidebarDriver && sidebarDriver.isActive()) sidebarDriver.destroy()
+    }
+  }, [navigate, userRole, isTourActive])
+
+  // ─── HÀM KIỂM TRA QUYỀN TRUY CẬP MODULE CHUẨN RBAC ──────────────────
   function hasModuleAccess(path) {
-    const moduleKey = MODULE_MAP[path]
-    if (!moduleKey) return true
+    // 1. Dashboard & Trợ giúp luôn mở cho mọi người
+    if (path === '/' || path === '/help') return true
+
+    // 2. Admin hệ thống luôn có full quyền
     if (userRole === 'admin') return true
-    if (userPerms && userPerms[moduleKey]) return userPerms[moduleKey].can_view
-    return allNavItems.find(i => i.path === path)?.roles?.includes(userRole) ?? true
+
+    // 3. Khóa trang Phân quyền chỉ dành riêng cho Admin
+    if (path === '/permissions') return false
+
+    const moduleKey = MODULE_MAP[path]
+
+    // 4. Khi đã tải xong dữ liệu phân quyền từ Backend (userPerms khác null)
+    if (moduleKey && userPerms && typeof userPerms === 'object') {
+      if (userPerms[moduleKey] !== undefined) {
+        return !!userPerms[moduleKey].can_view
+      }
+      // Module không xuất hiện trong bảng phân quyền của User -> Mặc định Ẩn
+      return false
+    }
+
+    // 5. Trong lúc chờ API tải về (userPerms === null), dùng cấu hình Role tĩnh mặc định
+    const navItem = allNavItems.find(i => i.path === path)
+    return navItem?.roles?.includes(userRole) ?? false
   }
 
   function handleLogout() {
@@ -132,7 +295,7 @@ export default function Layout() {
   function closeMenu() { setIsSidebarOpen(false) }
 
   return (
-    <div className="layout">
+    <div className={`layout ${!isTopbarVisible ? 'topbar-hidden' : ''}`}>
       <style>{`
         :root {
           --bk-primary: #0a5b35;
@@ -145,15 +308,45 @@ export default function Layout() {
         body { background: #f4f7fb; }
         .layout { display: flex; flex-direction: column; min-height: 100vh; font-family: 'Inter', sans-serif; }
 
-        /* ─── Topbar (universal) ──────────────────────────────── */
+        .bk-topbar-trigger {
+          position: fixed; top: 0; left: 0; width: 100%; height: 15px;
+          z-index: 101; 
+        }
+
         .bk-topbar {
-          display: flex; align-items: center; justify-content: space-between;
-          position: sticky; top: 0; z-index: 102;
+          display: grid;
+          grid-template-columns: 1fr auto 1fr;
+          align-items: center;
+          position: fixed; top: 0; left: 0; width: 100%; z-index: 102;
           height: 52px; padding: 0 0.75rem;
           background: var(--bk-primary); color: var(--bk-on-primary);
           box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-          flex-shrink: 0;
+          transition: background-color 0.35s ease, box-shadow 0.35s ease;
         }
+
+        .bk-topbar-left { display: flex; justify-content: flex-start; }
+        .bk-topbar-center { display: flex; justify-content: center; transition: all 0.3s ease; }
+        .bk-topbar-right { display: flex; justify-content: flex-end; transition: all 0.3s ease; }
+
+        .layout.topbar-hidden .bk-topbar {
+          background-color: transparent;
+          box-shadow: none;
+          pointer-events: none; 
+        }
+
+        .layout.topbar-hidden .bk-topbar-center,
+        .layout.topbar-hidden .bk-topbar-right {
+          opacity: 0;
+          visibility: hidden;
+          transform: translateY(-20px);
+        }
+
+        .layout.topbar-hidden .bk-topbar-btn.menu-btn {
+          pointer-events: auto;
+          background-color: var(--bk-primary);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+        }
+
         .bk-topbar-btn {
           display: flex; align-items: center; justify-content: center;
           width: 36px; height: 36px; background: transparent; border: none;
@@ -164,7 +357,6 @@ export default function Layout() {
         .bk-topbar-btn:active { background: var(--bk-primary-dark); }
         .bk-topbar-title { font-weight: 700; font-size: 0.9rem; white-space: nowrap; }
 
-        /* ─── Sidebar Overlay ─────────────────────────────────── */
         .bk-sidebar-overlay {
           position: fixed; inset: 0; z-index: 90;
           background: rgba(15, 23, 42, 0.4);
@@ -173,10 +365,10 @@ export default function Layout() {
         }
         .bk-sidebar-overlay.open { opacity: 1; visibility: visible; }
 
-        /* ─── Sidebar Drawer ──────────────────────────────────── */
         .bk-sidebar {
-          position: fixed; top: 52px; left: 0; z-index: 100;
-          width: auto; min-width: 0; max-width: 320px; height: calc(100vh - 52px);
+          position: fixed; left: 0; z-index: 100;
+          width: auto; min-width: 0; max-width: 320px; 
+          top: 52px; height: calc(100vh - 52px);
           background: var(--bk-primary);
           display: flex; flex-direction: column;
           transform: translateX(-100%);
@@ -215,10 +407,19 @@ export default function Layout() {
         }
         .logout-btn:hover { background: rgba(220,38,38,0.2); border-color: rgba(220,38,38,0.4); }
 
-        /* ─── Main Content ────────────────────────────────────── */
-        .main-content { flex: 1; padding: 1.5rem; min-height: calc(100vh - 52px); width: 100%; }
+        .main-content { 
+          flex: 1; 
+          padding: 1.5rem; 
+          width: 100%; 
+          margin-top: 52px; 
+          min-height: calc(100vh - 52px);
+          transition: margin-top 0.35s cubic-bezier(0.4, 0, 0.2, 1), min-height 0.35s ease;
+        }
+        .layout.topbar-hidden .main-content {
+          margin-top: 0;
+          min-height: 100vh;
+        }
 
-        /* ─── Responsive ──────────────────────────────────────── */
         @media (max-width: 1024px) {
           .main-content { padding: 1rem; }
         }
@@ -229,7 +430,6 @@ export default function Layout() {
           .main-content { padding: 0.5rem; }
         }
 
-        /* ─── User Popup ──────────────────────────────────────── */
         .user-popup-overlay {
           position: fixed; inset: 0; z-index: 200;
           background: rgba(0,0,0,0.4);
@@ -302,6 +502,28 @@ export default function Layout() {
         .user-popup-submit:disabled { opacity: 0.6; cursor: not-allowed; }
       `}</style>
 
+      {/* Vùng kích hoạt ẩn Topbar */}
+      <div className="bk-topbar-trigger" />
+
+      {/* TOPBAR */}
+      <header className="bk-topbar">
+        <div className="bk-topbar-left">
+          <button className="bk-topbar-btn menu-btn" onClick={() => setIsSidebarOpen(true)}>
+            <Menu size={20} />
+          </button>
+        </div>
+        
+        <div className="bk-topbar-center">
+          <span className="bk-topbar-title">GOLDENFARM ICT</span>
+        </div>
+        
+        <div className="bk-topbar-right">
+          <button className="bk-topbar-btn user-btn" onClick={toggleUserPopup}>
+            <User size={20} />
+          </button>
+        </div>
+      </header>
+
       {/* Sidebar Overlay */}
       <div className={`bk-sidebar-overlay${isSidebarOpen ? ' open' : ''}`} onClick={closeMenu} />
 
@@ -317,6 +539,7 @@ export default function Layout() {
                 end={item.path === '/'}
                 className={({ isActive }) => `menu-item${isActive ? ' active' : ''}`}
                 onClick={closeMenu}
+                data-tour={item.icon}
               >
                 {IconComp && <IconComp size={18} />} {item.label}
               </NavLink>
@@ -331,17 +554,6 @@ export default function Layout() {
           <button className="logout-btn" onClick={handleLogout}>Đăng xuất</button>
         </div>
       </aside>
-
-      {/* Topbar (universal) */}
-      <header className="bk-topbar">
-        <button className="bk-topbar-btn" onClick={() => setIsSidebarOpen(true)}>
-          <Menu size={20} />
-        </button>
-        <span className="bk-topbar-title">GOLDENFARM ICT</span>
-        <button className="bk-topbar-btn" onClick={toggleUserPopup}>
-          <User size={20} />
-        </button>
-      </header>
 
       {/* User Popup */}
       {showUserPopup && (

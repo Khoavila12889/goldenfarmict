@@ -1,3 +1,4 @@
+python-dotenv>=1.0.0
 fastapi>=0.100.0
 uvicorn[standard]>=0.23.0
 pandas>=1.5.0
@@ -11,8 +12,8 @@ docx2pdf>=0.1.8
 PyPDF2>=3.0.0
 python-multipart>=0.0.6
 
-# SMB (Windows Share) - smbprotocol supports SMB2/3
-smbprotocol>=1.11.0
+# SMB (Windows Share)
+pysmb>=1.2.10
 
 # FTP - aioftp supports FTP/TLS
 aioftp>=0.21.0
@@ -24,5 +25,11 @@ google-auth>=2.25.0
 # ORM — SQLAlchemy (đã cài sẵn, dùng cho module mới)
 sqlalchemy>=1.4.0
 
-# PostgreSQL driver (chỉ cần khi migrate)
-# asyncpg>=0.29.0
+# Argon2 — xác thực mật khẩu Nextcloud legacy
+argon2-cffi>=23.1.0
+
+# JWT cho ONLYOFFICE integration
+pyjwt>=2.8.0
+
+# PostgreSQL driver
+psycopg2-binary>=2.9.0

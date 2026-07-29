@@ -1,11 +1,12 @@
-# Optimized Dockerfile for FastAPI + SQLite
+# Optimized Dockerfile for FastAPI + PostgreSQL
 FROM python:3.11-slim
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    HOME=/tmp
 
 WORKDIR /app
 
@@ -14,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     curl \
+    libreoffice-writer \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -25,8 +27,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create data directory for SQLite (will be mounted as volume in production)
-RUN mkdir -p /app/data
+# Create directories for data, logs, templates, temp PDFs
+RUN mkdir -p /app/data /app/logs /app/templates /app/temp_pdf_gen
+
+# Set ownership for writable directories
+RUN chown -R nobody:nogroup /app/data /app/logs /app/temp_pdf_gen
 
 # Switch to non-root user for security
 USER nobody

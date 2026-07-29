@@ -1,16 +1,17 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import {
-  Folder, File, FolderOpen, Settings, Plus, Trash2,
+  Folder, File, FolderOpen, Plus, Trash2,
   Server, Wifi, Cloud, RefreshCw, ChevronRight, Home, Shield,
   MoreVertical, FileText, Archive, Image, Eye,
-  Terminal, FileSpreadsheet, FileCode, Music, Video, FileCog,
-  Download
+  FileSpreadsheet, FileCode, Music, Video, FileCog,
+  Download, LayoutGrid, List, Search, X, Upload
 } from 'lucide-react'
 import '../styles/shared.css'
 import './Documents.css'
 import FileViewer from '../components/FileViewer'
+import OnlyOfficeViewer from '../components/OnlyOfficeViewer'
 import { getStorageConfigs, browseStorage, getStoragePermissions, createStoragePermission, deleteStoragePermission, createStorageConfig, updateStorageConfig, deleteStorageConfig, testStorageConnection, testStorageConnectionDirect, getStorageDepartments } from '../services/api'
-
+import { formatDate } from '../utils/date'
 const INITIAL_CONFIG = { name: '', type: 'smb', host: '', port: 445, username: '', password: '', remote_path: '', domain: '' }
 
 function getFileIcon(name, isDir) {
@@ -59,18 +60,7 @@ function formatSize(bytes) {
   return (i === 0 ? size.toFixed(0) : size.toFixed(1)) + ' ' + units[i]
 }
 
-function formatDate(dateStr) {
-  if (!dateStr) return ''
-  try {
-    const d = new Date(dateStr)
-    if (isNaN(d.getTime())) return ''
-    // Format: dd/mm/yyyy
-    const day = String(d.getDate()).padStart(2, '0')
-    const month = String(d.getMonth() + 1).padStart(2, '0')
-    const year = d.getFullYear()
-    return `${day}/${month}/${year}`
-  } catch { return '' }
-}
+
 
 function SkeletonRows({ count = 5 }) {
   return (
@@ -81,6 +71,20 @@ function SkeletonRows({ count = 5 }) {
           <div className="doc-col-size"><span className="skeleton" style={{ width: 50 }} /></div>
           <div className="doc-col-date"><span className="skeleton" style={{ width: 70 }} /></div>
           <div className="doc-col-actions"><span className="skeleton skeleton-icon" /></div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function SkeletonCards({ count = 8 }) {
+  return (
+    <div className="doc-card-grid">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="doc-card doc-card-skeleton">
+          <div className="skeleton" style={{ width: 48, height: 48, borderRadius: 12 }} />
+          <div className="skeleton" style={{ width: '70%', height: 14, marginTop: 8 }} />
+          <div className="skeleton" style={{ width: '40%', height: 11, marginTop: 4 }} />
         </div>
       ))}
     </div>
@@ -108,12 +112,19 @@ export default function Documents() {
   const [departments, setDepartments] = useState([])
   const [permForm, setPermForm] = useState({ folder_path: '/', role: '', employee_code: '', department: '', permission: 'read' })
 
-  // File Viewer state
   const [viewerFile, setViewerFile] = useState(null)
   const [viewerOpen, setViewerOpen] = useState(false)
-
-  // Context menu state
+  const [ooFile, setOoFile] = useState(null)
+  const [ooOpen, setOoOpen] = useState(false)
+  const [ooConfigId, setOoConfigId] = useState(null)
   const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, file: null })
+
+  const fileInputRef = useRef(null)
+
+  // View mode & search
+  const [viewMode, setViewMode] = useState('grid')
+  const [searchQuery, setSearchQuery] = useState('')
+
   const loadConfigs = useCallback(() => {
     getStorageConfigs(userCode, userRole).then(r => setConfigs(r.data?.data || [])).catch(() => {})
   }, [])
@@ -124,9 +135,16 @@ export default function Documents() {
     getStorageDepartments().then(r => setDepartments(r.data?.data || [])).catch(() => {})
   }, [])
 
+  const filteredEntries = useMemo(() => {
+    if (!searchQuery.trim()) return entries
+    const q = searchQuery.toLowerCase()
+    return entries.filter(e => e.name.toLowerCase().includes(q))
+  }, [entries, searchQuery])
+
   function selectConfig(cfg) {
     setActiveConfig(cfg)
     setBrowseError('')
+    setSearchQuery('')
     const isGdrive = cfg?.type === 'gdrive'
     const rootId = isGdrive ? (cfg.remote_path || 'root') : '/'
     setBreadcrumbs([{ id: rootId, name: 'Home' }])
@@ -137,6 +155,7 @@ export default function Documents() {
   function browseFolder(configId, folderId) {
     setLoading(true)
     setBrowseError('')
+    setSearchQuery('')
     browseStorage(configId, folderId, userCode, userRole)
       .then(r => { setEntries(r.data?.data || []) })
       .catch(err => {
@@ -163,30 +182,36 @@ export default function Documents() {
   function canPreviewFile(fileName) {
     const ext = fileName.split('.').pop().toLowerCase()
     const previewable = [
-      // Images
       'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico',
-      // Documents
       'pdf', 'txt', 'log', 'md', 'json', 'xml', 'csv',
-      // Code
       'html', 'css', 'js', 'jsx', 'ts', 'tsx', 'py', 'java', 'c', 'cpp', 'h', 'cs', 'php', 'rb', 'go', 'rs', 'sql',
-      // Media
       'mp4', 'webm', 'ogg', 'mp3', 'wav', 'm4a',
-      // Office (will show download option)
       'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'
     ]
     return previewable.includes(ext)
   }
 
+  const officeExts = new Set(['docx','xlsx','pptx','doc','xls','ppt','odt','ods','odp','csv','txt','rtf','pdf'])
+
+  function isOfficeFile(name) {
+    return officeExts.has(name.split('.').pop().toLowerCase())
+  }
+
   async function handlePreviewFile(entry) {
     if (entry.is_dir) return
-
     const currentPath = breadcrumbs.at(-1).id
+
+    if (isOfficeFile(entry.name)) {
+      setOoFile({ ...entry, browsePath: currentPath })
+      setOoConfigId(activeConfig.id)
+      setOoOpen(true)
+      return
+    }
+
     const normalizedPath = currentPath === '/'
       ? entry.name
       : `${currentPath.replace(/\/$/, '')}/${entry.name}`
-
     const fileUrl = `/api/documents/download?config_id=${activeConfig.id}&file_path=${encodeURIComponent(normalizedPath)}&user_code=${userCode}&user_role=${userRole}`
-
     setViewerFile({
       name: entry.name,
       url: fileUrl,
@@ -195,8 +220,6 @@ export default function Documents() {
     })
     setViewerOpen(true)
   }
-
-  // ─── Context Menu ───────────────────────────────────────────
 
   useEffect(() => {
     if (!contextMenu.visible) return
@@ -238,6 +261,7 @@ export default function Documents() {
     }
     setContextMenu({ visible: false })
   }
+
   function browseBreadcrumb(idx) {
     const target = breadcrumbs[idx]
     if (!target) return
@@ -302,6 +326,38 @@ export default function Documents() {
     setShowPerms(true)
   }
 
+  function exportConfigToFile() {
+    const json = JSON.stringify(configForm, null, 2)
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    const safeName = (configForm.name || 'storage_config').replace(/[^a-zA-Z0-9_\-]/g, '_')
+    link.href = url
+    link.download = `storage_config_${safeName}.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    setTimeout(() => URL.revokeObjectURL(url), 2000)
+  }
+
+  function importConfigFromFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result)
+        setConfigForm({ ...INITIAL_CONFIG, ...data })
+        setTestMsg('')
+        setTestOk(false)
+      } catch {
+        alert('File JSON không hợp lệ')
+      }
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }
+
   async function addPerm() {
     if (!permForm.folder_path.trim()) return
     if (!permForm.role && !permForm.employee_code && !permForm.department) { alert('Chọn ít nhất Role, Mã NV hoặc Bộ phận'); return }
@@ -349,7 +405,6 @@ export default function Documents() {
               >
                 <IconComp size={14} />
                 <span className="doc-tab-label">{cfg.name}</span>
-                <span className="doc-tab-meta">{cfg.type === 'gdrive' ? cfg.remote_path : cfg.host}</span>
                 {isAdmin && (
                   <button className="doc-tab-close" onClick={e => { e.stopPropagation(); removeConfig(cfg.id) }} title="Xóa">
                     <Trash2 size={12} />
@@ -389,11 +444,32 @@ export default function Documents() {
               ))}
             </div>
             <div className="doc-toolbar-actions">
+              <div className="doc-search-wrap-mini">
+                <Search size={13} className="doc-search-mini-icon" />
+                <input type="text" className="doc-search-mini-input"
+                  placeholder="Tìm file..."
+                  value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+                {searchQuery && (
+                  <button className="doc-search-mini-clear" onClick={() => setSearchQuery('')}>
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
               {isAdmin && (
                 <button className="doc-btn doc-btn-ghost" onClick={() => loadPerms(activeConfig.id)} title="Phân quyền">
-                  <Shield size={15} /> <span>Phân quyền</span>
+                  <Shield size={15} />
                 </button>
               )}
+              <div className="doc-view-toggle">
+                <button className={`doc-view-btn${viewMode === 'list' ? ' active' : ''}`}
+                  onClick={() => setViewMode('list')} title="Xem dạng danh sách">
+                  <List size={15} />
+                </button>
+                <button className={`doc-view-btn${viewMode === 'grid' ? ' active' : ''}`}
+                  onClick={() => setViewMode('grid')} title="Xem dạng lưới">
+                  <LayoutGrid size={15} />
+                </button>
+              </div>
               <button className="doc-btn doc-btn-ghost doc-btn-icon" onClick={() => browseFolder(activeConfig.id, breadcrumbs.at(-1).id)} title="Làm mới">
                 <RefreshCw size={15} />
               </button>
@@ -410,34 +486,82 @@ export default function Documents() {
           )}
 
           {/* Empty State */}
-          {!loading && !browseError && entries.length === 0 && (
+          {!loading && !browseError && filteredEntries.length === 0 && (
             <div className="doc-grid-state doc-grid-empty">
               <FolderOpen size={48} />
-              <p>Thư mục này đang trống</p>
+              <p>{searchQuery ? 'Không tìm thấy file nào' : 'Thư mục này đang trống'}</p>
             </div>
           )}
 
           {/* Loading Skeleton */}
           {loading && (
-            <div className="doc-grid">
-              <div className="doc-grid-header">
-                <span className="doc-col-name">Tên</span>
-                <span className="doc-col-size">Kích thước</span>
-                <span className="doc-col-date">Cập nhật</span>
-                {isAdmin && <span className="doc-col-actions" />}
+            viewMode === 'grid' ? <SkeletonCards count={8} /> : (
+              <div className="doc-grid">
+                <div className="doc-grid-header">
+                  <span className="doc-col-name">Tên</span>
+                  <span className="doc-col-size">Kích thước</span>
+                  <span className="doc-col-date">Cập nhật</span>
+                  {isAdmin && <span className="doc-col-actions" />}
+                </div>
+                <SkeletonRows count={6} />
               </div>
-              <SkeletonRows count={6} />
+            )
+          )}
+
+          {/* ─── Grid View (Cards) ───────────────────────────── */}
+          {!loading && !browseError && viewMode === 'grid' && filteredEntries.length > 0 && (
+            <div className="doc-card-grid">
+              {breadcrumbs.length > 1 && (
+                <div className="doc-card doc-card-back" onClick={goBack}>
+                  <div className="doc-card-icon"><FolderOpen size={32} color="#94a3b8" /></div>
+                  <div className="doc-card-name">.. / Quay lại</div>
+                </div>
+              )}
+              {filteredEntries.map((e, i) => {
+                const { icon: IconComp, color: iconColor } = getFileIcon(e.name, e.is_dir)
+                return (
+                  <div
+                    key={i}
+                    className={`doc-card${e.is_dir ? ' doc-card-dir' : ''}`}
+                    onClick={() => e.is_dir ? openFolder(e) : handlePreviewFile(e)}
+                    onContextMenu={(ev) => handleContextMenu(ev, e)}
+                  >
+                    <div className="doc-card-icon">
+                      <IconComp size={36} style={{ color: iconColor }} />
+                    </div>
+                    <div className="doc-card-name" title={e.name}>{e.name}</div>
+                    <div className="doc-card-meta">
+                      {e.is_dir ? '' : formatSize(e.size)}
+                      {!e.is_dir && e.modified ? ` · ${formatDate(e.modified)}` : ''}
+                    </div>
+                    {!e.is_dir && canPreviewFile(e.name) && (
+                      <button className="doc-card-preview"
+                        onClick={(ev) => { ev.stopPropagation(); handlePreviewFile(e) }}
+                        title="Xem trước">
+                        <Eye size={14} />
+                      </button>
+                    )}
+                    {!e.is_dir && (
+                      <button className="doc-card-download"
+                        onClick={(ev) => { ev.stopPropagation(); handleDownloadFile(e) }}
+                        title="Tải xuống">
+                        <Download size={14} />
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
 
-          {/* File Grid */}
-          {!loading && !browseError && entries.length > 0 && (
+          {/* ─── List View ───────────────────────────────────── */}
+          {!loading && !browseError && viewMode === 'list' && filteredEntries.length > 0 && (
             <div className="doc-grid">
               <div className="doc-grid-header">
                 <span className="doc-col-name">Tên</span>
                 <span className="doc-col-size">Kích thước</span>
                 <span className="doc-col-date">Cập nhật</span>
-                {isAdmin && <span className="doc-col-actions" />}
+                <span className="doc-col-actions" />
               </div>
               <div className="doc-grid-body">
                 {breadcrumbs.length > 1 && (
@@ -445,10 +569,10 @@ export default function Documents() {
                     <div className="doc-col-name"><span className="doc-back-link">.. / Quay lại</span></div>
                     <div className="doc-col-size" />
                     <div className="doc-col-date" />
-                    {isAdmin && <div className="doc-col-actions" />}
+                    <div className="doc-col-actions" />
                   </div>
                 )}
-                {entries.map((e, i) => {
+                {filteredEntries.map((e, i) => {
                   const { icon: IconComp, color: iconColor } = getFileIcon(e.name, e.is_dir)
                   return (
                     <div
@@ -466,17 +590,15 @@ export default function Documents() {
                       <div className="doc-col-date">{formatDate(e.modified)}</div>
                       <div className="doc-col-actions">
                         {!e.is_dir && canPreviewFile(e.name) && (
-                          <button 
-                            className="doc-row-action" 
-                            title="Xem trước" 
-                            onClick={(ev) => { ev.stopPropagation(); handlePreviewFile(e); }}
-                          >
+                          <button className="doc-row-action" title="Xem trước"
+                            onClick={(ev) => { ev.stopPropagation(); handlePreviewFile(e); }}>
                             <Eye size={14} />
                           </button>
                         )}
-                        {isAdmin && (
-                          <button className="doc-row-action" title="Tùy chọn" onClick={e_ => e_.stopPropagation()}>
-                            <MoreVertical size={14} />
+                        {!e.is_dir && (
+                          <button className="doc-row-action" title="Tải xuống"
+                            onClick={(ev) => { ev.stopPropagation(); handleDownloadFile(e); }}>
+                            <Download size={14} />
                           </button>
                         )}
                       </div>
@@ -494,78 +616,88 @@ export default function Documents() {
       {showConfig && (
         <div className="side-panel open panel-config">
           <div className="panel-body">
-            <h3 style={{ marginBottom: '1rem' }}>{editingConfig ? 'Sửa cấu hình' : 'Thêm cấu hình Storage'}</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <div>
-                <label className="doc-label">Tên</label>
-                <input className="salary-pwd-input" value={configForm.name} onChange={e => setConfigForm({ ...configForm, name: e.target.value })} placeholder="VD: File Server Sản xuất" />
-              </div>
-              <div>
-                <label className="doc-label">Loại Storage</label>
-                <select className="salary-pwd-input" value={configForm.type}
-                  onChange={e => {
-                    const t = e.target.value
-                    setConfigForm({ ...configForm, type: t, port: t === 'smb' ? 445 : (t === 'ftp' ? 21 : 0), host: t === 'gdrive' ? '' : configForm.host, remote_path: t === 'gdrive' ? '' : (t === 'smb' ? '' : '/'), username: '', password: '', domain: '' })
-                  }}>
-                  <option value="smb">SMB (Windows Share)</option>
-                  <option value="ftp">FTP</option>
-                  <option value="gdrive">Google Drive</option>
-                </select>
-              </div>
+            <h3>{editingConfig ? 'Sửa cấu hình' : 'Thêm cấu hình Storage'}</h3>
+            <p className="panel-subtitle">Cấu hình kết nối tới máy chủ file qua SMB, FTP, hoặc Google Drive.</p>
 
-              {configForm.type !== 'gdrive' ? (
-                <>
+            <div className="btn-import-export">
+              <button className="btn-ie" onClick={() => fileInputRef.current?.click()}>
+                <Upload size={13} /> Import JSON
+              </button>
+              <button className="btn-ie" onClick={exportConfigToFile}>
+                <Download size={13} /> Export JSON
+              </button>
+            </div>
+            <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={importConfigFromFile} />
+
+            <div className="form-group">
+              <label className="doc-label">Tên</label>
+              <input className="salary-pwd-input" value={configForm.name} onChange={e => setConfigForm({ ...configForm, name: e.target.value })} placeholder="VD: File Server Sản xuất" />
+            </div>
+            <div className="form-group">
+              <label className="doc-label">Loại Storage</label>
+              <select className="salary-pwd-input" value={configForm.type}
+                onChange={e => {
+                  const t = e.target.value
+                  setConfigForm({ ...configForm, type: t, port: t === 'smb' ? 445 : (t === 'ftp' ? 21 : 0), host: t === 'gdrive' ? '' : configForm.host, remote_path: t === 'gdrive' ? '' : (t === 'smb' ? '' : '/'), username: '', password: '', domain: '' })
+                }}>
+                <option value="smb">SMB (Windows Share)</option>
+                <option value="ftp">FTP</option>
+                <option value="gdrive">Google Drive</option>
+              </select>
+            </div>
+
+            {configForm.type !== 'gdrive' ? (
+              <>
+                <div className="form-group">
+                  <label className="doc-label">Host</label>
+                  <input className="salary-pwd-input" value={configForm.host} onChange={e => setConfigForm({ ...configForm, host: e.target.value })} placeholder="10.0.0.1" />
+                </div>
+                <div className="form-row">
                   <div>
-                    <label className="doc-label">Host</label>
-                    <input className="salary-pwd-input" value={configForm.host} onChange={e => setConfigForm({ ...configForm, host: e.target.value })} placeholder="10.0.0.1" />
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <div style={{ flex: 1 }}>
-                      <label className="doc-label">Port</label>
-                      <input className="salary-pwd-input" type="number" value={configForm.port} onChange={e => setConfigForm({ ...configForm, port: parseInt(e.target.value) || (configForm.type === 'smb' ? 445 : 21) })} />
-                    </div>
-                    <div style={{ flex: 2 }}>
-                      <label className="doc-label">Username</label>
-                      <input className="salary-pwd-input" value={configForm.username} onChange={e => setConfigForm({ ...configForm, username: e.target.value })} placeholder={configForm.type === 'smb' ? 'goldenfarm\\user' : 'anonymous'} />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="doc-label">Password</label>
-                    <input className="salary-pwd-input" type="password" value={configForm.password} onChange={e => setConfigForm({ ...configForm, password: e.target.value })} placeholder="********" />
-                  </div>
-                  <div>
-                    <label className="doc-label">Remote Path / Share</label>
-                    <input className="salary-pwd-input" value={configForm.remote_path} onChange={e => setConfigForm({ ...configForm, remote_path: e.target.value })} placeholder={configForm.type === 'smb' ? 'Tên Share (VD: goldenfarm)' : '/'} />
-                  </div>
-                  {configForm.type === 'smb' && (
-                    <div>
-                      <label className="doc-label">Domain (tùy chọn)</label>
-                      <input className="salary-pwd-input" value={configForm.domain} onChange={e => setConfigForm({ ...configForm, domain: e.target.value })} placeholder="WORKGROUP" />
-                    </div>
-                  )}
-                </>
-              ) : (
-                <>
-                  <div>
-                    <label className="doc-label">Service Account Email (Tùy chọn ghi chú)</label>
-                    <input className="salary-pwd-input" value={configForm.username} onChange={e => setConfigForm({ ...configForm, username: e.target.value })} placeholder="ict-service@goldenfarm.iam.gserviceaccount.com" />
-                  </div>
-                  <div>
-                    <label className="doc-label">Service Account JSON (Dán toàn bộ nội dung file JSON vào đây)</label>
-                    <textarea className="salary-pwd-input" style={{ minHeight: 120, fontFamily: 'monospace', fontSize: '0.8rem', resize: 'vertical' }} value={configForm.password} onChange={e => setConfigForm({ ...configForm, password: e.target.value })} placeholder='{ "type": "service_account", "project_id": "...", "private_key": "..." }' />
+                    <label className="doc-label">Port</label>
+                    <input className="salary-pwd-input" type="number" value={configForm.port} onChange={e => setConfigForm({ ...configForm, port: parseInt(e.target.value) || (configForm.type === 'smb' ? 445 : 21) })} />
                   </div>
                   <div>
-                    <label className="doc-label">Folder ID (Thư mục gốc)</label>
-                    <input className="salary-pwd-input" value={configForm.remote_path} onChange={e => setConfigForm({ ...configForm, remote_path: e.target.value })} placeholder="1A2B3C4D5E6F7G8H9I0J" />
+                    <label className="doc-label">Username</label>
+                    <input className="salary-pwd-input" value={configForm.username} onChange={e => setConfigForm({ ...configForm, username: e.target.value })} placeholder={configForm.type === 'smb' ? 'goldenfarm\\user' : 'anonymous'} />
                   </div>
-                </>
-              )}
-              {testMsg && <div className={`doc-test-msg ${testOk ? 'ok' : 'err'}`}>{testMsg}</div>}
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="salary-btn salary-btn-secondary" onClick={testConn} style={{ flex: 1 }}>Test Connection</button>
-                <button className="salary-btn salary-btn-primary" onClick={saveConfig} style={{ flex: 1 }}>Lưu</button>
-                <button className="salary-btn salary-btn-secondary" onClick={() => setShowConfig(false)}>Hủy</button>
-              </div>
+                </div>
+                <div className="form-group">
+                  <label className="doc-label">Password</label>
+                  <input className="salary-pwd-input" type="password" value={configForm.password} onChange={e => setConfigForm({ ...configForm, password: e.target.value })} placeholder="********" />
+                </div>
+                <div className="form-group">
+                  <label className="doc-label">Remote Path / Share</label>
+                  <input className="salary-pwd-input" value={configForm.remote_path} onChange={e => setConfigForm({ ...configForm, remote_path: e.target.value })} placeholder={configForm.type === 'smb' ? 'Tên Share (VD: goldenfarm)' : '/'} />
+                </div>
+                {configForm.type === 'smb' && (
+                  <div className="form-group">
+                    <label className="doc-label">Domain (tùy chọn)</label>
+                    <input className="salary-pwd-input" value={configForm.domain} onChange={e => setConfigForm({ ...configForm, domain: e.target.value })} placeholder="WORKGROUP" />
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="form-group">
+                  <label className="doc-label">Service Account Email</label>
+                  <input className="salary-pwd-input" value={configForm.username} onChange={e => setConfigForm({ ...configForm, username: e.target.value })} placeholder="ict-service@goldenfarm.iam.gserviceaccount.com" />
+                </div>
+                <div className="form-group">
+                  <label className="doc-label">Service Account JSON</label>
+                  <textarea className="salary-pwd-input" style={{ minHeight: 120, resize: 'vertical' }} value={configForm.password} onChange={e => setConfigForm({ ...configForm, password: e.target.value })} placeholder='{ "type": "service_account", "project_id": "...", "private_key": "..." }' />
+                </div>
+                <div className="form-group">
+                  <label className="doc-label">Folder ID (Thư mục gốc)</label>
+                  <input className="salary-pwd-input" value={configForm.remote_path} onChange={e => setConfigForm({ ...configForm, remote_path: e.target.value })} placeholder="1A2B3C4D5E6F7G8H9I0J" />
+                </div>
+              </>
+            )}
+            {testMsg && <div className={`doc-test-msg ${testOk ? 'ok' : 'err'}`}>{testMsg}</div>}
+            <div className="form-actions">
+              <button className="salary-btn salary-btn-secondary" onClick={testConn}>Test Connection</button>
+              <button className="salary-btn salary-btn-primary" onClick={saveConfig}>Lưu</button>
+              <button className="salary-btn salary-btn-secondary" onClick={() => setShowConfig(false)}>Hủy</button>
             </div>
           </div>
         </div>
@@ -655,6 +787,18 @@ export default function Documents() {
         onClose={() => {
           setViewerOpen(false)
           setViewerFile(null)
+        }}
+      />
+
+      {/* ─── ONLYOFFICE Editor ──────────────────────────────────── */}
+      <OnlyOfficeViewer
+        file={ooFile}
+        configId={ooConfigId}
+        isOpen={ooOpen}
+        onClose={() => {
+          setOoOpen(false)
+          setOoFile(null)
+          setOoConfigId(null)
         }}
       />
     </div>

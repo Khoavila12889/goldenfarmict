@@ -344,29 +344,138 @@ export function deleteBusinessTrip(id) {
   })
 }
 
+export function getTodos(params = {}) {
+  const userCode = sessionStorage.getItem('user_code') || ''
+  const userRole = sessionStorage.getItem('user_role') || ''
+  const userDept = sessionStorage.getItem('user_department') || ''
+  const userToken = sessionStorage.getItem('token') || ''
+  return api.get('/todos', {
+    params,
+    headers: {
+      'X-User-Code': userCode,
+      'X-User-Role': userRole,
+      'X-User-Dept': userDept,
+      'X-User-Token': userToken
+    }
+  })
+}
+
+export function getTodoStats() {
+  const userCode = sessionStorage.getItem('user_code') || ''
+  const userRole = sessionStorage.getItem('user_role') || ''
+  const userDept = sessionStorage.getItem('user_department') || ''
+  const userToken = sessionStorage.getItem('token') || ''
+  return api.get('/todos/stats', {
+    headers: {
+      'X-User-Code': userCode,
+      'X-User-Role': userRole,
+      'X-User-Dept': userDept,
+      'X-User-Token': userToken
+    }
+  })
+}
+
+export function createTodo(data) {
+  const userCode = sessionStorage.getItem('user_code') || ''
+  const userRole = sessionStorage.getItem('user_role') || ''
+  const userDept = sessionStorage.getItem('user_department') || ''
+  const userToken = sessionStorage.getItem('token') || ''
+  return api.post('/todos', data, {
+    headers: {
+      'X-User-Code': userCode,
+      'X-User-Role': userRole,
+      'X-User-Dept': userDept,
+      'X-User-Token': userToken
+    }
+  })
+}
+
+export function updateTodo(id, data) {
+  const userCode = sessionStorage.getItem('user_code') || ''
+  const userRole = sessionStorage.getItem('user_role') || ''
+  const userToken = sessionStorage.getItem('token') || ''
+  return api.put(`/todos/${id}`, data, {
+    headers: {
+      'X-User-Code': userCode,
+      'X-User-Role': userRole,
+      'X-User-Token': userToken
+    }
+  })
+}
+
+export function updateTodoStatus(id, status) {
+  const userCode = sessionStorage.getItem('user_code') || ''
+  const userRole = sessionStorage.getItem('user_role') || ''
+  const userDept = sessionStorage.getItem('user_department') || ''
+  const userToken = sessionStorage.getItem('token') || ''
+  return api.patch(`/todos/${id}/status`, { status }, {
+    headers: {
+      'X-User-Code': userCode,
+      'X-User-Role': userRole,
+      'X-User-Dept': userDept,
+      'X-User-Token': userToken
+    }
+  })
+}
+
+export function getTodoAssignees() {
+  const userCode = sessionStorage.getItem('user_code') || ''
+  const userRole = sessionStorage.getItem('user_role') || ''
+  const userDept = sessionStorage.getItem('user_department') || ''
+  const userToken = sessionStorage.getItem('token') || ''
+  return api.get('/todos/assignees', {
+    headers: {
+      'X-User-Code': userCode,
+      'X-User-Role': userRole,
+      'X-User-Dept': userDept,
+      'X-User-Token': userToken
+    }
+  })
+}
+
+export function deleteTodo(id) {
+  const userCode = sessionStorage.getItem('user_code') || ''
+  const userRole = sessionStorage.getItem('user_role') || ''
+  const userToken = sessionStorage.getItem('token') || ''
+  return api.delete(`/todos/${id}`, {
+    headers: {
+      'X-User-Code': userCode,
+      'X-User-Role': userRole,
+      'X-User-Token': userToken
+    }
+  })
+}
+
 // ─── Documents / Storage ──────────────────────────────────────
 export function getStorageConfigs(userCode = '', userRole = '') {
   return api.get('/documents/config', {
     params: { user_code: userCode, user_role: userRole }
   })
 }
+function docAuthParams() {
+  const adminCode = sessionStorage.getItem('user_code') || ''
+  const token = sessionStorage.getItem('token') || ''
+  const role = sessionStorage.getItem('user_role') || ''
+  return { admin_code: adminCode, token, role }
+}
+
 export function getStorageConfig(id) {
-  return api.get(`/documents/config/${id}`)
+  return api.get(`/documents/config/${id}`, { params: docAuthParams() })
 }
 export function createStorageConfig(data) {
-  return api.post('/documents/config', data)
+  return api.post('/documents/config', data, { params: docAuthParams() })
 }
 export function updateStorageConfig(id, data) {
-  return api.put(`/documents/config/${id}`, data)
+  return api.put(`/documents/config/${id}`, data, { params: docAuthParams() })
 }
 export function deleteStorageConfig(id) {
-  return api.delete(`/documents/config/${id}`)
+  return api.delete(`/documents/config/${id}`, { params: docAuthParams() })
 }
 export function testStorageConnection(id) {
-  return api.post(`/documents/config/${id}/test`)
+  return api.post(`/documents/config/${id}/test`, {}, { params: docAuthParams() })
 }
 export function testStorageConnectionDirect(data) {
-  return api.post('/documents/test-connection', data)
+  return api.post('/documents/test-connection', data, { params: docAuthParams() })
 }
 export function browseStorage(id, path = '/', userCode = '', userRole = 'user') {
   return api.get(`/documents/browse/${id}`, {
@@ -374,16 +483,22 @@ export function browseStorage(id, path = '/', userCode = '', userRole = 'user') 
   })
 }
 export function getStoragePermissions(id) {
-  return api.get(`/documents/permissions/${id}`)
+  return api.get(`/documents/permissions/${id}`, { params: docAuthParams() })
 }
 export function createStoragePermission(data) {
-  return api.post('/documents/permissions', data)
+  return api.post('/documents/permissions', data, { params: docAuthParams() })
 }
 export function deleteStoragePermission(id) {
-  return api.delete(`/documents/permissions/${id}`)
+  return api.delete(`/documents/permissions/${id}`, { params: docAuthParams() })
 }
 export function getStorageDepartments() {
   return api.get('/documents/departments')
+}
+
+export function getOnlyOfficeConfig(configId, filePath, userCode, userRole) {
+  return api.get('/documents/onlyoffice/config', {
+    params: { config_id: configId, file_path: filePath, user_code: userCode, user_role: userRole }
+  })
 }
 
 // ─── Auth / Password Reset ──────────────────────────────────────
@@ -438,6 +553,123 @@ export function uploadSoftwareContract(itemId, file) {
   return api.post(`/software/items/${itemId}/upload`, fd, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
+}
+
+// ─── Salary Slip Admin ─────────────────────────────────────────
+export function getSalaryEmployees(month, department, search, admin_code, token, role) {
+  return api.get('/salary-slips/admin/with-salary', {
+    params: { month, department, search, admin_code, token, role }
+  })
+}
+
+export function searchAllEmployees(department, search, admin_code, token, role) {
+  return api.get('/salary-slips/admin/employees', {
+    params: { department, search, admin_code, token, role }
+  })
+}
+
+export function getSalaryView(employee_code, month, admin_code, token, role) {
+  return api.get(`/salary-slips/admin/view/${employee_code}`, {
+    params: { month, admin_code, token, role }
+  })
+}
+
+export function updateSalaryFields(employee_code, month, fields, admin_code, token, role) {
+  return api.put('/salary-slips/admin/update-fields', {
+    employee_code, month, fields
+  }, {
+    params: { admin_code, token, role }
+  })
+}
+
+export function exportSalaryPdf(employee_code, month, password, admin_code, token, role, fields) {
+  return api.post('/salary-slips/admin/export-pdf', {
+    employee_code, month, password, fields
+  }, {
+    params: { admin_code, token, role },
+    responseType: 'blob'
+  })
+}
+
+export function batchExportSalaryPdf(month, department, admin_code, token, role) {
+  return api.post('/salary-slips/admin/batch-export-pdf', {
+    month, department
+  }, {
+    params: { admin_code, token, role },
+    responseType: 'blob'
+  })
+}
+
+export function downloadSalaryTemplate() {
+  return api.get('/salary-slips/admin/download-template', {
+    responseType: 'blob',
+  })
+}
+
+export function uploadSalaryExcel(file, month, admin_code, token, role, force = false) {
+  const fd = new FormData()
+  fd.append('excel_file', file)
+  const params = { admin_code, token, role, month }
+  if (force) params.force = 'true'
+  return api.post('/salary-slips/admin/upload-salaries', fd, {
+    params,
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
+export function getSalaryUploadHistory(admin_code, token, role) {
+  return api.get('/salary-slips/admin/upload-history', {
+    params: { admin_code, token, role }
+  })
+}
+
+export function deleteSalarySlip(employee_code, month, admin_code, token, role) {
+  return api.delete(`/salary-slips/admin/${employee_code}`, {
+    params: { month, admin_code, token, role }
+  })
+}
+
+// ─── Salary Slip Employee ───────────────────────────────────────
+export function verifySalaryView(employee_code, month, password, token, role) {
+  return api.post('/salary/verify-and-view', {
+    employee_code, month, password, token, role
+  })
+}
+
+export function getAvailableMonths(employee_code, token, role) {
+  return api.get('/salary/available-months', {
+    params: { employee_code, token, role }
+  })
+}
+
+export function downloadSalaryPdf(employee_code, month, password, token, role) {
+  return api.post('/salary/export-pdf', {
+    employee_code, month, password, token, role
+  }, { responseType: 'blob' })
+}
+
+// ─── Permissions ─────────────────────────────────────────────────
+export function getUsers(adminCode, token, role) {
+  return api.get('/auth/users', { params: { admin_code: adminCode, token, role } })
+}
+export function searchUsers(q, dept, adminCode, token, role) {
+  return api.get('/auth/users/search', { params: { q, department: dept, admin_code: adminCode, token, role } })
+}
+export function getUserPermissions(targetCode, adminCode, token, role) {
+  return api.get(`/auth/permissions/${targetCode}`, { params: { admin_code: adminCode, token, role } })
+}
+export function updateUserPermissions(targetCode, perms, adminCode, token, role) {
+  return api.put(`/auth/permissions/${targetCode}`, perms, { params: { admin_code: adminCode, token, role } })
+}
+export function updateUserRole(targetCode, newRole, adminCode, token, role) {
+  return api.put(`/auth/role/${targetCode}`, { role: newRole }, { params: { admin_code: adminCode, token, role } })
+}
+export function getPermissionModules() {
+  return api.get('/auth/permissions/modules')
+}
+// ─── Document Permissions ────────────────────────────────────────
+export function createDepartmentPermission(data, adminCode, token, role) {
+  return api.post('/documents/permissions/department', data, { params: { admin_code: adminCode, token, role } })
 }
 
 export default api

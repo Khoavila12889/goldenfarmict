@@ -1,5 +1,6 @@
-﻿import React, { useEffect, useState, useCallback } from 'react'
+﻿import React, { useEffect, useState, useCallback, useRef } from 'react'
 import '../styles/shared.css'
+import { formatDate } from '../utils/date'
 import {
   getEmployees, getDepartments, getEmployeeEquipment,
   createEmployee, updateEmployee, deleteEmployee,
@@ -13,6 +14,13 @@ const STATUS_OPTIONS = [
   { value: 'resigned', label: 'Đã nghỉ việc', color: '#dc2626', bg: '#fee2e2' },
   { value: 'maternity', label: 'Thai sản', color: '#ca8a04', bg: '#fef9c3' },
   { value: 'suspended', label: 'Tạm nghỉ', color: '#64748b', bg: '#f1f5f9' },
+]
+
+const POSITION_OPTIONS = [
+  { value: 'Nhân viên', label: 'Nhân viên' },
+  { value: 'Trưởng phòng', label: 'Trưởng phòng' },
+  { value: 'Phó phòng', label: 'Phó phòng' },
+  { value: 'Giám đốc', label: 'Giám đốc' },
 ]
 
 function getStatusInfo(status) {
@@ -45,6 +53,7 @@ export default function Employees() {
   const [formOpen, setFormOpen] = useState(false)
   const [editId, setEditId] = useState(null)
   const [formData, setFormData] = useState(emptyForm())
+  const [handoverDisplay, setHandoverDisplay] = useState('')
 
   const [transferEqId, setTransferEqId] = useState(null)
   const [transferSearch, setTransferSearch] = useState('')
@@ -53,6 +62,9 @@ export default function Employees() {
   const [deptOpen, setDeptOpen] = useState(false)
   const [deptEditId, setDeptEditId] = useState(null)
   const [deptForm, setDeptForm] = useState({ name: '', head_id: '', description: '' })
+
+  const fileInputRef = useRef(null)
+  const [importMsg, setImportMsg] = useState('')
 
   const load = useCallback((q, d, s) => {
     getEmployees(q || search, d || deptFilter, s || statusFilter).then(r => setEmps(r.data?.data || [])).catch(() => {})
@@ -74,8 +86,16 @@ export default function Employees() {
     setEquipLoading(false)
   }
 
+  function parseDateInput(val) {
+    const parts = val.split('/')
+    if (parts.length === 3 && parts[0].length === 2 && parts[1].length === 2 && parts[2].length === 4) {
+      return `${parts[2]}-${parts[1]}-${parts[0]}`
+    }
+    return null
+  }
+
   function openAdd() {
-    setEditId(null); setFormData(emptyForm()); setFormOpen(true)
+    setEditId(null); setFormData(emptyForm()); setHandoverDisplay(''); setFormOpen(true)
   }
 
   function openEdit(emp) {
@@ -84,13 +104,14 @@ export default function Employees() {
       employee_code: emp.employee_code || '',
       full_name: emp.full_name || '',
       department: emp.department || '',
-      position: emp.position || '',
+      position: emp.position || 'Nhân viên',
       handover_date: emp.handover_date || '',
       phone: emp.phone || '',
       email: emp.email || '',
       notes: emp.notes || '',
       status: emp.status || 'active',
     })
+    setHandoverDisplay(emp.handover_date ? formatDate(emp.handover_date) : '')
     setFormOpen(true)
   }
 
@@ -164,6 +185,104 @@ export default function Employees() {
     } catch { showMsg('❌ Lỗi bàn giao') }
   }
 
+  function handleExportCSV() {
+    const headers = ['Mã NV', 'Họ và tên', 'Bộ phận', 'Chức vụ', 'Trạng thái', 'Số điện thoại', 'Email', 'Ngày bàn giao', 'Ghi chú']
+    const rows = emps.map(emp => [
+      emp.employee_code,
+      emp.full_name,
+      emp.department,
+      emp.position,
+      getStatusInfo(emp.status).label,
+      emp.phone,
+      emp.email,
+      emp.handover_date ? formatDate(emp.handover_date) : '',
+      emp.notes || '',
+    ])
+    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${(c || '').replace(/"/g, '""')}"`).join(','))].join('\r\n')
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `nhan-vien-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  async function handleImportCSV(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const text = await file.text()
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+    if (lines.length < 2) { setImportMsg('❌ File CSV không có dữ liệu.'); return }
+
+    const empCodeMap = {}
+    for (const emp of emps) {
+      if (emp.employee_code) empCodeMap[emp.employee_code] = emp
+    }
+
+    const nor = v => (v || '').trim()
+    const cmp = (csv, existing) => nor(csv) === nor(existing)
+
+    const results = { created: 0, updated: 0, skipped: 0, error: 0, errors: [] }
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''))
+      const [employee_code, full_name, department, position, status, phone, email, handover_date, notes] = cols
+      const code = nor(employee_code)
+      if (!code) { results.error++; results.errors.push(`Dòng ${i + 1}: thiếu mã nhân viên`); continue }
+
+      const data = {
+        employee_code: code,
+        full_name: nor(full_name),
+        department: nor(department),
+        position: nor(position) || 'Nhân viên',
+        status: nor(status) || 'active',
+        phone: nor(phone),
+        email: nor(email),
+        handover_date: nor(handover_date),
+        notes: nor(notes),
+      }
+
+      const existing = empCodeMap[code]
+      if (existing) {
+        const identical =
+          cmp(data.full_name, existing.full_name) &&
+          cmp(data.department, existing.department) &&
+          cmp(data.position, existing.position) &&
+          cmp(data.status, existing.status) &&
+          cmp(data.phone, existing.phone) &&
+          cmp(data.email, existing.email) &&
+          cmp(data.handover_date, existing.handover_date) &&
+          cmp(data.notes, existing.notes)
+        if (identical) { results.skipped++; continue }
+        try {
+          await updateEmployee(existing.id, data)
+          results.updated++
+        } catch (err) {
+          results.error++
+          results.errors.push(`Dòng ${i + 1}: ${code} — ${err?.response?.data?.detail || err?.response?.data?.error || 'Lỗi kết nối'}`)
+        }
+      } else {
+        try {
+          await createEmployee(data)
+          results.created++
+        } catch (err) {
+          results.error++
+          results.errors.push(`Dòng ${i + 1}: ${code} — ${err?.response?.data?.detail || err?.response?.data?.error || 'Lỗi kết nối'}`)
+        }
+      }
+    }
+
+    let msg = `✅ Import xong: ${results.created} tạo mới, ${results.updated} cập nhật`
+    if (results.skipped) msg += `, ${results.skipped} bỏ qua (không thay đổi)`
+    if (results.error) msg += `, ${results.error} lỗi`
+    setImportMsg(msg)
+    if (results.errors.length > 0) {
+      setImportMsg(prev => prev + `\n${results.errors.join('\n')}`)
+    }
+    setTimeout(() => setImportMsg(''), 5000)
+    load()
+    e.target.value = ''
+  }
+
   // ─── Department Management ─────────────────────────────────
 
   function openDeptAdd() {
@@ -214,8 +333,28 @@ export default function Employees() {
             border: 'none', borderRadius: 8, fontWeight: 600, fontSize: '0.82rem',
             cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
           }}>➕ Thêm NV</button>
+          <button onClick={handleExportCSV} style={{
+            padding: '0.45rem 0.9rem', height: 36, background: '#fff', color: '#475569',
+            border: '1px solid #e2e8f0', borderRadius: 8, fontWeight: 500, fontSize: '0.82rem',
+            cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+          }}>📤 Export</button>
+          <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImportCSV} />
+          <button onClick={() => fileInputRef.current?.click()} style={{
+            padding: '0.45rem 0.9rem', height: 36, background: '#fff', color: '#475569',
+            border: '1px solid #e2e8f0', borderRadius: 8, fontWeight: 500, fontSize: '0.82rem',
+            cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+          }}>📥 Import</button>
         </div>
       </div>
+
+      {importMsg && (
+        <div style={{
+          background: importMsg.startsWith('✅') ? '#f0fdf4' : '#fef2f2',
+          border: `1px solid ${importMsg.startsWith('✅') ? '#86efac' : '#fca5a5'}`, borderRadius: 12,
+          padding: '0.6rem 0.8rem', color: importMsg.startsWith('✅') ? '#166534' : '#991b1b',
+          fontSize: '0.85rem', marginBottom: '1rem', whiteSpace: 'pre-wrap',
+        }}>{importMsg}</div>
+      )}
 
       {msg && (
         <div style={{
@@ -297,12 +436,18 @@ export default function Employees() {
                   </select>
                 </FormField>
                 <FormField label="Chức vụ">
-                  <input type="text" value={formData.position} placeholder="VD: Nhân viên, Trưởng phòng"
-                    onChange={e => setFormData({ ...formData, position: e.target.value })} style={inputS} />
+                  <select value={formData.position} onChange={e => setFormData({ ...formData, position: e.target.value })} style={inputS}>
+                    {POSITION_OPTIONS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                  </select>
                 </FormField>
                 <FormField label="Ngày bắt đầu bàn giao">
-                  <input type="date" value={formData.handover_date}
-                    onChange={e => setFormData({ ...formData, handover_date: e.target.value })} style={inputS} />
+                  <input type="text" placeholder="DD/MM/YYYY" value={handoverDisplay}
+                    onChange={e => {
+                      const v = e.target.value
+                      setHandoverDisplay(v)
+                      const parsed = parseDateInput(v)
+                      if (parsed) setFormData({ ...formData, handover_date: parsed })
+                    }} style={inputS} />
                 </FormField>
                 <FormField label="Số điện thoại">
                   <input type="text" value={formData.phone} placeholder="Nhập SĐT liên hệ"
@@ -355,9 +500,15 @@ export default function Employees() {
                     onChange={e => setDeptForm({ ...deptForm, name: e.target.value })} style={inputS} />
                 </div>
                 <div>
-                  <label style={deptLabelS}>Trưởng phòng (ID)</label>
-                  <input type="number" value={deptForm.head_id} placeholder="Nhập ID nhân viên"
-                    onChange={e => setDeptForm({ ...deptForm, head_id: e.target.value ? Number(e.target.value) : '' })} style={inputS} />
+                  <label style={deptLabelS}>Trưởng phòng</label>
+                  <select value={deptForm.head_id} onChange={e => setDeptForm({ ...deptForm, head_id: e.target.value ? Number(e.target.value) : '' })} style={inputS}>
+                    <option value="">-- Chọn Trưởng phòng --</option>
+                    {emps.map(emp => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.full_name} ({emp.employee_code})
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label style={deptLabelS}>Mô tả</label>
@@ -380,7 +531,7 @@ export default function Employees() {
                 <thead>
                   <tr>
                     <th>Tên phòng ban</th>
-                    <th style={{ width: 120 }}>Trưởng phòng</th>
+                    <th style={{ width: 140 }}>Trưởng phòng</th>
                     <th style={{ width: 80, textAlign: 'center' }}>Số NV</th>
                     <th style={{ width: 80, textAlign: 'center' }}></th>
                   </tr>
@@ -509,7 +660,7 @@ export default function Employees() {
                 <DetailItem label="Chức vụ" value={selectedEmp.position} />
                 <DetailItem label="Số điện thoại" value={selectedEmp.phone} />
                 <DetailItem label="Địa chỉ Email" value={selectedEmp.email} />
-                <DetailItem label="Ngày bàn giao" value={selectedEmp.handover_date} />
+                <DetailItem label="Ngày bàn giao" value={formatDate(selectedEmp.handover_date)} />
               </div>
               {selectedEmp.notes && (
                 <div style={{ fontSize: '0.78rem', color: '#64748b', background: '#f8fafc', borderRadius: 8, padding: '0.5rem 0.7rem', marginBottom: '1rem', border: '1px solid #f1f5f9' }}>
@@ -522,7 +673,7 @@ export default function Employees() {
                 <button onClick={() => openEdit(selectedEmp)} style={panelBtnS}>✏️ Sửa</button>
                 <button onClick={() => handleDelete(selectedEmp.id)} style={{ ...panelBtnS, background: '#fef2f2', color: '#dc2626', borderColor: '#fca5a5' }}>🗑️ Xoá</button>
                 {isAdmin && (
-                  <button onClick={() => openResetPw(selectedEmp)} style={{ ...panelBtnS, background: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe' }}>🔑 Reset MK</button>
+                  <button onClick={() => openResetPw(selectedEmp)} style={{ ...panelBtnS, background: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe' }}>🔑 Reset Password</button>
                 )}
               </div>
 
@@ -657,7 +808,7 @@ function DetailItem({ label, value }) {
 }
 
 function emptyForm() {
-  return { employee_code: '', full_name: '', department: '', position: '', handover_date: '', phone: '', email: '', notes: '', status: 'active' }
+  return { employee_code: '', full_name: '', department: '', position: 'Nhân viên', handover_date: '', phone: '', email: '', notes: '', status: 'active' }
 }
 
 const inputS = {

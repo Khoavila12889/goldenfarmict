@@ -4,7 +4,7 @@ import {
   revokeEquipment, allocateEquipment, getEquipmentHistory,
   getEmployees,
 } from '../services/api'
-import { formatDate } from '../utils/formatters'
+import { formatDate } from '../utils/date'
 import {
   Monitor, Laptop, Printer, Monitor as MonitorIcon, Keyboard, Mouse,
   Smartphone, Tablet, Package, Plus, Search, Download, RefreshCw,
@@ -96,6 +96,7 @@ export default function Equipment() {
   const [showHist, setShowHist] = useState(false)
 
   const [showForm, setShowForm] = useState(false)
+  const [issuedDisplay, setIssuedDisplay] = useState('')
   const [editId, setEditId] = useState(null)
   const [form, setForm] = useState(emptyFormData())
   const [saving, setSaving] = useState(false)
@@ -187,6 +188,7 @@ export default function Equipment() {
   function openCreate() {
     setEditId(null)
     setForm(emptyFormData())
+    setIssuedDisplay('')
     setShowForm(true)
   }
 
@@ -202,6 +204,7 @@ export default function Equipment() {
       notes: eq.notes || '',
       issued_date: eq.issued_date || '',
     })
+    setIssuedDisplay(eq.issued_date ? formatDate(eq.issued_date) : '')
     setShowForm(true)
   }
 
@@ -1136,7 +1139,7 @@ export default function Equipment() {
                 })()}
                 {selectedEq.issued_date && (
                   <span style={{ fontSize: '0.72rem', color: '#94a3b8', alignSelf: 'center', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
-                    <Clock size={12} /> {selectedEq.issued_date}
+                    <Clock size={12} /> {formatDate(selectedEq.issued_date)}
                   </span>
                 )}
               </div>
@@ -1223,7 +1226,7 @@ export default function Equipment() {
                   </div>
                   <div>
                     <div className="eq-detail-item-label">Ngày cấp</div>
-                    <div className="eq-detail-item-value">{selectedEq.issued_date || '—'}</div>
+                    <div className="eq-detail-item-value">{formatDate(selectedEq.issued_date) || '—'}</div>
                   </div>
                   <div>
                     <div className="eq-detail-item-label">Người sử dụng</div>
@@ -1352,8 +1355,8 @@ export default function Equipment() {
                               <span style={{ fontWeight: 500 }}>{h.employee_name}</span> ({h.employee_code})
                             </div>
                             <div className="eq-timeline-content">
-                              Bàn giao: {h.handover_date || '?'}
-                              {h.return_date ? ` → Thu hồi: ${h.return_date}` : ' → Đang sử dụng'}
+                              Bàn giao: {formatDate(h.handover_date) || '?'}
+                              {h.return_date ? ` → Thu hồi: ${formatDate(h.return_date)}` : ' → Đang sử dụng'}
                             </div>
                             <div className="eq-timeline-date">{formatDate(h.created_at)}</div>
                           </div>
@@ -1443,8 +1446,14 @@ export default function Equipment() {
                 </div>
                 <div className="eq-form-group" style={{ maxWidth: 250 }}>
                   <label className="eq-form-label">Ngày cấp</label>
-                  <input type="date" className="eq-form-input" value={form.issued_date}
-                    onChange={e => setForm({ ...form, issued_date: e.target.value })} />
+                  <input type="text" className="eq-form-input" placeholder="DD/MM/YYYY" value={issuedDisplay}
+                    onChange={e => {
+                      setIssuedDisplay(e.target.value)
+                      const parts = e.target.value.split('/')
+                      if (parts.length === 3 && parts[0].length === 2 && parts[1].length === 2 && parts[2].length === 4) {
+                        setForm({ ...form, issued_date: `${parts[2]}-${parts[1]}-${parts[0]}` })
+                      }
+                    }} />
                 </div>
               </div>
 

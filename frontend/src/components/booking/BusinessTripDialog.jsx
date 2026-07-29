@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import DateSelector from './DateSelector'
 
 export default function BusinessTripDialog({ isOpen, onClose, onSubmit, employee, initialData }) {
   const [destination, setDestination] = useState('')
@@ -28,6 +29,14 @@ export default function BusinessTripDialog({ isOpen, onClose, onSubmit, employee
       setSubmitting(false)
     }
   }, [isOpen, initialData])
+
+  // DateSelector handles date conversion automatically
+  // Just need to handle validation when both dates are set
+  useEffect(() => {
+    if (startDate && endDate && endDate < startDate) {
+      setEndDate(startDate)
+    }
+  }, [startDate, endDate])
 
   if (!isOpen) return null
 
@@ -94,17 +103,11 @@ export default function BusinessTripDialog({ isOpen, onClose, onSubmit, employee
           <div className="bk-form-row">
             <div className="bk-form-group">
               <label className="bk-form-label">Ngày đi *</label>
-              <input className="bk-input" type="date"
-                value={startDate} onChange={e => {
-                  setStartDate(e.target.value)
-                  if (endDate && e.target.value > endDate) setEndDate(e.target.value)
-                }} />
+              <DateSelector value={startDate} onChange={setStartDate} />
             </div>
             <div className="bk-form-group">
               <label className="bk-form-label">Ngày về *</label>
-              <input className="bk-input" type="date"
-                value={endDate} onChange={e => setEndDate(e.target.value)}
-                min={startDate} />
+              <DateSelector value={endDate} onChange={setEndDate} />
             </div>
           </div>
 

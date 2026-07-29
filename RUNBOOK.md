@@ -48,19 +48,15 @@ Trước khi sửa code, kiểm tra:
 ## 3. Database
 
 ### File
-`backend/company.db` (SQLite WAL mode)
+`backend/company.db` (SQLite) — **Legacy**, migrate sang PostgreSQL 16
 
 ### Schema
-18 tables — xem `database.py` hoặc `SYSTEM_LOGIC.md` mục 4.1.
+21 tables — xem `database.py` hoặc `SYSTEM_LOGIC.md` mục 8.1.
 
 ### Migration
-Thêm column mới trong `init_db()`:
-```python
-try:
-    conn.execute("ALTER TABLE table_name ADD COLUMN col_name TYPE")
-except sqlite3.OperationalError:
-    pass  # column already exists
-```
+- PostgreSQL đã được cấu hình trong `docker-compose.yml`
+- Database URL: `postgresql://goldenfarm:your_strong_password@db:5432/goldenfarmict`
+- SQLite support đã bị loại bỏ từ phiên bản 2.0
 
 ---
 
@@ -122,18 +118,11 @@ Frontend `dist/` phải được serve bởi backend hoặc reverse proxy (CORS 
 ### DB Layer (đã có)
 | File | Role |
 |------|------|
-| `app/core/session.py` | SQLAlchemy engine + SessionLocal — **đổi DATABASE_URL để migrate** |
-| `app/models.py` | ORM models 18 tables |
+| `app/core/session.py` | SQLAlchemy engine + SessionLocal — **PostgreSQL compatible** |
+| `app/models.py` | ORM models 21 tables |
 | `app/core/db.py` | Abstraction layer (dùng SQLAlchemy, module mới dùng) |
-| `app/core/database.py` | Legacy init + `get_conn()` — module cũ giữ nguyên |
+| `app/core/database.py` | Legacy init + `get_conn()` — PostgreSQL migration sẵn sàng |
 
 ### Cách migrate sang PostgreSQL
-```
-1. Cài asyncpg:            pip install asyncpg
-2. Sửa DATABASE_URL:      app/core/session.py → "postgresql://..."
-3. Tạo DB mới + migrate data từ company.db
-4. Chạy backend → SQLAlchemy tự tạo schema
-5. Module mới viết qua db.py hoặc SQLAlchemy ORM
-6. Module cũ migrate dần, xoá get_conn() cuối cùng
-```
-Xem chi tiết `SYSTEM_LOGIC.md` mục 8.
+- PostgreSQL đã được cấu hình sẵn trong `docker-compose.yml`
+- Backend tự động dùng PostgreSQL khi `DATABASE_URL` được set

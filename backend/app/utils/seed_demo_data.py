@@ -105,7 +105,7 @@ def seed_bookings(conn):
         "SELECT id, full_name, department FROM employees WHERE employee_code != '' AND department != '' ORDER BY RANDOM()"
     ).fetchall()
 
-    resources = conn.execute("SELECT * FROM resources WHERE is_active=1").fetchall()
+    resources = conn.execute("SELECT * FROM resources WHERE is_active = TRUE").fetchall()
 
     if not employees or not resources:
         print("Skip bookings: no employees or resources.")

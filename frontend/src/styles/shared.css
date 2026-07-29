@@ -182,3 +182,203 @@
     font-size: 0.8rem;
   }
 }
+
+/* ─── Onboarding Tour (driver.js) ─────────────────────────── */
+.tour-popover {
+  --driver-popover-background-color: #fef3c7;
+  --driver-popover-border-color: #f59e0b;
+  --driver-popover-border-width: 2px;
+  --driver-popover-border-radius: 12px;
+  --driver-popover-box-shadow: 0 8px 32px rgba(245, 158, 11, 0.2);
+  --driver-popover-title-color: #0a5b35;
+  --driver-popover-description-color: #12804b;
+  --driver-popover-font-family: 'Inter', system-ui, sans-serif;
+  --driver-popover-font-size: 0.875rem;
+  --driver-popover-padding: 1.25rem;
+  --driver-popover-close-button-color: #12804b;
+  --driver-popover-close-button-hover-color: #0a5b35;
+  --driver-popover-close-button-size: 20px;
+  --driver-popover-btn-background-color: #0a5b35;
+  --driver-popover-btn-color: #ffffff;
+  --driver-popover-btn-border-radius: 8px;
+  --driver-popover-btn-padding: 0.5rem 1rem;
+  --driver-popover-btn-font-size: 0.85rem;
+  --driver-popover-btn-font-weight: 600;
+  --driver-popover-btn-cursor: pointer;
+  --driver-popover-progress-color: #f59e0b;
+  --driver-popover-arrow-color: #fef3c7;
+  --driver-popover-arrow-border-color: #f59e0b;
+}
+
+
+
+
+/* ═══════════════════════════════════════════════════════════
+   OnlyOffice Document Viewer Styles
+   ═══════════════════════════════════════════════════════════ */
+
+.oov-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.2s ease;
+}
+
+.oov-container {
+  width: 95vw;
+  height: 95vh;
+  max-width: 1800px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.oov-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  background: var(--bk-primary, #2563eb);
+  color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.oov-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.oov-file-name {
+  font-size: 1rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oov-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.oov-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.oov-close-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.oov-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8fafc;
+  position: relative;
+  overflow: hidden;
+}
+
+.oov-file-type {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.95);
+  text-transform: uppercase;
+}
+
+.oov-loading,
+.oov-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  color: #64748b;
+  text-align: center;
+  padding: 2rem;
+}
+
+/* Keep placeholder sized while loading overlay sits on top */
+.oov-overlay-state {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: #f8fafc;
+}
+
+.oov-loading p,
+.oov-error p {
+  font-size: 0.95rem;
+  margin: 0;
+  max-width: 400px;
+}
+
+.oov-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.oov-error {
+  color: #dc2626;
+}
+
+.oov-error svg {
+  color: #dc2626;
+}
+
+.oov-editor {
+  width: 100%;
+  height: 100%;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .oov-container {
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+  }
+  
+  .oov-header {
+    padding: 0.75rem 1rem;
+  }
+  
+  .oov-file-name {
+    font-size: 0.9rem;
+  }
+  
+  .oov-close-btn {
+    width: 32px;
+    height: 32px;
+  }
+}

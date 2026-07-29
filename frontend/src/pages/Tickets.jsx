@@ -1,22 +1,25 @@
 ﻿import React, { useEffect, useState, useCallback } from 'react'
 import '../styles/shared.css'
+import './TicketsKanban.css'
 import {
   getEmployeeByCode, getTickets, createTicket, updateTicket,
 } from '../services/api'
-import { formatDate } from '../utils/formatters'
+import { formatDate } from '../utils/date'
+import { Clock, TicketCheck, Search } from 'lucide-react'
 
 const statusOpts = ['Cho xu ly', 'Dang xu ly', 'Da xu ly', 'Da huy']
 const statusMap = {
-  'Cho xu ly': { label: '⏳ Chờ xử lý', color: '#d97706', bg: '#fef3c7' },
-  'Dang xu ly': { label: '⚙️ Đang xử lý', color: '#2563eb', bg: '#dbeafe' },
-  'Da xu ly': { label: '✅ Đã xử lý', color: '#16a34a', bg: '#dcfce7' },
-  'Da huy': { label: '❌ Đã hủy', color: '#6b7280', bg: '#f3f4f6' },
+  'Cho xu ly': { label: 'Chờ xử lý', color: '#d97706', bg: '#fef3c7', icon: '⏳' },
+  'Dang xu ly': { label: 'Đang xử lý', color: '#2563eb', bg: '#dbeafe', icon: '⚙️' },
+  'Da xu ly': { label: 'Đã xử lý', color: '#16a34a', bg: '#dcfce7', icon: '✅' },
+  'Da huy': { label: 'Đã hủy', color: '#6b7280', bg: '#f3f4f6', icon: '❌' },
 }
 const priorityMap = {
   'Binh thuong': { label: 'Bình thường', color: '#00468C', bg: '#e8f0fe' },
   'Quan trong': { label: 'Quan trọng', color: '#d97706', bg: '#fef3c7' },
   'Khan cap': { label: 'Khẩn cấp', color: '#dc2626', bg: '#fef2f2' },
 }
+const priorityKeys = Object.keys(priorityMap)
 
 export default function Tickets() {
   const userRole = sessionStorage.getItem('user_role')
@@ -144,123 +147,127 @@ export default function Tickets() {
 
   const myTickets = isAdmin ? [] : tickets.filter(t => t.employee_id === emp?.id)
 
-  // ── ADMIN VIEW ──
+  async function handleCardStatusChange(ticketId, newStatus) {
+    try {
+      await updateTicket(ticketId, { status: newStatus, resolution: selectedTicket?.id === ticketId ? rResolution : '', admin_notes: selectedTicket?.id === ticketId ? rNotes : '' })
+      if (selectedTicket?.id === ticketId) {
+        setRStatus(newStatus)
+      }
+      loadTickets()
+    } catch {}
+  }
+
+  // ── ADMIN VIEW (Kanban) ──
   if (isAdmin) {
     return (
-      <div style={{ position: 'relative' }}>
-        <style>{`
-          @keyframes slideIn { from { opacity: 0; transform: translateX(50px); } to { opacity: 1; transform: translateX(0); } }
-          .cell-id { font-weight: 600; color: #00468C; }
-          .cell-dept { font-size: 0.75rem; color: #94a3b8; margin-top: 2px; }
-          .tag { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.12rem 0.5rem; border-radius: 20px; font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
-        `}</style>
+      <div className="tickets-kanban">
+        {toast && (
+          <div className="tk-toast">
+            <span>🚨</span> {toast}
+            <button className="tk-toast-close" onClick={() => setToast(null)}>✕</button>
+          </div>
+        )}
 
-        <div className="module-header">
-          <h1 style={{ fontSize: '1.35rem', fontWeight: 700, color: '#0f172a' }}>🎫 Quản lý Yêu cầu Hỗ trợ (IT)</h1>
-          <span style={{ background: '#e8f0fe', color: '#00468C', padding: '0.3rem 0.8rem', borderRadius: 20, fontSize: '0.8rem', fontWeight: 600 }}>
+        <div className="tk-header">
+          <div className="tk-title-section">
+            <div className="tk-title-icon">
+              <TicketCheck size={24} />
+            </div>
+            <div>
+              <h1 className="tk-title">Quản lý Yêu cầu Hỗ trợ (IT)</h1>
+              <div className="tk-subtitle">Tiếp nhận, theo dõi và xử lý yêu cầu từ người dùng</div>
+            </div>
+          </div>
+          <span className="tk-count-badge">
             {loading ? '...' : `${tickets.length} ticket`}
           </span>
         </div>
 
-        {toast && (
-          <div style={{
-            position: 'fixed', top: 20, right: 20, zIndex: 9999,
-            background: '#1e293b', color: '#fff', padding: '0.75rem 1.25rem',
-            borderRadius: 12, fontSize: '0.9rem', fontWeight: 600,
-            boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
-            display: 'flex', alignItems: 'center', gap: '0.5rem',
-            animation: 'slideIn 0.3s ease',
-          }}>
-            <span style={{ fontSize: '1.2rem' }}>🚨</span> {toast}
-            <button onClick={() => setToast(null)} style={{
-              background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer',
-              marginLeft: '0.5rem', fontSize: '1rem',
-            }}>✕</button>
-          </div>
-        )}
-
-        {/* Filter bar */}
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center', background: '#fff', padding: '0.6rem 0.8rem', borderRadius: 12, border: '1px solid #e6edf5' }}>
-          <select value={fStatus} onChange={e => setFStatus(e.target.value)} style={{
-            padding: '0.4rem 0.65rem', background: '#f8fafc', border: '1px solid #e2e8f0',
-            borderRadius: 8, fontSize: '0.82rem', outline: 'none', cursor: 'pointer',
-            fontFamily: 'inherit', color: '#334155', minWidth: 150, flexShrink: 0,
-          }}>
-            <option value="Tất cả">Tất cả trạng thái</option>
-            {statusOpts.map(s => <option key={s} value={s}>{statusMap[s]?.label || s}</option>)}
-          </select>
-          <select value={fPriority} onChange={e => setFPriority(e.target.value)} style={{
-            padding: '0.4rem 0.65rem', background: '#f8fafc', border: '1px solid #e2e8f0',
-            borderRadius: 8, fontSize: '0.82rem', outline: 'none', cursor: 'pointer',
-            fontFamily: 'inherit', color: '#334155', minWidth: 150, flexShrink: 0,
-          }}>
-            <option value="Tất cả">Tất cả mức độ</option>
-            {Object.entries(priorityMap).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-          </select>
-          <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
-            <span style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.8rem', color: '#94a3b8', pointerEvents: 'none' }}>🔍</span>
-            <input type="text" placeholder="Tìm kiếm..." value={fSearch}
-              onChange={e => setFSearch(e.target.value)}
-              style={{
-                width: '100%', padding: '0.4rem 0.65rem 0.4rem 1.7rem', background: '#f8fafc',
-                border: '1px solid #e2e8f0', borderRadius: 8, fontSize: '0.82rem',
-                outline: 'none', fontFamily: 'inherit', color: '#334155', boxSizing: 'border-box',
-              }} />
+        {/* Filter toolbar */}
+        <div className="tk-toolbar">
+          <div className="tk-controls">
+            <select value={fStatus} onChange={e => setFStatus(e.target.value)}>
+              <option value="Tất cả">Tất cả trạng thái</option>
+              {statusOpts.map(s => <option key={s} value={s}>{statusMap[s]?.label || s}</option>)}
+            </select>
+            <select value={fPriority} onChange={e => setFPriority(e.target.value)}>
+              <option value="Tất cả">Tất cả mức độ</option>
+              {priorityKeys.map(k => <option key={k} value={k}>{priorityMap[k].label}</option>)}
+            </select>
+            <div className="tk-search">
+              <Search size={14} />
+              <input type="text" placeholder="Tìm kiếm..." value={fSearch}
+                onChange={e => setFSearch(e.target.value)} />
+            </div>
           </div>
         </div>
 
-        {/* Data table */}
-        <div className="tbl-wrap" style={{ overflowX: 'auto' }}>
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th style={{ width: 60 }}>ID</th>
-                <th style={{ minWidth: 160 }}>Tiêu đề</th>
-                <th style={{ minWidth: 150 }}>Người yêu cầu / Bộ phận</th>
-                <th style={{ minWidth: 120 }}>Ngày / Giờ</th>
-                <th style={{ width: 105 }}>Mức độ ưu tiên</th>
-                <th style={{ width: 105 }}>Trạng thái</th>
-                <th style={{ width: 36, textAlign: 'center' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                [1,2,3,4,5].map(i => (
-                  <tr key={`s-${i}`}>
-                    {[1,2,3,4,5,6,7].map(j => (
-                      <td key={`c-${j}`}>
-                        <div style={{ height: 12, background: '#f1f5f9', borderRadius: 4, width: '75%' }} />
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              ) : tickets.length === 0 ? (
-                <tr>
-                  <td colSpan={7} style={{ padding: '2.5rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.9rem' }}>
-                    Không có ticket nào phù hợp.
-                  </td>
-                </tr>
-              ) : tickets.map(t => {
-                const st = statusMap[t.status] || {}
-                const pr = priorityMap[t.priority] || {}
-                const sel = selectedTicket?.id === t.id
-                return (
-                  <tr key={t.id} className={sel ? 'selected' : ''} onClick={() => openReply(t)}>
-                    <td className="cell-id">#{t.id}</td>
-                    <td style={{ fontWeight: 500 }}>{t.title}</td>
-                    <td>
-                      <div>{t.full_name}</div>
-                      {t.department && <div className="cell-dept">{t.department}</div>}
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap', fontSize: '0.78rem' }}>{formatDate(t.created_at)}</td>
-                    <td><span className="tag" style={{ background: pr.bg, color: pr.color }}>{pr.label}</span></td>
-                    <td><span className="tag" style={{ background: st.bg, color: st.color }}>{st.label}</span></td>
-                    <td style={{ textAlign: 'center', color: '#94a3b8', fontSize: '0.8rem' }}>{sel ? '◀' : '▶'}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+        {/* Kanban Board */}
+        <div className="tk-board">
+          {statusOpts.map((statusKey, colIdx) => {
+            const st = statusMap[statusKey]
+            const colTickets = tickets.filter(t => t.status === statusKey)
+
+            return (
+              <div key={statusKey} className={`tk-column tk-column-${colIdx}`}>
+                <div className="tk-col-header">
+                  <div className="tk-col-title">
+                    <span>{st.icon}</span>
+                    <span>{st.label}</span>
+                  </div>
+                  <span className="tk-col-count">{colTickets.length}</span>
+                </div>
+
+                <div className="tk-col-cards">
+                  {loading ? (
+                    <div className="tk-empty">Đang tải...</div>
+                  ) : colTickets.length === 0 ? (
+                    <div className="tk-empty">Không có ticket</div>
+                  ) : colTickets.map(t => {
+                    const prIdx = priorityKeys.indexOf(t.priority)
+                    return (
+                      <div key={t.id} className="tk-card" onClick={() => openReply(t)}>
+                        <div className="tk-card-top">
+                          <span className="tk-card-id">#{t.id}</span>
+                          <span className={`tk-priority tk-priority-${prIdx}`}>
+                            {priorityMap[t.priority]?.label || t.priority}
+                          </span>
+                        </div>
+
+                        <div className="tk-card-body">
+                          <div className="tk-card-title">{t.title}</div>
+                          <div className="tk-card-req">
+                            👤 {t.full_name}
+                          </div>
+                          {t.department && (
+                            <div className="tk-card-dept">
+                              🏢 {t.department}
+                            </div>
+                          )}
+                        </div>
+
+                        <select
+                          value={t.status}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => handleCardStatusChange(t.id, e.target.value)}
+                          className={`status-${statusKey.replace(/ /g, '_')}`}
+                        >
+                          {statusOpts.map(s => (
+                            <option key={s} value={s}>{statusMap[s]?.icon} {statusMap[s]?.label || s}</option>
+                          ))}
+                        </select>
+
+                        <div className="tk-card-footer">
+                          <Clock size={11} />
+                          {formatDate(t.created_at)}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
         </div>
 
         {/* Side panel */}
@@ -280,7 +287,6 @@ export default function Tickets() {
           <div className="panel-body">
             {selectedTicket && (
               <>
-                {/* Description */}
                 {selectedTicket.description && (
                   <div style={{ fontSize: '0.85rem', color: '#475569', lineHeight: 1.5, padding: '0.6rem 0.8rem', background: '#f8fafc', borderRadius: 8, marginBottom: '1rem' }}>
                     <strong style={{ color: '#0f172a' }}>📝 Mô tả:</strong> {selectedTicket.description}
@@ -323,10 +329,13 @@ export default function Tickets() {
 
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                   <button onClick={handleReply} style={{
-                    padding: '0.45rem 1.25rem', background: '#00468C', color: '#fff',
+                    padding: '0.45rem 1.25rem', background: '#2563eb', color: '#fff',
                     border: 'none', borderRadius: 8, fontWeight: 600, fontSize: '0.82rem',
-                    cursor: 'pointer', fontFamily: 'inherit',
-                  }}>💾 Lưu phản hồi</button>
+                    cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.2s ease',
+                  }}
+                    onMouseOver={e => e.target.style.background = '#1d4ed8'}
+                    onMouseOut={e => e.target.style.background = '#2563eb'}
+                  >💾 Lưu phản hồi</button>
                   <button onClick={() => setSelectedTicket(null)} style={{
                     padding: '0.45rem 1rem', background: '#f1f5f9', color: '#475569',
                     border: '1px solid #e2e8f0', borderRadius: 8, fontWeight: 500,

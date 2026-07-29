@@ -1,5 +1,7 @@
-import React, { useEffect, useState, useRef } from 'react'
-import { Loader, Lock, ChevronLeft, ChevronRight } from 'lucide-react'
+import React, { useEffect, useState, useRef, useCallback } from 'react'
+import { Loader, Lock, ChevronLeft, ChevronRight, Check, AlertCircle, X, Calendar } from 'lucide-react'
+import { driver } from 'driver.js'
+import 'driver.js/dist/driver.css'
 import useSalarySlip from '../hooks/useSalarySlip'
 import './SalarySlip.css'
 
@@ -10,121 +12,181 @@ function parseMonth(monthStr) {
   return [m, y]
 }
 
+const MONTH_NAMES = [
+  'T 1', 'T 2', 'T 3', 'T 4', 'T 5', 'T 6',
+  'T 7', 'T 8', 'T 9', 'T 10', 'T 11', 'T 12'
+]
+
 export default function SalarySlip() {
   const {
     selectedMonth, salaryData, isLoading, error, needPassword,
-    fetchSalarySlip, changeMonth,
+    availableMonths, monthsLoading, pdfExporting, pdfEnabled,
+    fetchSalarySlip, fetchAvailableMonths, downloadPdf, changeMonth,
   } = useSalarySlip()
 
   const [pwd, setPwd] = useState('')
   const [pwdError, setPwdError] = useState('')
+  const [pdfMsg, setPdfMsg] = useState(null)
+  const [hasRequested, setHasRequested] = useState(false)
 
-  useEffect(() => { fetchSalarySlip(selectedMonth) }, [])
+  /* ── Custom Month Picker States ── */
+  const [showPicker, setShowPicker] = useState(false)
+  const [pickerYear, setPickerYear] = useState(() => new Date().getFullYear())
+  const pickerRef = useRef(null)
+
+  const driverRef = useRef(null)
+
+  const destroyTour = useCallback(() => {
+    if (driverRef.current) {
+      try { driverRef.current.destroy() } catch (_) {}
+      driverRef.current = null
+    }
+  }, [])
+
+  const startTour = useCallback(() => {
+    if (!document.querySelector('.salary-pwd-modal')) return
+
+    const d = driver({
+      showProgress: false,
+      animate: true,
+      allowClose: true,
+      stagePadding: 0,
+      stageRadius: 16,
+      popoverClass: 'tour-popover',
+      steps: [{
+        element: '.salary-pwd-modal',
+        popover: {
+          title: 'Nhập mật khẩu để xem Phiếu lương',
+          description: 'Vui lòng nhập mật khẩu được cung cấp để mở khóa và xem phiếu lương của bạn.',
+          side: 'top',
+          showButtons: ['close'],
+        },
+      }],
+    })
+
+    driverRef.current = d
+    localStorage.setItem('has_seen_salary_tour', 'true')
+    d.drive()
+  }, [])
+
+  useEffect(() => {
+    if (isLoading) return
+    const hasSeen = localStorage.getItem('has_seen_salary_tour')
+    if (hasSeen) return
+    const timer = setTimeout(startTour, 600)
+    return () => clearTimeout(timer)
+  }, [startTour, isLoading])
+
+  useEffect(() => { fetchAvailableMonths() }, [])
+
+  /* ── Sync Picker Year with Selected Month ── */
+  useEffect(() => {
+    if (selectedMonth) {
+      setPickerYear(parseInt(selectedMonth.split('-')[0], 10))
+    }
+  }, [selectedMonth])
+
+  /* ── Click outside to close picker ── */
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target)) {
+        setShowPicker(false)
+      }
+    }
+    if (showPicker) document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showPicker])
 
   /* ── Month navigation ── */
-  const monthInputRef = useRef(null)
-
-  const openMonthPicker = () => {
-    monthInputRef.current?.showPicker()
-  }
+  const now = new Date()
+  const capMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const nextDisabled = selectedMonth >= capMonth
 
   const navigate = (dir) => {
     const [y, m] = selectedMonth.split('-').map(Number)
     const d = new Date(y, m - 1 + dir, 1)
     const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    const now = new Date()
-    const cap = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-    if (next > cap) return
+    if (next > capMonth) return
+    
+    setHasRequested(true)
     changeMonth(next)
     setPwd('')
     setPwdError('')
     fetchSalarySlip(next)
   }
 
-  const handleMonthChange = (e) => {
-    const val = e.target.value
-    if (!val) return
-    const now = new Date()
-    const cap = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-    const finalVal = val > cap ? cap : val
-    changeMonth(finalVal)
+  const handleSelectMonth = (monthIndex) => {
+    const next = `${pickerYear}-${String(monthIndex + 1).padStart(2, '0')}`
+    if (next > capMonth) return
+    
+    setShowPicker(false)
+    setHasRequested(true)
+    changeMonth(next)
     setPwd('')
     setPwdError('')
-    fetchSalarySlip(finalVal)
+    fetchSalarySlip(next)
   }
 
-  const now = new Date()
-  const capMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  const nextDisabled = selectedMonth >= capMonth
-
   /* ── Password submit ── */
+  const handleClosePwd = () => {
+    destroyTour()
+    setPwd('')
+    setPwdError('')
+    setHasRequested(false)
+    changeMonth(selectedMonth)
+  }
+
   const handleSubmit = () => {
+    destroyTour()
     if (!pwd.trim()) { setPwdError('Vui lòng nhập mật khẩu'); return }
     setPwdError('')
     fetchSalarySlip(selectedMonth, pwd)
   }
-  const handleKeyDown = (e) => { if (e.key === 'Enter') handleSubmit() }
 
-  /* ── Reset ── */
-  const handleReset = () => {
-    setPwd('')
-    setPwdError('')
-    changeMonth(selectedMonth)
-    fetchSalarySlip(selectedMonth)
+  const handleKeyDown = (e) => {
+    destroyTour()
+    if (e.key === 'Enter') handleSubmit()
   }
 
-  const d = salaryData   // shorthand
+  const handlePwdChange = (e) => {
+    destroyTour()
+    setPwd(e.target.value)
+  }
+
+  const handlePwdFocus = () => destroyTour()
+
+  const handleDownloadPdf = async () => {
+    setPdfMsg(null)
+    try {
+      await downloadPdf(selectedMonth, pwd)
+      setPdfMsg({ type: 'success', text: 'Đã tải PDF' })
+    } catch (err) {
+      setPdfMsg({ type: 'error', text: err.message })
+    }
+    setTimeout(() => setPdfMsg(null), 3000)
+  }
+
+  const d = salaryData
 
   /* ────────────── RENDER ────────────── */
   return (
     <div className="salary-container">
 
-      {/* Top bar: chỉ có tháng/năm */}
-      <div className="salary-header">
-        <div className="salary-controls salary-month-selector">
-          <button className="salary-month-nav-btn" onClick={() => navigate(-1)} title="Tháng trước">
-            <ChevronLeft size={16} />
-          </button>
-          
-          <button className="salary-month-display" onClick={openMonthPicker} title="Chọn tháng">
-            Tháng {parseMonth(selectedMonth)[0]}/{parseMonth(selectedMonth)[1]} 📅
-          </button>
-          <input
-            ref={monthInputRef}
-            type="month"
-            className="salary-month-hidden"
-            value={selectedMonth}
-            max={capMonth}
-            onChange={handleMonthChange}
-          />
-          
-          <button className="salary-month-nav-btn" onClick={() => navigate(1)} disabled={nextDisabled} title="Tháng sau">
-            <ChevronRight size={16} />
-          </button>
-        </div>
-      </div>
-
-      {/* Body */}
-      <div className="salary-content">
-
-        {/* Loading */}
-        {isLoading && (
-          <div className="salary-state">
-            <Loader size={40} className="spin" />
-            <p className="salary-state-title">Đang tải...</p>
-          </div>
-        )}
-
-        {/* Password form */}
-        {!isLoading && needPassword && (
-          <div className="salary-pwd-wrap">
-            <Lock size={56} className="salary-lock-icon" />
-            <p className="salary-state-title">Nhập mật khẩu để xem phiếu lương</p>
+      {/* Password overlay */}
+      {!isLoading && needPassword && (
+        <div className="salary-pwd-overlay">
+          <div className="salary-pwd-modal">
+            <button className="salary-pwd-close" onClick={handleClosePwd} title="Đóng">
+              <X size={20} />
+            </button>
+            <Lock size={80} className="salary-lock-icon" />
+            <h3 className="salary-pwd-heading">Nhập mật khẩu để xem Phiếu lương</h3>
             <div className="salary-pwd-row">
               <input
                 type="password"
                 value={pwd}
-                onChange={(e) => setPwd(e.target.value)}
+                onChange={handlePwdChange}
+                onFocus={handlePwdFocus}
                 onKeyDown={handleKeyDown}
                 placeholder="Mật khẩu phiếu lương"
                 className={`salary-pwd-input${pwdError ? ' input-error' : ''}`}
@@ -137,6 +199,88 @@ export default function SalarySlip() {
               <p className="salary-pwd-error">{error}</p>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Top bar */}
+      <div className="salary-header">
+        <div className="salary-controls">
+          
+          {/* Bộ điều hướng tháng kèm Custom Picker */}
+          <div className="salary-month-selector" ref={pickerRef}>
+            <button className="salary-month-nav-btn" onClick={() => navigate(-1)} title="Tháng trước">
+              <ChevronLeft size={16} />
+            </button>
+            
+            <button 
+              className="salary-month-display" 
+              onClick={() => setShowPicker(!showPicker)} 
+              title="Chọn tháng"
+            >
+              <Calendar size={16} />
+              <span> {parseMonth(selectedMonth)[0]}/{parseMonth(selectedMonth)[1]}</span>
+            </button>
+            
+            <button className="salary-month-nav-btn" onClick={() => navigate(1)} disabled={nextDisabled} title="Tháng sau">
+              <ChevronRight size={16} />
+            </button>
+
+            {/* Custom Month Picker Popup */}
+            {showPicker && (
+              <div className="salary-picker-popup">
+                <div className="salary-picker-header">
+                  <button className="salary-picker-nav" onClick={() => setPickerYear(y => y - 1)}>
+                    <ChevronLeft size={16} />
+                  </button>
+                  <span className="salary-picker-year">{pickerYear}</span>
+                  <button 
+                    className="salary-picker-nav" 
+                    onClick={() => setPickerYear(y => y + 1)}
+                    disabled={pickerYear >= now.getFullYear()}
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+                <div className="salary-picker-grid">
+                  {MONTH_NAMES.map((mName, index) => {
+                    const monthValue = `${pickerYear}-${String(index + 1).padStart(2, '0')}`;
+                    const isDisabled = monthValue > capMonth;
+                    const isActive = monthValue === selectedMonth;
+
+                    return (
+                      <button
+                        key={index}
+                        className={`salary-picker-cell ${isActive ? 'active' : ''}`}
+                        disabled={isDisabled}
+                        onClick={() => handleSelectMonth(index)}
+                      >
+                        {mName}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
+
+      {pdfMsg && (
+        <div className={`salary-pdf-msg ${pdfMsg.type}`}>
+          {pdfMsg.type === 'success' ? <Check size={14} /> : <AlertCircle size={14} />}
+          {pdfMsg.text}
+        </div>
+      )}
+
+      {/* Body */}
+      <div className="salary-content">
+        {/* Loading */}
+        {isLoading && (
+          <div className="salary-state">
+            <Loader size={40} className="spin" />
+            <p className="salary-state-title">Đang tải...</p>
+          </div>
         )}
 
         {/* Error */}
@@ -146,10 +290,17 @@ export default function SalarySlip() {
           </div>
         )}
 
-        {/* No data */}
-        {!isLoading && !needPassword && !error && !salaryData && (
+        {/* Initial state — chọn tháng để xem */}
+        {!isLoading && !needPassword && !error && !salaryData && !hasRequested && (
           <div className="salary-state">
             <Lock size={40} className="salary-state-muted" />
+            <p className="salary-state-title">Chọn tháng để xem phiếu lương</p>
+          </div>
+        )}
+
+        {/* No data for this month */}
+        {!isLoading && !needPassword && !error && !salaryData && hasRequested && (
+          <div className="salary-state">
             <p className="salary-state-title">
               Chưa có phiếu lương tháng {parseMonth(selectedMonth)[0]}/{parseMonth(selectedMonth)[1]}
             </p>
@@ -160,22 +311,16 @@ export default function SalarySlip() {
         {!isLoading && !needPassword && !error && salaryData && (
           <div className="salary-viewer pdf-paper-wrapper">
             <div className="pdf-a4-portrait">
-
-              {/* 1. Tiêu đề công ty & Phiếu lương */}
+              {/* ... Toàn bộ nội dung PDF phiếu lương giữ nguyên ... */}
               <div className="pdf-header">
                 <div className="pdf-company-info">
                   <strong>CÔNG TY TNHH CANH ĐỒNG VÀNG (GOLDEN FARM)</strong><br />
                   7 Đường số 5, Phường An Khánh, TP. Hồ Chí Minh
                 </div>
-                <div className="pdf-title">
-                  PHIẾU LƯƠNG THÁNG {d.MONTH}/{d.YEAR}
-                </div>
-                <div className="pdf-date">
-                  Ngày thanh toán: 15/{String(Number(d.MONTH) + 1).padStart(2, '0')}/{d.YEAR}
-                </div>
+                <div className="pdf-title">PHIẾU LƯƠNG THÁNG {d.MONTH}/{d.YEAR}</div>
+                <div className="pdf-date">Ngày thanh toán: 15/{String(Number(d.MONTH) + 1).padStart(2, '0')}/{d.YEAR}</div>
               </div>
-
-              {/* 2. Thông tin nhân viên */}
+              
               <table className="pdf-info-table">
                 <tbody>
                   <tr>
@@ -193,7 +338,6 @@ export default function SalarySlip() {
                 </tbody>
               </table>
 
-              {/* 3. Bảng Lương Chính */}
               <table className="pdf-main-table">
                 <thead>
                   <tr className="bg-yellow bold">
@@ -281,12 +425,8 @@ export default function SalarySlip() {
                 </tbody>
               </table>
 
-              {/* 4. Ghi chú */}
-              <div className="pdf-notes">
-                Ghi chú: {d.GC || '0'}
-              </div>
+              <div className="pdf-notes">Ghi chú: {d.GC || '0'}</div>
 
-              {/* 5. Bảng Theo dõi phép */}
               <table className="pdf-tracking-table">
                 <thead>
                   <tr className="bg-yellow bold text-center">
@@ -309,17 +449,14 @@ export default function SalarySlip() {
                 </tbody>
               </table>
 
-              {/* 6. Footer */}
               <div className="pdf-footer">
-                Mọi thắc mắc (nếu có), anh/chị vui lòng liên hệ{' '}
-                <span className="text-red bold">0902.180.900</span> để được giải đáp/ hướng dẫn.
+                Mọi thắc mắc (nếu có), anh/chị vui lòng liên hệ <span className="text-red bold">0902.180.900</span> để được giải đáp/ hướng dẫn.
               </div>
 
             </div>
           </div>
         )}
-
-      </div>{/* end salary-content */}
+      </div>
     </div>
   )
 }
