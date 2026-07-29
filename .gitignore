@@ -10,5 +10,16 @@ dist/
 !backend/data/*.db
 *.db-shm
 *.db-wal
-db.sqlite3
-temp_pdf_gen/
+
+# Local environment
+.env
+
+# Database backup
+*.sql
+
+# Local logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
