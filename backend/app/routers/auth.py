@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from ..core.auth import authenticate, hash_password, verify_token
+from ..core.auth import authenticate, hash_password, verify_stored_password, verify_token
 from ..core.db import fetchall, fetchone, execute
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -81,7 +81,7 @@ def change_password(req: ChangePasswordRequest):
     row = fetchone("SELECT password_hash FROM users WHERE employee_code = :code", {"code": code})
     if not row:
         raise HTTPException(404, "User not found")
-    if row["password_hash"] != hash_password(req.old_password):
+    if not verify_stored_password(row["password_hash"], req.old_password):
         raise HTTPException(400, "Mật khẩu cũ không đúng")
     if len(req.new_password) < 4:
         raise HTTPException(400, "Mật khẩu mới phải có ít nhất 4 ký tự")

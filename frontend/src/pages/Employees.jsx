@@ -3,7 +3,7 @@ import '../styles/shared.css'
 import { formatDate } from '../utils/date'
 import {
   getEmployees, getDepartments, getEmployeeEquipment,
-  createEmployee, updateEmployee, deleteEmployee,
+  createEmployee, updateEmployee, deleteEmployee, importEmployees,
   transferEquipment, revokeEquipment,
   createDepartment, updateDepartment, deleteDepartment,
   adminResetPassword,
@@ -187,7 +187,13 @@ export default function Employees() {
 
   function handleExportCSV() {
     const headers = ['Mã NV', 'Họ và tên', 'Bộ phận', 'Chức vụ', 'Trạng thái', 'Số điện thoại', 'Email', 'Ngày bàn giao', 'Ghi chú']
-    const rows = emps.map(emp => [
+    
+    // Sắp xếp tăng dần theo Mã NV (hỗ trợ cả chuỗi và số tự nhiên như NV1, NV2, NV10)
+    const sortedEmps = [...emps].sort((a, b) => 
+      (a.employee_code || '').localeCompare(b.employee_code || '', undefined, { numeric: true, sensitivity: 'base' })
+    )
+
+    const rows = sortedEmps.map(emp => [
       emp.employee_code,
       emp.full_name,
       emp.department,
@@ -214,22 +220,16 @@ export default function Employees() {
     const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
     if (lines.length < 2) { setImportMsg('❌ File CSV không có dữ liệu.'); return }
 
-    const empCodeMap = {}
-    for (const emp of emps) {
-      if (emp.employee_code) empCodeMap[emp.employee_code] = emp
-    }
-
     const nor = v => (v || '').trim()
-    const cmp = (csv, existing) => nor(csv) === nor(existing)
+    const employees = []
+    const parseErrors = []
 
-    const results = { created: 0, updated: 0, skipped: 0, error: 0, errors: [] }
     for (let i = 1; i < lines.length; i++) {
       const cols = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''))
       const [employee_code, full_name, department, position, status, phone, email, handover_date, notes] = cols
       const code = nor(employee_code)
-      if (!code) { results.error++; results.errors.push(`Dòng ${i + 1}: thiếu mã nhân viên`); continue }
-
-      const data = {
+      if (!code) { parseErrors.push(`Dòng ${i + 1}: thiếu mã nhân viên`); continue }
+      employees.push({
         employee_code: code,
         full_name: nor(full_name),
         department: nor(department),
@@ -239,44 +239,29 @@ export default function Employees() {
         email: nor(email),
         handover_date: nor(handover_date),
         notes: nor(notes),
-      }
-
-      const existing = empCodeMap[code]
-      if (existing) {
-        const identical =
-          cmp(data.full_name, existing.full_name) &&
-          cmp(data.department, existing.department) &&
-          cmp(data.position, existing.position) &&
-          cmp(data.status, existing.status) &&
-          cmp(data.phone, existing.phone) &&
-          cmp(data.email, existing.email) &&
-          cmp(data.handover_date, existing.handover_date) &&
-          cmp(data.notes, existing.notes)
-        if (identical) { results.skipped++; continue }
-        try {
-          await updateEmployee(existing.id, data)
-          results.updated++
-        } catch (err) {
-          results.error++
-          results.errors.push(`Dòng ${i + 1}: ${code} — ${err?.response?.data?.detail || err?.response?.data?.error || 'Lỗi kết nối'}`)
-        }
-      } else {
-        try {
-          await createEmployee(data)
-          results.created++
-        } catch (err) {
-          results.error++
-          results.errors.push(`Dòng ${i + 1}: ${code} — ${err?.response?.data?.detail || err?.response?.data?.error || 'Lỗi kết nối'}`)
-        }
-      }
+      })
     }
 
-    let msg = `✅ Import xong: ${results.created} tạo mới, ${results.updated} cập nhật`
-    if (results.skipped) msg += `, ${results.skipped} bỏ qua (không thay đổi)`
-    if (results.error) msg += `, ${results.error} lỗi`
-    setImportMsg(msg)
-    if (results.errors.length > 0) {
-      setImportMsg(prev => prev + `\n${results.errors.join('\n')}`)
+    if (employees.length === 0) {
+      setImportMsg('❌ Không có dữ liệu hợp lệ để import.')
+      e.target.value = ''
+      return
+    }
+
+    try {
+      const res = await importEmployees({ employees })
+      const r = res.data
+      let msg = `✅ Import xong: ${r.created} tạo mới, ${r.updated} cập nhật`
+      if (r.users_created > 0) msg += `, ${r.users_created} tài khoản đã khởi tạo`
+      if (r.skipped) msg += `, ${r.skipped} bỏ qua`
+      if (r.errors?.length > 0 || parseErrors.length > 0) {
+        const allErrors = [...r.errors, ...parseErrors]
+        msg += `, ${allErrors.length} lỗi`
+        msg += `\n${allErrors.join('\n')}`
+      }
+      setImportMsg(msg)
+    } catch (err) {
+      setImportMsg(`❌ Lỗi kết nối đến máy chủ: ${err?.response?.data?.detail || err.message}`)
     }
     setTimeout(() => setImportMsg(''), 5000)
     load()

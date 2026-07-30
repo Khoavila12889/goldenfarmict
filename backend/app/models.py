@@ -101,6 +101,7 @@ class User(Base):
     employee_code = Column(String, unique=True, nullable=False, index=True)
     password_hash = Column(String, nullable=False)
     role = Column(String, default='user')
+    is_first_login = Column(Boolean, default=True)
     created_at = Column(String, default='')
     updated_at = Column(String, default='')
 

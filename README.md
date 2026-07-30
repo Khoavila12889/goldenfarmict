@@ -58,6 +58,8 @@ Hệ thống quản lý ICT nội bộ — Quản lý nhân viên, thiết bị,
 - Panel chi tiết inline-edit
 - Modal thêm/sửa
 - Cascade: xoá NV → thu hồi thiết bị về kho, giữ lại ticket/booking (set NULL)
+- **Import CSV**: Hỗ trợ import hàng loạt qua file CSV, tự động tạo tài khoản đăng nhập (`users`) cho nhân viên mới với mật khẩu mặc định (mã NV) đã được mã hóa Argon2
+- **Tự động tạo tài khoản**: Khi thêm nhân viên mới (form hoặc import CSV), hệ thống tự động khởi tạo tài khoản trong bảng `users` với role `user`, `is_first_login=True`, đồng bộ trong cùng 1 database transaction
 
 ### 🖥️ Quản lý thiết bị — Enterprise UI (admin)
 - **Layout**: Header → 4 KPI Stats cards → Sticky Toolbar → Data Grid → Detail Drawer → Form Modal
@@ -334,12 +336,12 @@ docker compose up -d --build
 
 ## Hybrid Authentication (Argon2id + SHA-256)
 
-Hệ thống hỗ trợ **đa thuật toán mã hóa** để tương thích với dữ liệu user từ Nextcloud cũ:
+Hệ thống hỗ trợ **đa thuật toán mã hóa** để tương thích với dữ liệu user cũ:
 
 | Thuật toán | Đối tượng | Cơ chế |
 |-----------|-----------|--------|
-| **SHA-256** | User mới tạo (seed_users), admin | `hashlib.sha256(password).hexdigest()` |
-| **Argon2id** | User import từ Nextcloud (`oc_users.csv`) | Verify bằng `argon2-cffi`, tự động **re-hash** sang SHA-256 sau lần đăng nhập đầu tiên |
+| **Argon2id** (mặc định) | User mới tạo (seed, import, form) | `argon2-cffi PasswordHasher.hash()` — bảo mật cao, salt tự động |
+| **SHA-256** (legacy) | User cũ từ phiên bản trước | Xác thực bằng `_hash_sha256()`, tự động **upgrade** lên Argon2 sau lần đăng nhập đầu tiên |
 
 ### Import Users từ Nextcloud
 
@@ -513,7 +515,8 @@ goldenfarm-ict-web/
 | `GET` | `/api/employees/{id}` | Chi tiết |
 | `GET` | `/api/employees/by-code/{code}` | Tra theo mã NV |
 | `GET` | `/api/employees/departments/list` | Danh sách phòng ban |
-| `POST` | `/api/employees` | Thêm mới |
+| `POST` | `/api/employees` | Thêm mới (tự động tạo tài khoản `users`) |
+| `POST` | `/api/employees/import` | Import hàng loạt (CSV) — bulk upsert employees + auto-create users, trả về thống kê chi tiết |
 | `PUT` | `/api/employees/{id}` | Cập nhật |
 | `DELETE` | `/api/employees/{id}` | Xoá (cascade: thu hồi thiết bị, NULL ticket/booking) |
 | `GET` | `/api/employees/{id}/equipment` | Thiết bị của NV |

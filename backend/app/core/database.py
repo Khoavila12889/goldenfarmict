@@ -76,6 +76,7 @@ def _add_missing_columns(session):
         ("employees", "handover_date", "TEXT DEFAULT ''"),
         ("tickets", "employee_code", "TEXT DEFAULT ''"),
         ("users", "updated_at", "TEXT DEFAULT ''"),
+        ("users", "is_first_login", "BOOLEAN DEFAULT TRUE"),
         ("storage_permissions", "department", "TEXT DEFAULT ''"),
         ("storage_permissions", "target_type", "TEXT DEFAULT 'DEPARTMENT'"),
         ("storage_permissions", "can_read", "INTEGER DEFAULT 1"),

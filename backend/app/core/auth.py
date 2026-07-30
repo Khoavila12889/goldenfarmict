@@ -8,6 +8,10 @@ _ph = PasswordHasher()
 
 
 def hash_password(password: str) -> str:
+    return _ph.hash(password)
+
+
+def _hash_sha256(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
@@ -26,11 +30,11 @@ def _verify_argon2(stored: str, password: str) -> bool:
 def verify_stored_password(stored: str, password: str) -> bool:
     if _is_argon2(stored):
         return _verify_argon2(stored, password)
-    return stored == hash_password(password)
+    return stored == _hash_sha256(password)
 
 
 def rehash_if_argon2(user_code: str, stored: str, password: str) -> None:
-    if not _is_argon2(stored):
+    if _is_argon2(stored):
         return
     execute(
         "UPDATE users SET password_hash = :pw WHERE employee_code = :code",

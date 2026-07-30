@@ -56,6 +56,15 @@ def on_startup():
     # Ensure unique constraints exist for permission tables (needed for ON CONFLICT upsert)
     _ensure_permission_constraints(engine)
 
+    # Add missing columns for existing tables (before ORM queries)
+    with SessionLocal() as sess:
+        try:
+            sess.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_first_login BOOLEAN DEFAULT TRUE"))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → users.is_first_login migration: {e}")
+
     # Seed default admin user if not exists
     session = SessionLocal()
     try:
@@ -66,6 +75,7 @@ def on_startup():
                 employee_code='admin',
                 password_hash=hash_password('admin'),
                 role='admin',
+                is_first_login=False,
                 created_at=datetime.utcnow().isoformat()
             ))
             session.commit()
@@ -77,6 +87,7 @@ def on_startup():
                 employee_code='administrator',
                 password_hash=hash_password('administrator'),
                 role='admin',
+                is_first_login=False,
                 created_at=datetime.utcnow().isoformat()
             ))
             session.commit()

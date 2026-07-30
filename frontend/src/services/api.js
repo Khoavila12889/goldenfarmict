@@ -85,6 +85,10 @@ export function updateEmployee(id, data) {
   return api.put(`/employees/${id}`, data)
 }
 
+export function importEmployees(data) {
+  return api.post('/employees/import', data)
+}
+
 export function deleteEmployee(id) {
   return api.delete(`/employees/${id}`)
 }
