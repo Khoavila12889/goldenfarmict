@@ -24,10 +24,12 @@ function ProtectedRoute({ children }) {
   return children
 }
 
-function AdminRoute({ children }) {
+function AdminRoute({ children, requiredModule }) {
   const role = sessionStorage.getItem('user_role')
-  if (role !== 'admin' && role !== 'head') return <Navigate to="/" replace />
-  return children
+  if (role === 'admin' || role === 'head') return children
+  const perms = JSON.parse(sessionStorage.getItem('user_permissions') || '{}')
+  if (requiredModule && perms[requiredModule]?.can_view) return children
+  return <Navigate to="/" replace />
 }
 
 function LoginGuard() {
@@ -49,15 +51,15 @@ export default function App() {
       >
         <Route index element={<Dashboard />} />
         <Route path="todos" element={<Todos />} />
-        <Route path="employees" element={<AdminRoute><Employees /></AdminRoute>} />
+        <Route path="employees" element={<AdminRoute requiredModule="employees"><Employees /></AdminRoute>} />
         <Route path="tickets" element={<Tickets />} />
         <Route path="bookings" element={<BookingPage />} />
-        <Route path="licenses" element={<Licenses />} />
-        <Route path="equipment" element={<AdminRoute><Equipment /></AdminRoute>} />
+        <Route path="licenses" element={<AdminRoute requiredModule="licenses"><Licenses /></AdminRoute>} />
+        <Route path="equipment" element={<AdminRoute requiredModule="equipment"><Equipment /></AdminRoute>} />
         <Route path="approvals" element={<Approvals />} />
-        <Route path="workflows" element={<AdminRoute><WorkflowTemplates /></AdminRoute>} />
+        <Route path="workflows" element={<AdminRoute requiredModule="workflows"><WorkflowTemplates /></AdminRoute>} />
         <Route path="salary-slip" element={<SalarySlip />} />
-        <Route path="salary-slip-admin" element={<AdminRoute><SalarySlipAdmin /></AdminRoute>} />
+        <Route path="salary-slip-admin" element={<AdminRoute requiredModule="salary-admin"><SalarySlipAdmin /></AdminRoute>} />
         <Route path="documents" element={<Documents />} />
         <Route path="profile" element={<Profile />} />
         <Route path="permissions" element={<AdminRoute><Permissions /></AdminRoute>} />

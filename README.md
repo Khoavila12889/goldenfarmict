@@ -488,7 +488,7 @@ goldenfarm-ict-web/
 ### Auth & Profile
 | Method | Endpoint | Mô tả |
 |--------|----------|-------|
-| `POST` | `/api/auth/login` | Đăng nhập (employee_code hoặc email) |
+| `POST` | `/api/auth/login` | Đăng nhập (employee_code hoặc email) — trả về `permissions` merged 3-tier |
 | `POST` | `/api/auth/change-password` | Đổi mật khẩu |
 | `GET` | `/api/auth/profile` | Lấy profile cá nhân |
 | `PUT` | `/api/auth/profile` | Cập nhật profile (full_name, phone, personal_email) |
@@ -816,6 +816,14 @@ Effective Permission = Role_Perm || Department_Perm || Individual_Override_Perm
 2. Chọn **Vai trò** → chỉnh sửa quyền mặc định cho Admin/Head/Nhân viên → Save
 3. Hoặc chọn **Phòng ban** → chỉnh sửa quyền cho cả phòng → Save
 4. Hoặc chọn **Cá nhân** → tìm user → chỉnh sửa override → Save
+
+### Luồng áp dụng quyền (Frontend → Backend)
+
+1. **Login**: `POST /api/auth/login` trả về `permissions` object (merged 3-tier) → lưu vào `sessionStorage`
+2. **Sidebar**: `Layout.jsx` — `hasModuleAccess()` đọc `user_permissions` từ sessionStorage/API, không fallback về role static
+3. **Route Guard**: `App.jsx` — `AdminRoute` check `role` trước, nếu không phải admin/head thì check `user_permissions[requiredModule]?.can_view`
+4. **Refresh**: Layout gọi `GET /api/auth/permissions` khi mount, sync vào `sessionStorage` để dùng ngay lần sau
+5. **Debug log**: Backend ghi `[RBAC] effective permissions for {code}` mỗi khi merge
 
 ## Maintenance
 

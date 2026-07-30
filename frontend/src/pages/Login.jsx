@@ -39,6 +39,7 @@ export default function Login() {
         sessionStorage.setItem('user_role', res.data.role)
         sessionStorage.setItem('user_department', res.data.department || '')
         sessionStorage.setItem('user_name', res.data.full_name || res.data.name || res.data.employee_code)
+        sessionStorage.setItem('user_permissions', JSON.stringify(res.data.permissions || {}))
         navigate('/')
       } else {
         setError(res.data.message)

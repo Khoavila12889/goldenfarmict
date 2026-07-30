@@ -19,6 +19,57 @@ class LoginResponse(BaseModel):
     full_name: str | None = None
     token: str | None = None
     message: str
+    permissions: dict = {}
+
+
+def _get_effective_permissions(code: str) -> dict:
+    """Merge 3-tier permissions: User Override > Department > Role"""
+    user_info = fetchone(
+        "SELECT u.role, e.department FROM users u LEFT JOIN employees e ON e.employee_code = u.employee_code WHERE u.employee_code = :code",
+        {"code": code}
+    )
+    if not user_info:
+        return {}
+    user_role = user_info.get("role", "user")
+    user_dept = user_info.get("department", "")
+
+    role_rows = fetchall(
+        "SELECT module, can_view, can_edit FROM role_permissions WHERE role = :role",
+        {"role": user_role}
+    )
+    role_perms = {r["module"]: {"can_view": bool(r["can_view"]), "can_edit": bool(r["can_edit"])} for r in role_rows}
+
+    dept_perms = {}
+    if user_dept:
+        dept_rows = fetchall(
+            "SELECT module, can_view, can_edit FROM department_permissions WHERE department = :dept",
+            {"dept": user_dept}
+        )
+        dept_perms = {r["module"]: {"can_view": bool(r["can_view"]), "can_edit": bool(r["can_edit"])} for r in dept_rows}
+
+    user_rows = fetchall(
+        "SELECT module, can_view, can_edit FROM user_permissions WHERE employee_code = :code",
+        {"code": code}
+    )
+    user_override = {r["module"]: {"can_view": bool(r["can_view"]), "can_edit": bool(r["can_edit"])} for r in user_rows}
+
+    all_modules = set()
+    for d in (role_perms, dept_perms, user_override):
+        all_modules.update(d.keys())
+
+    effective = {}
+    for mod in all_modules:
+        rp = role_perms.get(mod, {})
+        dp = dept_perms.get(mod, {})
+        up = user_override.get(mod, {})
+        effective[mod] = {
+            "can_view": up.get("can_view", dp.get("can_view", rp.get("can_view", False))),
+            "can_edit": up.get("can_edit", dp.get("can_edit", rp.get("can_edit", False))),
+        }
+
+    import logging
+    logging.debug(f"[RBAC] effective permissions for {code} (role={user_role}, dept={user_dept}): {effective}")
+    return effective
 
 
 class ChangePasswordRequest(BaseModel):
@@ -63,14 +114,17 @@ def login(req: LoginRequest):
             code = emp["employee_code"]
     result = authenticate(code, req.password)
     if result:
+        emp_code = result["employee_code"]
+        perms = _get_effective_permissions(emp_code)
         return LoginResponse(
             success=True,
-            employee_code=result["employee_code"],
+            employee_code=emp_code,
             role=result["role"],
             department=result.get("department", ""),
             full_name=result.get("full_name", ""),
             token=result["token"],
-            message="Đăng nhập thành công!"
+            message="Đăng nhập thành công!",
+            permissions=perms,
         )
     return LoginResponse(success=False, message="Sai mã NV/Email hoặc mật khẩu")
 
@@ -96,13 +150,15 @@ def change_password(req: ChangePasswordRequest):
 def get_profile(employee_code: str = Query("")):
     if not employee_code:
         raise HTTPException(400, "employee_code is required")
+    code = employee_code.strip()
     emp = fetchone(
         "SELECT employee_code, full_name, department, position, phone, email, personal_email FROM employees WHERE employee_code = :code",
-        {"code": employee_code.strip()}
+        {"code": code}
     )
     if not emp:
         raise HTTPException(404, "Employee not found")
-    return {"success": True, "data": emp}
+    perms = _get_effective_permissions(code)
+    return {"success": True, "data": {**emp, "permissions": perms}}
 
 
 @router.put("/profile")
@@ -267,48 +323,7 @@ def list_modules():
 def get_my_permissions(employee_code: str = None):
     if not employee_code:
         raise HTTPException(400, "employee_code is required")
-    code = employee_code.strip()
-    user_info = fetchone(
-        "SELECT u.role, e.department FROM users u LEFT JOIN employees e ON e.employee_code = u.employee_code WHERE u.employee_code = :code",
-        {"code": code}
-    )
-    user_role = (user_info or {}).get("role", "user")
-    user_dept = (user_info or {}).get("department", "")
-
-    role_rows = fetchall(
-        "SELECT module, can_view, can_edit FROM role_permissions WHERE role = :role",
-        {"role": user_role}
-    )
-    role_perms = {r["module"]: {"can_view": bool(r["can_view"]), "can_edit": bool(r["can_edit"])} for r in role_rows}
-
-    dept_perms = {}
-    if user_dept:
-        dept_rows = fetchall(
-            "SELECT module, can_view, can_edit FROM department_permissions WHERE department = :dept",
-            {"dept": user_dept}
-        )
-        dept_perms = {r["module"]: {"can_view": bool(r["can_view"]), "can_edit": bool(r["can_edit"])} for r in dept_rows}
-
-    user_rows = fetchall(
-        "SELECT module, can_view, can_edit FROM user_permissions WHERE employee_code = :code",
-        {"code": code}
-    )
-    user_override = {r["module"]: {"can_view": bool(r["can_view"]), "can_edit": bool(r["can_edit"])} for r in user_rows}
-
-    all_modules = set()
-    for d in (role_perms, dept_perms, user_override):
-        all_modules.update(d.keys())
-
-    effective = {}
-    for mod in all_modules:
-        rp = role_perms.get(mod, {})
-        dp = dept_perms.get(mod, {})
-        up = user_override.get(mod, {})
-        effective[mod] = {
-            "can_view": up.get("can_view", dp.get("can_view", rp.get("can_view", False))),
-            "can_edit": up.get("can_edit", dp.get("can_edit", rp.get("can_edit", False))),
-        }
-
+    effective = _get_effective_permissions(employee_code.strip())
     return {"data": effective}
 
 

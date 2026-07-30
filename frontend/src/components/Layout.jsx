@@ -134,15 +134,21 @@ export default function Layout() {
     return () => window.removeEventListener('profileUpdated', handleProfileUpdate)
   }, [userCode])
 
-  // Lấy phân quyền động từ Backend
+  // Lấy phân quyền động từ Backend — tất cả user kể cả admin
   useEffect(() => {
-    if (userRole === 'admin') return
-    const token = sessionStorage.getItem('token')
-    fetch(`/api/auth/permissions?employee_code=${userCode}&token=${token}&role=${userRole}`)
+    const stored = sessionStorage.getItem('user_permissions')
+    if (stored) {
+      try { setUserPerms(JSON.parse(stored)) } catch (_) {}
+    }
+    fetch(`/api/auth/permissions?employee_code=${userCode}`)
       .then(r => r.json())
-      .then(d => setUserPerms(d.data || {}))
-      .catch(() => setUserPerms({}))
-  }, [userCode, userRole])
+      .then(d => {
+        const perms = d.data || {}
+        setUserPerms(perms)
+        sessionStorage.setItem('user_permissions', JSON.stringify(perms))
+      })
+      .catch(() => { /* keep existing value */ })
+  }, [userCode])
 
   // Tour hướng dẫn
   useEffect(() => {
@@ -234,27 +240,24 @@ export default function Layout() {
 
   // ─── HÀM KIỂM TRA QUYỀN TRUY CẬP MODULE CHUẨN RBAC ──────────────────
   function hasModuleAccess(path) {
-    // 1. Dashboard & Trợ giúp luôn mở cho mọi người
     if (path === '/' || path === '/help') return true
-
-    // 2. Admin hệ thống luôn có full quyền
     if (userRole === 'admin') return true
-
-    // 3. Khóa trang Phân quyền chỉ dành riêng cho Admin
     if (path === '/permissions') return false
 
     const moduleKey = MODULE_MAP[path]
+    if (!moduleKey) return false
 
-    // 4. Khi đã tải xong dữ liệu phân quyền từ Backend (userPerms khác null)
-    if (moduleKey && userPerms && typeof userPerms === 'object') {
-      if (userPerms[moduleKey] !== undefined) {
-        return !!userPerms[moduleKey].can_view
-      }
-      // Module không xuất hiện trong bảng phân quyền của User -> Mặc định Ẩn
+    // 1. Dùng runtime state (từ API fetch hoặc sessionStorage)
+    const perms = userPerms !== null ? userPerms : (() => {
+      try { return JSON.parse(sessionStorage.getItem('user_permissions') || 'null') } catch { return null }
+    })()
+
+    if (perms && typeof perms === 'object') {
+      if (perms[moduleKey] !== undefined) return !!perms[moduleKey].can_view
       return false
     }
 
-    // 5. Trong lúc chờ API tải về (userPerms === null), dùng cấu hình Role tĩnh mặc định
+    // 2. Fallback static role config (chờ API load lần đầu)
     const navItem = allNavItems.find(i => i.path === path)
     return navItem?.roles?.includes(userRole) ?? false
   }
