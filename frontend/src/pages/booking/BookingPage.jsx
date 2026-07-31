@@ -33,7 +33,11 @@ export default function BookingPage() {
 
   // Resource management
   const userRole = sessionStorage.getItem('user_role')
+  const userPermissions = useMemo(() => {
+    try { return JSON.parse(sessionStorage.getItem('user_permissions') || '{}') } catch { return {} }
+  }, [])
   const isAdmin = userRole === 'admin'
+  const canManageResources = isAdmin || !!(userPermissions.bookings?.can_edit)
   const [resDialogOpen, setResDialogOpen] = useState(false)
   const [allResources, setAllResources] = useState([])
   const [newResName, setNewResName] = useState('')
@@ -202,7 +206,7 @@ export default function BookingPage() {
                 filterType={filterType}
                 onFilterChange={(d, t, s) => setFilter(d, t, s)}
                 bookings={filteredBookings}
-                isAdmin={isAdmin}
+                canManageResources={canManageResources}
                 onManageResources={() => { setResDialogOpen(true); loadAllResources() }}
               />
 

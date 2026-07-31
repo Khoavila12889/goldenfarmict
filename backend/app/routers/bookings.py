@@ -1,8 +1,27 @@
-from fastapi import APIRouter, Query
+from typing import Optional
+from fastapi import APIRouter, Query, Header, HTTPException
 from ..core.db import fetchall, fetchone, execute, insert
 from ..core.events import publish_sync
+from ..core.auth import verify_session
+from .auth import _get_effective_permissions
 
 router = APIRouter(prefix="/api/bookings", tags=["bookings"])
+
+
+def _require_resource_admin(
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token"),
+) -> dict:
+    """User system admin hoặc có quyền bookings.can_edit mới được quản lý tài nguyên."""
+    user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
+    if user["user_role"] == "admin":
+        return user
+    perms = _get_effective_permissions(user["user_code"])
+    if not (perms.get("bookings") or {}).get("can_edit"):
+        raise HTTPException(status_code=403, detail="Bạn không có quyền quản lý tài nguyên lịch")
+    return user
 
 
 @router.get("")
@@ -75,7 +94,14 @@ def list_resources():
 
 
 @router.post("/resources")
-def create_resource(body: dict):
+def create_resource(
+    body: dict,
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token"),
+):
+    _require_resource_admin(x_user_code, x_user_role, x_user_dept, x_user_token)
     resource_type = body.get("type", "car")
     name = body.get("name", "").strip()
     description = body.get("description", "").strip()
@@ -89,7 +115,14 @@ def create_resource(body: dict):
 
 
 @router.delete("/resources/{resource_id}")
-def delete_resource(resource_id: int):
+def delete_resource(
+    resource_id: int,
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token"),
+):
+    _require_resource_admin(x_user_code, x_user_role, x_user_dept, x_user_token)
     row = fetchone("SELECT COUNT(*) as cnt FROM bookings WHERE resource_id=:rid", {"rid": resource_id})
     if row and row["cnt"] > 0:
         return {"success": False, "error": f"Không thể xoá — tài nguyên đang có {row['cnt']} lịch đặt."}

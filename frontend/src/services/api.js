@@ -145,12 +145,21 @@ export function getResources() {
   return api.get('/bookings/resources')
 }
 
+function bookingAuthHeaders() {
+  return {
+    'X-User-Code': sessionStorage.getItem('user_code') || '',
+    'X-User-Role': sessionStorage.getItem('user_role') || '',
+    'X-User-Dept': sessionStorage.getItem('user_department') || '',
+    'X-User-Token': sessionStorage.getItem('token') || '',
+  }
+}
+
 export function createResource(data) {
-  return api.post('/bookings/resources', data)
+  return api.post('/bookings/resources', data, { headers: bookingAuthHeaders() })
 }
 
 export function deleteResource(id) {
-  return api.delete(`/bookings/resources/${id}`)
+  return api.delete(`/bookings/resources/${id}`, { headers: bookingAuthHeaders() })
 }
 
 export function getBookingDates() {

@@ -5,7 +5,7 @@ import { formatDate } from '../../utils/date'
 export default function BookingToolbar({
   tab, onNewBooking, onNewTrip,
   filterDate, filterType, onFilterChange,
-  bookings, isAdmin, onManageResources,
+  bookings, canManageResources, onManageResources,
 }) {
   const isBooking = tab === 'bookings'
   const stats = getBookingStats(bookings || [])
@@ -51,7 +51,7 @@ export default function BookingToolbar({
           <button className="bk-btn bk-btn-primary" onClick={isBooking ? onNewBooking : onNewTrip}>
             {isBooking ? '+ Đặt lịch mới' : '+ Đăng ký công tác'}
           </button>
-          {isAdmin && (
+          {canManageResources && (
             <button className="bk-btn" onClick={onManageResources}>
               ⚙️ Quản lý tài nguyên
             </button>
