@@ -124,10 +124,11 @@ def delete_resource(
 ):
     _require_resource_admin(x_user_code, x_user_role, x_user_dept, x_user_token)
     row = fetchone("SELECT COUNT(*) as cnt FROM bookings WHERE resource_id=:rid", {"rid": resource_id})
-    if row and row["cnt"] > 0:
-        return {"success": False, "error": f"Không thể xoá — tài nguyên đang có {row['cnt']} lịch đặt."}
+    deleted_bookings = row["cnt"] if row else 0
+    if deleted_bookings > 0:
+        execute("DELETE FROM bookings WHERE resource_id=:rid", {"rid": resource_id})
     execute("DELETE FROM resources WHERE id=:rid", {"rid": resource_id})
-    return {"success": True}
+    return {"success": True, "deleted_bookings": deleted_bookings}
 
 
 @router.get("/dates")

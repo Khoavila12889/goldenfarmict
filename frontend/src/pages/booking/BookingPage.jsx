@@ -58,16 +58,22 @@ export default function BookingPage() {
       await createResource({ type: newResType, name: newResName.trim(), description: newResDesc.trim() })
       setNewResName(''); setNewResDesc(''); setResMsg('')
       await loadAllResources()
-    } catch { setResMsg('Lỗi kết nối') }
+    } catch (err) {
+      const detail = err.response?.data?.detail || err.response?.data?.error || 'Lỗi kết nối'
+      setResMsg(String(detail))
+    }
   }
 
   async function handleDeleteResource(id) {
-    if (!window.confirm('Xoá tài nguyên này?')) return
+    if (!window.confirm('Xoá tài nguyên này? Các lịch đặt liên quan cũng sẽ bị xoá.')) return
     try {
       const r = await deleteResource(id)
       if (r.data?.success === false) { setResMsg(r.data?.error || 'Không thể xoá'); return }
       await loadAllResources()
-    } catch { setResMsg('Lỗi kết nối') }
+    } catch (err) {
+      const detail = err.response?.data?.detail || err.response?.data?.error || 'Lỗi kết nối'
+      setResMsg(String(detail))
+    }
   }
 
   const [hiddenResources, setHiddenResources] = useState(new Set())
