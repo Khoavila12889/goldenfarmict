@@ -337,6 +337,38 @@ class TodoSubtask(Base):
     created_at = Column(String, default='')
 
 
+class Comment(Base):
+    __tablename__ = 'comments'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    todo_id = Column(Integer, nullable=False, index=True)
+    user_code = Column(String, nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    created_at = Column(String, default='')
+    updated_at = Column(String, default='')
+
+
+class Attachment(Base):
+    __tablename__ = 'attachments'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    todo_id = Column(Integer, nullable=False, index=True)
+    uploader_code = Column(String, nullable=False, index=True)
+    file_name = Column(String, nullable=False)
+    file_type = Column(String, default='')
+    file_size = Column(Integer, default=0)
+    file_url = Column(String, default='')
+    created_at = Column(String, default='')
+
+
+class Notification(Base):
+    __tablename__ = 'notifications'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_code = Column(String, nullable=False, index=True)
+    todo_id = Column(Integer, nullable=False, index=True)
+    message = Column(Text, nullable=False)
+    is_read = Column(Integer, default=0)
+    created_at = Column(String, default='')
+
+
 class LicCategory(Base):
     __tablename__ = 'lic_categories'
     id = Column(Integer, primary_key=True, autoincrement=True)

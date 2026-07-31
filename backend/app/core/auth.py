@@ -92,3 +92,49 @@ def authenticate(login_id: str, password: str):
 def verify_token(user_code: str, token: str, role: str) -> bool:
     expected = make_session_token(user_code, role)
     return token == expected
+
+
+from typing import Optional
+from fastapi import HTTPException
+
+
+def verify_session(
+    x_user_code: Optional[str],
+    x_user_role: Optional[str],
+    x_user_dept: Optional[str],
+    x_user_token: Optional[str] = None
+) -> dict:
+    code = (x_user_code or "").strip()
+    if not code:
+        raise HTTPException(status_code=401, detail="Thiếu thông tin người dùng")
+
+    if x_user_token:
+        if not verify_token(code, x_user_token, x_user_role or "user"):
+            raise HTTPException(status_code=401, detail="Token không hợp lệ")
+
+    user = fetchone(
+        "SELECT u.role FROM users u WHERE u.employee_code = :code",
+        {"code": code}
+    )
+    if not user:
+        raise HTTPException(status_code=401, detail="Người dùng không tồn tại trong hệ thống")
+
+    emp = fetchone(
+        "SELECT e.full_name, e.department FROM employees e WHERE e.employee_code = :code",
+        {"code": code}
+    )
+    full_name = emp['full_name'] if emp else code
+    emp_dept = emp['department'] if emp else ""
+
+    dept_entry = fetchone(
+        "SELECT name FROM departments WHERE LOWER(name) = LOWER(:emp_dept)",
+        {"emp_dept": emp_dept}
+    )
+    resolved_dept = dept_entry['name'] if dept_entry else emp_dept
+
+    return {
+        "user_code": code,
+        "user_role": user['role'],
+        "department": resolved_dept,
+        "full_name": full_name
+    }

@@ -738,6 +738,8 @@ def _download_gdrive(cfg, file_id):
     if not _GOOGLE_AVAILABLE:
         raise HTTPException(502, "Google libraries not installed")
 
+    file_id = file_id.split('/')[0]
+
     try:
         creds_dict = json.loads(cfg['password'])
         creds = service_account.Credentials.from_service_account_info(creds_dict)
@@ -955,10 +957,11 @@ def _get_file_bytes(cfg, file_path: str) -> bytes:
                 conn.retrieveFile(share, smb_p, buf)
                 conn.close()
         elif cfg['type'] == 'gdrive':
+            file_id = file_path.split('/')[0]
             creds_dict = json.loads(cfg['password'])
             creds = service_account.Credentials.from_service_account_info(creds_dict)
             svc = build('drive', 'v3', credentials=creds)
-            request = svc.files().get_media(fileId=file_path)
+            request = svc.files().get_media(fileId=file_id)
             from googleapiclient.http import MediaIoBaseDownload
             dl = MediaIoBaseDownload(buf, request)
             done = False
@@ -991,12 +994,13 @@ def _put_file_bytes(cfg, file_path: str, data: bytes):
                 conn.storeFile(share, smb_p, _io.BytesIO(data))
                 conn.close()
         elif cfg['type'] == 'gdrive':
+            file_id = file_path.split('/')[0]
             creds_dict = json.loads(cfg['password'])
             creds = service_account.Credentials.from_service_account_info(creds_dict)
             svc = build('drive', 'v3', credentials=creds)
             from googleapiclient.http import MediaIoBaseUpload
             media = MediaIoBaseUpload(_io.BytesIO(data), mimetype='application/octet-stream', resumable=True)
-            svc.files().update(fileId=file_path, media_body=media).execute()
+            svc.files().update(fileId=file_id, media_body=media).execute()
     except Exception as e:
         raise HTTPException(502, f"Failed to write file: {str(e)}")
 
