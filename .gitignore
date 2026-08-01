@@ -23,10 +23,6 @@ build/
 .vscode/
 .idea/
 *.code-workspace
-*.db
-*.db-shm
-*.db-wal
-db.sqlite3
 
 # ==========================================================
 # Environment
@@ -35,19 +31,6 @@ db.sqlite3
 .env.local
 .env.*
 !.env.example
-
-# ==========================================================
-# SQLite (Legacy - migrated to PostgreSQL)
-# ==========================================================
-*.db
-*.db-shm
-*.db-wal
-db.sqlite3
-
-# Giữ lại DB migration mẫu
-!backend/company.db
-!backend/data/
-!backend/data/*.db
 
 # ==========================================================
 # PostgreSQL Backup

@@ -35,8 +35,18 @@ export default function SalarySlip() {
   const pickerRef = useRef(null)
 
   const driverRef = useRef(null)
+  const tourTimerRef = useRef(null)
+  const monthClickCleanupRef = useRef(null)
 
   const destroyTour = useCallback(() => {
+    if (tourTimerRef.current) {
+      clearTimeout(tourTimerRef.current)
+      tourTimerRef.current = null
+    }
+    if (monthClickCleanupRef.current) {
+      try { monthClickCleanupRef.current() } catch (_) {}
+      monthClickCleanupRef.current = null
+    }
     if (driverRef.current) {
       try { driverRef.current.destroy() } catch (_) {}
       driverRef.current = null
@@ -44,38 +54,98 @@ export default function SalarySlip() {
   }, [])
 
   const startTour = useCallback(() => {
-    if (!document.querySelector('.salary-pwd-modal')) return
+    // 1. Dọn dẹp tour cũ nếu đang chạy
+    destroyTour()
 
+    const steps = [
+      // Bước 1: Phiếu lương (nếu Modal đang mở)
+      ...(document.querySelector('.salary-pwd-modal') ? [{
+        element: '.salary-pwd-modal',
+        popover: {
+          title: 'Phiếu lương',
+          description: 'Nhập mật khẩu được cung cấp để mở khóa phiếu lương.',
+          side: 'top',
+          showButtons: ['next', 'close'],
+          nextBtnText: '>>',
+        },
+      }] : []),
+
+      // Bước 2: Chọn tháng
+      ...(document.querySelector('.salary-month-selector') ? [{
+        element: '.salary-month-selector',
+        popover: {
+          title: 'Chọn tháng',
+          description: 'Chuyển tháng hoặc bấm vào đây để xem phiếu lương tháng khác.',
+          side: 'bottom',
+          showButtons: ['close'],
+        },
+      }] : [])
+    ]
+
+    if (steps.length === 0) return
+
+    // 2. Khởi tạo Driver với logic thoát đa tầng
     const d = driver({
       showProgress: false,
       animate: true,
-      allowClose: true,
-      stagePadding: 0,
-      stageRadius: 16,
-      popoverClass: 'tour-popover',
-      steps: [{
-        element: '.salary-pwd-modal',
-        popover: {
-          title: 'Nhập mật khẩu để xem Phiếu lương',
-          description: 'Vui lòng nhập mật khẩu được cung cấp để mở khóa và xem phiếu lương của bạn.',
-          side: 'top',
-          showButtons: ['close'],
-        },
-      }],
+      allowClose: true,         // Cho phép bấm ESC để thoát
+      stagePadding: 4,
+      stageRadius: 8,
+      popoverClass: 'tour-popover-custom',
+      steps: steps,
+
+      // LOGIC THOÁT 1: Click vào nền đen -> Tắt Tour
+      overlayClickBehavior: () => {
+        destroyTour()
+      },
+      // LOGIC THOÁT 2: Click nút Close/X -> Tắt Tour
+      onCloseClick: () => {
+        destroyTour()
+      },
+      // LOGIC THOÁT 3: Khi tour tắt -> Xóa sạch Ref
+      onDestroyStarted: () => {
+        destroyTour()
+      }
     })
 
     driverRef.current = d
     localStorage.setItem('has_seen_salary_tour', 'true')
     d.drive()
-  }, [])
+
+    // LOGIC THOÁT 4: Nếu user click thẳng vào ô Chọn Tháng -> Tắt Tour ngay lập tức để mở Dropdown chọn tháng
+    setTimeout(() => {
+      if (driverRef.current !== d) return
+      const monthEl = document.querySelector('.salary-month-selector')
+      if (monthEl) {
+        const handleMonthClick = () => {
+          monthEl.removeEventListener('click', handleMonthClick)
+          monthClickCleanupRef.current = null
+          destroyTour()
+        }
+        monthEl.addEventListener('click', handleMonthClick, { once: true })
+        monthClickCleanupRef.current = () => {
+          monthEl.removeEventListener('click', handleMonthClick)
+        }
+      }
+    }, 200)
+
+  }, [destroyTour])
+
+  // Dọn dẹp bắt buộc khi component unmount
+  useEffect(() => destroyTour, [destroyTour])
 
   useEffect(() => {
     if (isLoading) return
-    const hasSeen = localStorage.getItem('has_seen_salary_tour')
-    if (hasSeen) return
-    const timer = setTimeout(startTour, 600)
-    return () => clearTimeout(timer)
-  }, [startTour, isLoading])
+    if (localStorage.getItem('has_seen_salary_tour')) return
+
+    // Hủy tour/instance cũ (nếu có) trước khi tạo hiệu ứng mới
+    destroyTour()
+
+    tourTimerRef.current = setTimeout(startTour, 600)
+
+    // Dọn dẹp khi effect chạy lại hoặc unmount
+    return () => destroyTour()
+  }, [startTour, destroyTour, isLoading])
 
   useEffect(() => { fetchAvailableMonths() }, [])
 

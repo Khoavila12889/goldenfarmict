@@ -122,7 +122,7 @@ Uses `table-layout: auto` to let columns auto-size. Number cells with `.text-rig
 
 ## Database
 
-Two tables in `company.db`:
+PostgreSQL 16. Hai bảng chính trong schema `salary`:
 
 ### `salaries` — Full JSON context for HTML rendering
 
@@ -141,7 +141,6 @@ salary_slips (employee_code, month, basic_salary, allowances, bonus, deductions,
 ```bash
 # Backend
 cd backend
-python init_salary_table.py
 uvicorn main:app --reload --port 8000
 
 # Frontend
@@ -149,6 +148,8 @@ cd frontend
 npm run dev
 # → http://localhost:5173/salary-slip
 ```
+
+> Bảng `salary_slips` được tạo tự động khi backend khởi động (SQLAlchemy `create_all`).
 
 ## Dependencies
 

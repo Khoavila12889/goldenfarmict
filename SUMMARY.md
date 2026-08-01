@@ -17,7 +17,6 @@
 | `backend/app/core/database.py` | UPDATED | +30 | ✅ |
 | `backend/main.py` | UPDATED | +2 | ✅ |
 | `backend/requirements.txt` | UPDATED | +4 | ✅ |
-| `backend/init_salary_table.py` | NEW | 50 | ✅ |
 | `frontend/src/pages/SalarySlipAdmin.jsx` | UPDATED | +200 | ✅ |
 | `frontend/src/components/Layout.jsx` | UPDATED | +2 | ✅ |
 | `frontend/src/App.jsx` | UPDATED | +2 | ✅ |
@@ -108,7 +107,7 @@
 
 ```
 FastAPI
-├── SQLite Database (salary_slips table)
+├── PostgreSQL Database (salary_slips table)
 ├── PDF Storage (salary_pdfs/{year}/{month}/)
 ├── API Endpoints (10 total)
 │   ├── CRUD (5)
@@ -154,7 +153,7 @@ React 19 + Vite
 | **Storage** | Local `outputs/` folder | Database + `salary_pdfs/` |
 | **User Access** | ❌ Admin only | ✅ All users can view |
 | **Role Management** | ❌ No | ✅ Admin vs User |
-| **Database** | ❌ No | ✅ SQLite with indexes |
+| **Database** | ❌ No | ✅ PostgreSQL with indexes |
 | **CRUD** | ❌ Generate only | ✅ Full CRUD |
 | **Distribution** | Manual (download → email) | Self-service (users view online) |
 
@@ -204,9 +203,7 @@ React 19 + Vite
 ### Quick Start (3 commands)
 
 ```bash
-# 1. Database
-cd backend && python init_salary_table.py
-
+# 1. Database: PostgreSQL 16 (bảng tự tạo khi backend start)
 # 2. Backend
 pip install -r requirements.txt
 python -m uvicorn main:app --reload --port 8000

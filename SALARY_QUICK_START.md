@@ -1,21 +1,8 @@
 # 🚀 Hướng dẫn Nhanh - Module Phiếu Lương
 
-## Bước 1: Cài đặt Database
+## Bước 1: Database
 
-```bash
-cd backend
-python init_salary_table.py
-```
-
-**Output**:
-```
-📋 Initializing salary_slips table...
-✅ Table created
-✅ Indexes created
-✅ Verification: 0 salary slips in database
-✅ Created folder: E:\LICENSE\goldenfarm-ict-web\backend\salary_pdfs
-🎉 Migration completed successfully!
-```
+Bảng `salary_slips` được tạo tự động khi backend khởi động qua SQLAlchemy (`Base.metadata.create_all`). Yêu cầu **PostgreSQL 14+** (SQLite không còn hỗ trợ từ v2.0).
 
 ---
 
@@ -163,13 +150,9 @@ python -m uvicorn main:app --reload --port 8000
 
 ### ❌ "Table salary_slips not found"
 
-**Nguyên nhân**: Chưa chạy migration script
+**Nguyên nhân**: Database chưa khởi tạo schema
 
-**Giải pháp**:
-```bash
-cd backend
-python init_salary_table.py
-```
+**Giải pháp**: Khởi động lại backend — `Base.metadata.create_all()` tự tạo bảng khi startup.
 
 ---
 
@@ -202,10 +185,8 @@ goldenfarm-ict-web/
 │   │   │   └── salary_slips.py          # 🆕 API router
 │   │   └── core/
 │   │       └── database.py              # 📝 Updated
-│   ├── company.db                       # 📝 Updated (table mới)
 │   ├── salary_pdfs/                     # 🆕 PDF storage
 │   │   └── {year}/{month}/{code}.pdf
-│   ├── init_salary_table.py             # 🆕 Migration script
 │   └── main.py                          # 📝 Updated
 │
 └── frontend/

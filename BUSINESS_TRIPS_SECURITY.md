@@ -159,22 +159,7 @@ Response: 403 Forbidden
 
 ## 🔄 Migration
 
-Để áp dụng các thay đổi cho database hiện tại:
-
-```bash
-cd backend
-python migrate_business_trips.py
-```
-
-Output mong đợi:
-```
-🔧 Bắt đầu migration cho business_trips...
-✅ Đã tạo index: idx_bt_department
-✅ Đã tạo index: idx_bt_dept_dates
-✅ Migration hoàn tất!
-
-📊 Thống kê indexes cho business_trips:
-   • idx_bt_employee
+Database schema (bảng `business_trips` + indexes) được tạo tự động khi backend khởi động qua SQLAlchemy (`Base.metadata.create_all`). Không cần chạy script riêng.
    • idx_bt_dates
    • idx_bt_status
    • idx_bt_department

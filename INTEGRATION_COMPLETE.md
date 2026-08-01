@@ -145,8 +145,9 @@
 ```bash
 cd goldenfarm-ict-web/backend
 pip install -r requirements.txt
-python init_salary_table.py
 ```
+
+> Bảng `salary_slips` được tạo tự động khi backend khởi động (SQLAlchemy `create_all`). Yêu cầu PostgreSQL 14+.
 
 ### Bước 2: Start Backend
 
@@ -199,7 +200,6 @@ goldenfarm-ict-web/
 │   │       └── pdf_generator.py         # ✅ NEW (200 lines)
 │   │
 │   ├── salary_pdfs/                     # ✅ NEW (storage folder)
-│   ├── init_salary_table.py             # ✅ NEW (migration)
 │   └── requirements.txt                 # ✅ Updated
 │
 ├── frontend/src/
@@ -334,7 +334,7 @@ Nếu gặp vấn đề:
 
 3. **Common Errors**:
    - Module not found → Run `pip install -r requirements.txt`
-   - Table not found → Run `python init_salary_table.py`
+   - Table not found → Restart backend (auto-create via SQLAlchemy)
    - Column not found in Excel → Check Excel format
    - Template placeholder not replaced → Check DOCX syntax
 

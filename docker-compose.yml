@@ -38,8 +38,6 @@ services:
       # Backend code for hot-reload
       - ./backend/app:/app/app:rw
       - ./backend/main.py:/app/main.py:rw
-      # Giữ lại mount SQLite directory để chạy script migrate dữ liệu
-      - ./backend/data:/app/data:rw
       # Mount logs directory
       - ./backend/logs:/app/logs:rw
       - ./backend/uploads:/app/uploads:rw

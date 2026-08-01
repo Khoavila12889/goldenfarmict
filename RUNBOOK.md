@@ -47,16 +47,16 @@ Trước khi sửa code, kiểm tra:
 
 ## 3. Database
 
-### File
-`backend/company.db` (SQLite) — **Legacy**, migrate sang PostgreSQL 16
+### Kết nối
+PostgreSQL 16 — cấu hình qua `DATABASE_URL` trong `.env`:
+`postgresql://goldenfarm:your_strong_password@db:5432/goldenfarmict`
 
 ### Schema
-21 tables — xem `database.py` hoặc `SYSTEM_LOGIC.md` mục 8.1.
+21 tables — xem `app/models.py` hoặc `SYSTEM_LOGIC.md` mục 8.1.
 
 ### Migration
-- PostgreSQL đã được cấu hình trong `docker-compose.yml`
-- Database URL: `postgresql://goldenfarm:your_strong_password@db:5432/goldenfarmict`
-- SQLite support đã bị loại bỏ từ phiên bản 2.0
+- PostgreSQL được cấu hình trong `docker-compose.yml` (service `db`)
+- SQLite đã bị loại bỏ hoàn toàn từ phiên bản 2.0
 
 ---
 
@@ -113,16 +113,17 @@ Frontend `dist/` phải được serve bởi backend hoặc reverse proxy (CORS 
 
 ---
 
-## 7. Migration Prep (SQLite → PostgreSQL)
+## 7. Migration (đã hoàn tất sang PostgreSQL)
 
-### DB Layer (đã có)
+### DB Layer
 | File | Role |
 |------|------|
-| `app/core/session.py` | SQLAlchemy engine + SessionLocal — **PostgreSQL compatible** |
+| `app/core/session.py` | SQLAlchemy engine + SessionLocal — **PostgreSQL** |
 | `app/models.py` | ORM models 21 tables |
-| `app/core/db.py` | Abstraction layer (dùng SQLAlchemy, module mới dùng) |
-| `app/core/database.py` | Legacy init + `get_conn()` — PostgreSQL migration sẵn sàng |
+| `app/core/db.py` | Abstraction layer (dùng SQLAlchemy) |
+| `app/core/database.py` | Schema init + seed — PostgreSQL only |
 
-### Cách migrate sang PostgreSQL
-- PostgreSQL đã được cấu hình sẵn trong `docker-compose.yml`
-- Backend tự động dùng PostgreSQL khi `DATABASE_URL` được set
+### Lưu ý
+- PostgreSQL được cấu hình sẵn trong `docker-compose.yml`
+- Backend tự động dùng PostgreSQL qua `DATABASE_URL`
+- SQLite (`company.db`) đã xoá hoàn toàn khỏi codebase

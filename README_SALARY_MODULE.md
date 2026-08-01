@@ -38,7 +38,6 @@ goldenfarm-ict-web/
 │   ├── salary_pdfs/                     # 🆕 PDF storage
 │   │   └── {year}/{month}/{code}.pdf
 │   │
-│   ├── init_salary_table.py             # 🆕 Migration script
 │   └── main.py                          # 📝 Updated (include router)
 │
 └── frontend/
@@ -82,12 +81,9 @@ goldenfarm-ict-web/
 
 ## 🚀 Cài đặt
 
-### 1. Database Migration
+### 1. Database
 
-```bash
-cd backend
-python init_salary_table.py
-```
+Bảng `salary_slips` được tạo tự động khi backend khởi động qua SQLAlchemy (`Base.metadata.create_all`). Không cần script riêng.
 
 ### 2. Install Dependencies
 
@@ -390,6 +386,6 @@ sudo apt-get install libreoffice
 
 **Created**: December 2024  
 **Module**: Salary Slip Management System  
-**Framework**: FastAPI + React + SQLite  
+**Framework**: FastAPI + React + PostgreSQL  
 **Migrated from**: `web_simple` project  
 **Version**: 1.0.0

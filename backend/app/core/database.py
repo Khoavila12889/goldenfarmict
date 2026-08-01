@@ -2,7 +2,6 @@
 Database Initialization - PostgreSQL Only
 
 This module provides database initialization for PostgreSQL.
-SQLite support has been removed as of version 2.0.
 """
 import os
 import re
@@ -18,7 +17,7 @@ try:
 except Exception:
     pass
 
-# PostgreSQL mode only - no SQLite fallback
+# PostgreSQL mode only
 _DATABASE_URL = os.environ.get('DATABASE_URL', '')
 
 if not _DATABASE_URL:
@@ -36,9 +35,6 @@ def is_postgres():
 def init_db():
     """
     Initialize database schema using SQLAlchemy ORM.
-    
-    SQLite legacy support has been removed. This function now uses
-    SQLAlchemy Base.metadata.create_all() to create tables.
     """
     from sqlalchemy import text
     from .session import SessionLocal, Base, engine

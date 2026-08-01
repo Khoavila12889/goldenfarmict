@@ -464,5 +464,5 @@ SALARY_STORAGE_PATH = Path("/your/custom/path")
 
 **Created**: December 2024  
 **Module**: Salary Slip Management  
-**Framework**: FastAPI + React + SQLite  
+**Framework**: FastAPI + React + PostgreSQL  
 **Version**: 1.0.0

@@ -646,8 +646,7 @@ app/
 │   └── software.py              # Software categories + items + contract upload
 ├── utils/
 │   ├── ftp_utils.py             # FTP/SMB upload utility
-│   ├── pdf_generator.py         # Salary PDF generation from Excel+Docx template
-│   └── seed_demo_data.py        # Seed demo tickets, bookings, trips
+│   └── pdf_generator.py         # Salary PDF generation from Excel+Docx template
 uploads/
 └── contracts/                   # PDF hợp đồng phần mềm
 ```
@@ -798,14 +797,14 @@ DATABASE_URL=postgresql://user:password@host:port/database
 - `Base.metadata.create_all(bind=engine)` — SQLAlchemy ORM
 - Sequences tự động được quản lý bởi PostgreSQL
 
-### 9.4 Data Types Mapping
-| SQLite | PostgreSQL | Notes |
-|--------|------------|-------|
-| `INTEGER PRIMARY KEY` | `SERIAL` | Auto-increment |
-| `TEXT` | `TEXT` | Same |
-| `REAL` | `DOUBLE PRECISION` | Float numbers |
-| `BLOB` | `BYTEA` | Binary data |
-| `datetime('now')` | `CURRENT_TIMESTAMP` | Different syntax |
+### 9.4 PostgreSQL Data Types
+| PostgreSQL | Notes |
+|------------|-------|
+| `SERIAL` | Auto-increment |
+| `TEXT` | String |
+| `DOUBLE PRECISION` | Float numbers |
+| `BYTEA` | Binary data |
+| `CURRENT_TIMESTAMP` | Timestamp |
 
 ### 9.5 Date/Time Handling
 ```python

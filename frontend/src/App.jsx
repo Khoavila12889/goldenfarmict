@@ -16,6 +16,7 @@ import Profile from './pages/Profile'
 import Permissions from './pages/Permissions'
 import Todos from './pages/Todos'
 import HelpPage from './pages/HelpPage'
+import MonitorPage from './pages/MonitorPage'
 import Layout from './components/Layout'
 
 function ProtectedRoute({ children }) {
@@ -63,6 +64,7 @@ export default function App() {
         <Route path="documents" element={<Documents />} />
         <Route path="profile" element={<Profile />} />
         <Route path="permissions" element={<AdminRoute><Permissions /></AdminRoute>} />
+        <Route path="monitor" element={<AdminRoute><MonitorPage /></AdminRoute>} />
         <Route path="help" element={<HelpPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

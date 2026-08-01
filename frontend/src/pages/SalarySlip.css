@@ -81,24 +81,35 @@
   cursor: not-allowed; 
 }
 
+/* Container chứa icon và chữ */
 .salary-month-display {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--bk-text, #334155);
-  white-space: nowrap;
-  min-width: 110px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px; /* Khoảng cách giữa icon và chữ */
   background: transparent;
   border: none;
+  font-size: 16px; /* Kích thước chữ vừa phải */
+  color: #003366;
+  font-weight: 700;
   cursor: pointer;
-  border-radius: 4px;
-  padding: 0.35rem 0.5rem;
-  font-family: inherit;
-  transition: background 0.15s;
+  padding: 4px 8px;
 }
 
-.salary-month-display:hover { 
-  background: var(--bk-border, #e2e8f0); 
+/* Tinh chỉnh phần chữ (Ngày/Tháng) */
+.salary-month-display span {
+  line-height: 1; /* Ép line-height bằng 1 để chữ không bị đẩy lệch lên/xuống do khoảng trống mặc định của font */
+  margin: 0; /* Xóa các margin cũ nếu có */
+  transform: translateY(1px); /* Đẩy nhẹ chữ xuống 1 xíu để tâm của chữ thẳng hàng với tâm của icon (tùy font bạn đang dùng) */
+}
+
+/* Tinh chỉnh Icon Lịch */
+.salary-month-display svg {
+  width: 18px; /* Ép cứng kích thước icon cho đồng đều với chữ 16px */
+  height: 18px;
+  color: #111827; /* Màu đen/xám đậm */
+  stroke-width: 2px; /* Độ dày nét vẽ icon vừa phải, không bị quá thô */
+  display: block; /* Tránh icon bị dư khoảng trống thừa bên dưới */
 }
 
 .salary-month-hidden { 
@@ -540,6 +551,57 @@ svg[class*="driver-stage"] {
 
 .tour-popover .driver-popover-arrow {
   border-bottom-color: #ffffff !important;
+}
+
+/* Nút Next dạng icon ">>" */
+.tour-popover-custom .driver-popover-footer {
+  margin-top: 10px;
+}
+
+.tour-popover-custom .driver-popover-navigation-btns {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tour-popover-custom .driver-popover-next-btn {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #0f172a;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  transition: background 0.15s, transform 0.15s;
+}
+
+.tour-popover-custom .driver-popover-next-btn:hover {
+  background: #1e293b;
+  transform: scale(1.05);
+}
+
+.tour-popover-custom .driver-popover-next-btn.driver-popover-done-btn {
+  background: #16a34a;
+}
+
+/* Nút Close dạng icon "x" */
+.tour-popover-custom .driver-popover-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: #94a3b8;
+  font-size: 16px;
+}
+
+.tour-popover-custom .driver-popover-close-btn:hover {
+  color: #475569;
 }
 
 /* ─── Responsive ──────────────────────────────────────────── */
@@ -1317,7 +1379,7 @@ svg[class*="driver-stage"] {
 .salary-picker-popup {
   position: absolute;
   top: calc(100% + 8px); /* Cách mép dưới button 8px */
-  left: 65%;
+  left: 56%;
   transform: translateX(-50%);
   width: 200px;
   background: #fff;
@@ -1332,6 +1394,19 @@ svg[class*="driver-stage"] {
 @keyframes fadeInPopup {
   from { opacity: 0; transform: translate(-50%, -10px); }
   to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* Responsive: đưa popup chọn tháng gần nút chọn, căn giữa theo nút */
+@media (max-width: 768px) {
+  .salary-picker-popup {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 90vw;
+    max-width: 90vw;
+    animation: fadeInPopup 0.2s ease-out;
+  }
 }
 
 .salary-picker-header {

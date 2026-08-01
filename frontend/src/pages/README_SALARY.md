@@ -64,7 +64,7 @@ SalarySlipAdmin.jsx     → Admin generator (upload Excel + template)
 useSalarySlip.js        → Hook: fetch PDF blob, download, state mgmt
 ```
 
-### Database (SQLite - company.db)
+### Database (PostgreSQL)
 
 ```
 salary_slips

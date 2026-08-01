@@ -3,7 +3,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { 
   LayoutDashboard, Users, Monitor, Key, Ticket, CheckCircle, 
   Settings, Calendar, Receipt, Folder, Shield, Menu, X, User, 
-  Lock, Eye, EyeOff, CheckSquare, HelpCircle 
+  Lock, Eye, EyeOff, CheckSquare, HelpCircle, Activity 
 } from 'lucide-react'
 import { changePassword } from '../services/api'
 import { driver } from 'driver.js'
@@ -24,6 +24,7 @@ const iconMap = {
   salaryAdmin: Receipt,
   profile: User,
   permissions: Shield,
+  monitor: Activity,
   help: HelpCircle,
 }
 
@@ -41,6 +42,7 @@ const allNavItems = [
   { path: '/salary-slip', label: 'Phiếu lương', icon: 'salary', roles: ['user', 'head', 'admin'] },
   { path: '/salary-slip-admin', label: 'Quản lý lương', icon: 'salaryAdmin', roles: ['head', 'admin'] },
   { path: '/permissions', label: 'Phân quyền', icon: 'permissions', roles: ['admin'] },
+  { path: '/monitor', label: 'Giám sát', icon: 'monitor', roles: ['admin'] },
   { path: '/help', label: 'Trợ giúp', icon: 'help', roles: ['user', 'head', 'admin'] },
 ]
 
@@ -58,6 +60,7 @@ const MODULE_MAP = {
   '/salary-slip': 'salary',
   '/salary-slip-admin': 'salary-admin',
   '/permissions': 'permissions',
+  '/monitor': 'monitor',
   '/help': 'help',
 }
 
@@ -390,8 +393,8 @@ export default function Layout() {
         .menu-item.active { background: var(--bk-primary-dark); color: #fff; font-weight: 600; }
 
         .sidebar-footer {
-          padding: 1rem 1.25rem 0.65rem; border-top: 1px solid var(--bk-primary-light);
-          flex-shrink: 0;
+          padding: 0.75rem 1.25rem 0.5rem; margin-top: 0.5rem;
+          border-top: 1px solid var(--bk-primary-light);
         }
         .user-profile-box {
           display: flex; align-items: center; gap: 0.5rem;
@@ -548,13 +551,13 @@ export default function Layout() {
               </NavLink>
             )
           })}
-        </div>
-        <div className="sidebar-footer">
-          <div className="user-profile-box" onClick={handleOpenProfile} title="Xem thông tin hồ sơ">
-            <User size={16} className="profile-icon" />
-            <span className="user-name">{userName}</span>
+          <div className="sidebar-footer">
+            <div className="user-profile-box" onClick={handleOpenProfile} title="Xem thông tin hồ sơ">
+              <User size={16} className="profile-icon" />
+              <span className="user-name">{userName}</span>
+            </div>
+            <button className="logout-btn" onClick={handleLogout}>Đăng xuất</button>
           </div>
-          <button className="logout-btn" onClick={handleLogout}>Đăng xuất</button>
         </div>
       </aside>
 

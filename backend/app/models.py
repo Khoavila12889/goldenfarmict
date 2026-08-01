@@ -1,10 +1,10 @@
 """
 SQLAlchemy ORM Models — 21+ tables.
 
-Khi migrate sang PostgreSQL:
-  - Đổi `DATABASE_URL` trong `core/session.py`
+Project dùng PostgreSQL 16.
+  - `DATABASE_URL` cấu hình trong `core/session.py`
   - Các model này dùng type chuẩn (String, Integer, Float, Boolean)
-    nên tương thích cả SQLite và PostgreSQL.
+    tương thích PostgreSQL.
   - `server_default` dùng text() để không phụ thuộc dialect.
 """
 

@@ -162,15 +162,15 @@ Dự án cố tình **không sử dụng FK constraints** ở DB. Toàn bộ tí
 
 ---
 
-## 6. Data Types Mapping
+## 6. Data Types (PostgreSQL)
 
-| SQLite (cũ) | PostgreSQL | Notes |
-|-------------|------------|-------|
-| `INTEGER PRIMARY KEY` | `SERIAL` / `Integer autoincrement` | Auto-increment |
-| `TEXT` | `TEXT` / `String` | Same |
-| `REAL` | `DOUBLE PRECISION` / `Float` | Float |
-| `BLOB` | `BYTEA` | Binary data |
-| `datetime('now')` | `CURRENT_TIMESTAMP` | Khác cú pháp |
+| PostgreSQL | Notes |
+|------------|-------|
+| `SERIAL` / `Integer autoincrement` | Auto-increment |
+| `TEXT` / `String` | String |
+| `DOUBLE PRECISION` / `Float` | Float |
+| `BYTEA` | Binary data |
+| `CURRENT_TIMESTAMP` | Timestamp |
 
 ### Date/Time convention:
 - **Database**: lưu ISO string `YYYY-MM-DD` hoặc `YYYY-MM-DDTHH:MM:SS`
@@ -185,4 +185,4 @@ Dự án cố tình **không sử dụng FK constraints** ở DB. Toàn bộ tí
 wal_level = logical   # concurrent read/write
 ```
 
-> 💡 **SQLite support đã bị loại bỏ từ phiên bản 2.0.** Project yêu cầu **PostgreSQL 14+**.
+> 💡 **Project yêu cầu PostgreSQL 14+.** SQLite đã bị loại bỏ hoàn toàn từ phiên bản 2.0.

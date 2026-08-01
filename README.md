@@ -293,17 +293,15 @@ npm install
 File `.env` tại thư mục gốc:
 
 ```env
-# Local PC (Development): Dùng SQLite - giữ nguyên dòng dưới
-DATABASE_URL=sqlite:///backend/company.db
+# Local PC (Development): Dùng PostgreSQL
+DATABASE_URL=postgresql://goldenfarm:your_strong_password@localhost:5432/goldenfarmict
 
-# VPS/Docker (Production): Uncomment dòng dưới để dùng PostgreSQL
+# VPS/Docker (Production): Dùng service `db` trong docker-compose
 # DATABASE_URL=postgresql://goldenfarm:your_strong_password@db:5432/goldenfarmict
 ```
 
-- **Local development**: Hệ thống tự động dùng SQLite với file `backend/company.db`
-- **Docker deployment**: Uncomment `DATABASE_URL` trong `.env` để dùng PostgreSQL
-
-> 💡 Khi chạy backend local, SQLite tự động tạo file `company.db` nếu chưa tồn tại.
+- **Local development**: Chạy PostgreSQL local rồi cấu hình `DATABASE_URL` trong `.env`
+- **Docker deployment**: Không cần đổi gì — docker-compose tự gắn `DATABASE_URL` vào container backend
 
 ## Usage
 
@@ -332,7 +330,7 @@ docker compose up -d --build
 - Frontend: `http://<VPS_IP>:8088`
 - Backend API: `http://<VPS_IP>:8000`
 
-> Đảm bảo đã **bỏ comment** dòng `DATABASE_URL` trong `.env` trước khi build Docker.
+> Hệ thống sử dụng **PostgreSQL 16** duy nhất (service `db` trong docker-compose). Không còn hỗ trợ SQLite.
 
 ## Hybrid Authentication (Argon2id + SHA-256)
 
@@ -345,20 +343,7 @@ Hệ thống hỗ trợ **đa thuật toán mã hóa** để tương thích vớ
 
 ### Import Users từ Nextcloud
 
-Script migration: `backend/app/utils/import_oc_users.py`
-
-```bash
-cd backend
-python -m app.utils.import_oc_users
-# hoặc chỉ định file CSV khác:
-python -m app.utils.import_oc_users --csv /path/to/oc_users.csv
-```
-
-Chức năng:
-- Đọc CSV → upsert `employees` (employee_code, full_name, department)
-- Lưu nguyên hash argon2id vào `users.password_hash`
-- Tự động gán role (`admin` nếu department = "Admin", `head` nếu là trưởng phòng, còn lại `user`)
-- User import có thể đăng nhập bằng **mật khẩu Nextcloud cũ** ngay lập tức
+Để import user từ file `oc_users.csv` (Nextcloud export), dùng lệnh SQL trực tiếp lên PostgreSQL, hoặc liên hệ admin IT để xử lý bằng script thủ công.
 
 ## Tài khoản mặc định
 
@@ -367,17 +352,7 @@ Chức năng:
 | `admin` | admin | `admin` |
 | `administrator` | admin | `administrator` |
 
-Database `company.db` đã bao gồm 355 user thật từ Nextcloud (`oc_users.csv`). Để seed lại:
-```bash
-cd backend
-python -c "from app.core.auth import seed_users; from app.core.database import get_conn; conn=get_conn(); seed_users(conn); conn.close()"
-```
-
-Seed demo todos (dùng user thật, idempotent):
-```bash
-cd backend
-python -m app.utils.seed_todos_demo
-```
+Hệ thống đã bao gồm 355 user thật từ Nextcloud (`oc_users.csv`). Tài khoản mặc định được seed tự động khi backend khởi động.
 
 ## Project Structure
 
@@ -407,12 +382,9 @@ goldenfarm-ict-web/
 │   │   │   ├── salary_slips.py    # Admin salary CRUD + Excel + PDF (single/batch)
 │   │   │   └── salary_user.py     # Employee salary view + PDF download
 │   │   ├── utils/
-│   │   │   ├── import_oc_users.py  # Migration: import users từ Nextcloud CSV
 │   │   │   ├── pdf_generator.py    # Salary slip PDF generation
-│   │   │   ├── ftp_utils.py        # FTP/SMB upload utility
-│   │   │   └── seed_demo_data.py   # Seed dữ liệu mẫu
+│   │   │   └── ftp_utils.py        # FTP/SMB upload utility
 │   ├── main.py                    # FastAPI entry point + SSE endpoint
-│   ├── company.db                 # SQLite database
 │   ├── requirements.txt
 │   └── run.bat
 ├── frontend/
@@ -662,7 +634,7 @@ goldenfarm-ict-web/
 
 ## Database
 
-**File**: `backend/company.db` (SQLite) — WAL mode, busy_timeout 5000ms
+**Database**: PostgreSQL 16 — kết nối qua `DATABASE_URL` (mặc định service `db` trong docker-compose)
 
 ### Tables
 
@@ -829,7 +801,7 @@ Effective Permission = Role_Perm || Department_Perm || Individual_Override_Perm
 
 - **Backend logs**: Xem terminal chạy uvicorn
 - **Frontend build**: `npm run build` → output `frontend/dist/`
-- **DB reset**: Xoá `backend/company.db` → tự động seed lại khi chạy backend
+- **DB reset**: Xoá volume `postgres-data` của docker-compose → backend tự seed lại khi khởi động
 - **Realtime**: SSE qua `/api/events`, tự động update tickets, bookings, equipment, approvals
 - **SSE filterRef**: Dùng `useRef` tránh reconnect khi filter thay đổi
 - **Booking status update**: Cập nhật mỗi 30s qua `useCurrentTime` hook (vạch đỏ + trạng thái)
