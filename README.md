@@ -108,8 +108,9 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 
 - **Admin — 3 Tab UI** (`SalarySlipAdmin.jsx`):
   1. **Nhân viên (Employees)**: Search typeahead (tìm theo mã/tên NV) → chọn kết quả → form chỉnh sửa. Chỉ hiển thị NV đã có phiếu lương trong tháng đang chọn. Các field chia theo section: Thông tin NV, Mức lương & Công, Thu nhập (A), Khấu trừ (B) & Thực nhận, Theo dõi phép năm & Giờ tích lũy, Ghi chú. Nút Lưu (save JSON), Xuất PDF (có password), Xóa.
-  2. **Import Excel**: Giao diện 3 bước — (1) chọn tháng import bằng **bộ chọn tháng** (nút ◀ ▶ + click để mở lịch, giới hạn không vượt quá tháng hiện tại), (2) chọn file .xlsx/.xls, (3) nút Import (ghi rõ tháng). Tự động parse cột lương/thuế/phép → lưu JSON vào `salaries` → tạo user + employee record nếu chưa có. Hỗ trợ ghi đè nếu tháng đã tồn tại (có cảnh báo).
+  2. **Import Excel**: Giao diện 3 bước — (1) chọn tháng import bằng **bộ chọn tháng** (nút ◀ ▶ + Custom Month Picker popup lưới T1–T12), (2) chọn file .xlsx/.xls, (3) nút Import (ghi rõ tháng). Tự động parse cột lương/thuế/phép → lưu JSON vào `salaries` → tạo user + employee record nếu chưa có. Hỗ trợ ghi đè nếu tháng đã tồn tại (có cảnh báo).
   3. **Lịch sử (History)**: Danh sách các lần upload Excel (tháng, filename, số NV, người upload, thời gian).
+- **Quy tắc chốt lương (Import month cap)**: Lương tháng trước được trả vào ngày 5 tháng sau (VD: 5/9 trả lương tháng 8) → **không thể import tháng hiện tại**, tháng tối đa chọn được luôn là **tháng trước tháng hiện tại** (khóa trong lịch, có ghi chú hướng dẫn dưới bộ chọn tháng).
 - **Admin — Xuất PDF**: Xuất PDF có mật khẩu (template `luong.docx` → LibreOffice headless, fallback `docx2pdf` trên Windows) cho từng NV hoặc batch toàn bộ phòng ban → file ZIP
 - **Employee — Xem phiếu lương**: Chọn tháng, nhập mật khẩu (nếu có) → xem JSON render dạng HTML (.pdf-a4-portrait)
 - **Employee — Tải PDF**: Tải phiếu lương PDF có mật khẩu

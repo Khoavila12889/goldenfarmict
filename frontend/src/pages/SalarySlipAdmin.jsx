@@ -107,7 +107,10 @@ export default function SalarySlipAdmin() {
   const apiBase = '/api/salary-slips/admin'
 
   const now = new Date()
-  const capMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  // Ngày 5 tháng sau mới trả lương tháng trước (VD: 5/9 trả lương tháng 8)
+  // => Không thể import tháng hiện tại, tháng tối đa = tháng trước
+  const capNow = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const capMonth = `${capNow.getFullYear()}-${String(capNow.getMonth() + 1).padStart(2, '0')}`
   const prevDisabled = selectedMonth <= '2020-01'
   const nextDisabled = selectedMonth >= capMonth
 
@@ -659,7 +662,7 @@ export default function SalarySlipAdmin() {
                       <button
                         className="salary-picker-nav"
                         onClick={() => setPickerYear(y => y + 1)}
-                        disabled={pickerYear >= now.getFullYear()}
+                        disabled={pickerYear >= parseInt(capMonth.split('-')[0], 10)}
                       >
                         <ChevronRight size={16} />
                       </button>
@@ -821,9 +824,16 @@ export default function SalarySlipAdmin() {
                   </div>
                 ))}
               </div>
-            )}
-          </div>
-        </div>
+                )}
+              </div>
+              <div className="import-month-hint">
+                <AlertCircle size={14} />
+                <span>
+                  Chỉ import được tối đa tháng <strong>{parseMonthLabel(capMonth)}</strong>
+                  (tháng hiện tại {parseMonthLabel(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)} chưa chốt lương).
+                </span>
+              </div>
+            </div>
       )}
     </div>
   )

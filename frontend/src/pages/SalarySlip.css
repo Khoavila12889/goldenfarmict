@@ -1381,12 +1381,12 @@ svg[class*="driver-stage"] {
   top: calc(100% + 8px); /* Cách mép dưới button 8px */
   left: 56%;
   transform: translateX(-50%);
-  width: 200px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.05);
-  border: 1px solid var(--bk-border, #e2e8f0);
-  padding: 0.5em;
+  width: 230px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(2, 71, 41, 0.15), 0 4px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e2e8f0;
+  padding: 0.9em 1em 1em;
   z-index: 9999;
   animation: fadeInPopup 0.2s ease-out;
 }
@@ -1413,34 +1413,36 @@ svg[class*="driver-stage"] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 1rem;
-  padding-bottom: 0.75rem;
+  margin-bottom: 0.85rem;
+  padding-bottom: 0.7rem;
   border-bottom: 1px solid var(--bk-surface-hover, #f1f5f9);
 }
 
 .salary-picker-year {
   font-weight: 700;
-  font-size: 1rem;
-  color: var(--bk-text, #0f172a);
+  font-size: 1.05rem;
+  letter-spacing: 0.3px;
+  color: #024729;
 }
 
 .salary-picker-nav {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: var(--bk-surface-alt, #f8fafc);
-  border-radius: 6px;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 8px;
   cursor: pointer;
-  color: var(--bk-text-secondary, #475569);
+  color: #475569;
   transition: all 0.15s;
 }
 
 .salary-picker-nav:hover:not(:disabled) {
-  background: var(--bk-border, #e2e8f0);
-  color: var(--bk-text, #0f172a);
+  background: #eef7f1;
+  border-color: #9fd4b8;
+  color: #045d33;
 }
 
 .salary-picker-nav:disabled {
@@ -1455,32 +1457,36 @@ svg[class*="driver-stage"] {
 }
 
 .salary-picker-cell {
-  padding: 0.5rem;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: transparent;
+  padding: 0.55rem 0.4rem;
+  border: 1px solid #e9eef4;
+  border-radius: 9px;
+  background: #fbfcfe;
   font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--bk-text, #334155);
+  font-weight: 600;
+  color: #334155;
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .salary-picker-cell:hover:not(:disabled):not(.active) {
-  background: var(--bk-surface-hover, #f1f5f9);
-  color: var(--bk-text, #0f172a);
+  background: #eef7f1;
+  border-color: #9fd4b8;
+  color: #045d33;
+  transform: translateY(-1px);
 }
 
 .salary-picker-cell.active {
-  background: var(--bk-primary, #00468C); 
+  background: linear-gradient(135deg, #045d33, #0a7a45);
   color: #ffffff;
-  box-shadow: 0 4px 10px rgba(0, 70, 140, 0.2);
+  border-color: #045d33;
+  box-shadow: 0 4px 10px rgba(4, 93, 51, 0.28);
 }
 
 .salary-picker-cell:disabled {
   opacity: 0.3;
   cursor: not-allowed;
   text-decoration: line-through;
+  background: transparent;
 }
 
 /* ========================================================= */
@@ -1535,4 +1541,24 @@ svg[class*="driver-stage"] {
 
 .import-submit-btn:hover:not(:disabled) {
   background-color: #024729 !important;
+}
+
+.import-month-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.import-month-hint svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #f59e0b;
+}
+
+.import-month-hint strong {
+  color: #475569;
 }
