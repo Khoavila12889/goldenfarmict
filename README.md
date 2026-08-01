@@ -108,7 +108,7 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 
 - **Admin — 3 Tab UI** (`SalarySlipAdmin.jsx`):
   1. **Nhân viên (Employees)**: Search typeahead (tìm theo mã/tên NV) → chọn kết quả → form chỉnh sửa. Chỉ hiển thị NV đã có phiếu lương trong tháng đang chọn. Các field chia theo section: Thông tin NV, Mức lương & Công, Thu nhập (A), Khấu trừ (B) & Thực nhận, Theo dõi phép năm & Giờ tích lũy, Ghi chú. Nút Lưu (save JSON), Xuất PDF (có password), Xóa.
-  2. **Import Excel**: Tải file mẫu → chọn file .xlsx/.xls → tự động parse cột lương/thuế/phép → lưu JSON vào `salaries` → tạo user + employee record nếu chưa có. Hỗ trợ ghi đè nếu tháng đã tồn tại.
+  2. **Import Excel**: Giao diện 3 bước — (1) chọn tháng import bằng **bộ chọn tháng** (nút ◀ ▶ + click để mở lịch, giới hạn không vượt quá tháng hiện tại), (2) chọn file .xlsx/.xls, (3) nút Import (ghi rõ tháng). Tự động parse cột lương/thuế/phép → lưu JSON vào `salaries` → tạo user + employee record nếu chưa có. Hỗ trợ ghi đè nếu tháng đã tồn tại (có cảnh báo).
   3. **Lịch sử (History)**: Danh sách các lần upload Excel (tháng, filename, số NV, người upload, thời gian).
 - **Admin — Xuất PDF**: Xuất PDF có mật khẩu (template `luong.docx` → LibreOffice headless, fallback `docx2pdf` trên Windows) cho từng NV hoặc batch toàn bộ phòng ban → file ZIP
 - **Employee — Xem phiếu lương**: Chọn tháng, nhập mật khẩu (nếu có) → xem JSON render dạng HTML (.pdf-a4-portrait)
@@ -156,8 +156,10 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 - **Kanban Board 4 cột**: Cần làm, Đang xử lý, Chờ duyệt, Đã hoàn thành với hiệu ứng Glassmorphism hiện đại.
 - **Phạm vi phân quyền (Scope)**: Switch giữa cá nhân (Personal Todos) và phòng ban (Department Shared Todos).
 - **Phân công & Giao việc**: Phân công người chịu trách nhiệm, người tạo, hạn chót (Due Date), tags/nhãn và độ ưu tiên (Low, Medium, High, Urgent 🚨).
+- **Hạn hoàn thành (Due Date)**: Chọn ngày bằng **calendar picker** (`type="date"`, không nhập tay, không cần giờ). Không thể đặt hạn **trước ngày hiện tại** — hiện cảnh báo ⚠️ và chặn lưu.
 - **Subtask Checklist & Progress Bar**: Tạo các việc con (subtasks), đánh dấu hoàn thành trực quan với thanh phần trăm tiến độ (Progress %).
 - **Cảnh báo quá hạn (Overdue Alert)**: Đánh dấu đỏ các công việc trễ hạn cần ưu tiên xử lý.
+- **Quyền User**: Được tạo, chỉnh sửa, chuyển trạng thái công việc do mình tạo/được giao, và **xóa công việc do chính mình tạo** (frontend + backend enforce).
 - **Realtime SSE Sync**: Tự động cập nhật Kanban realtime giữa các thành viên cùng phòng ban khi có thay đổi.
 
 

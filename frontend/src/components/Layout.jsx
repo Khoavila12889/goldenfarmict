@@ -411,7 +411,7 @@ export default function Layout() {
           border: 1px solid var(--bk-on-primary-muted); color: var(--bk-on-primary);
           border-radius: 20px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s;
         }
-        .logout-btn:hover { background: rgba(220,38,38,0.2); border-color: rgba(220,38,38,0.4); }
+        .logout-btn:hover { background: var(--bk-primary-light); color: var(--bk-on-primary); border-color: var(--bk-primary-light); }
 
         .main-content { 
           flex: 1; 

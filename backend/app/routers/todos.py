@@ -225,6 +225,7 @@ def create_todo(
             assignee_code, assignee_name, status, priority, due_date, tags
         ) VALUES (:title, :description, :scope, :department, :creator_code, :creator_name,
                   :assignee_code, :assignee_name, 'todo', :priority, :due_date, :tags)
+        RETURNING id
     """, {
         "title": data.title,
         "description": data.description or "",
@@ -432,7 +433,8 @@ def delete_todo(
             if todo['department'] and todo['department'] != u_dept:
                 raise HTTPException(403, "Trưởng phòng chỉ có thể xóa công việc trong phòng ban của mình")
     else:
-        raise HTTPException(403, "Bạn không có quyền xóa công việc")
+        if todo['creator_code'] != u_code:
+            raise HTTPException(403, "Bạn chỉ có thể xóa công việc do chính mình tạo")
 
     execute("DELETE FROM todo_subtasks WHERE todo_id = :todo_id", {"todo_id": todo_id})
     execute("DELETE FROM todos WHERE id = :todo_id", {"todo_id": todo_id})

@@ -16,7 +16,7 @@ Phân hệ **Quản lý Công việc & Todos** cho phép người dùng tạo, t
 | Tạo mới | Cá nhân (chỉ giao cho chính mình) |
 | Chỉnh sửa | Công việc mình tạo hoặc được giao |
 | Chuyển trạng thái | Công việc mình tạo hoặc được giao |
-| Xóa | **Không được phép** |
+| Xóa | Công việc do **chính mình tạo** |
 | Hủy công việc | **Không được phép** (chỉ admin/head) |
 
 ### 2. Trưởng phòng (Head)
@@ -51,8 +51,9 @@ Phân hệ **Quản lý Công việc & Todos** cho phép người dùng tạo, t
 2. Hệ thống kiểm tra quyền: User chỉ tạo personal; Head tạo personal + department (chỉ giao cho nv trong phòng); Admin không giới hạn.
 3. Nhập các trường bắt buộc: *Tên công việc*, *Phạm vi*, *Độ ưu tiên*.
 4. Nhập các trường tùy chọn: *Mô tả*, *Người thực hiện*, *Hạn hoàn thành*, *Tags*, *Subtask checklist*.
-5. Gửi POST `/api/todos` → backend validate session + quyền → INSERT vào `todos` + `todo_subtasks` → publish SSE event `todo_created`.
-6. Frontend nhận SSE → tự động refetch danh sách → Kanban cập nhật realtime.
+5. **Hạn hoàn thành (due_date):** Chọn bằng input `type="date"` (calendar native — click vào ô là hiện lịch, không cần nhập tay, không nhập giờ). Frontend validate ngay khi chọn: nếu ngày chọn **trước ngày hiện tại** → hiện lỗi ⚠️ *"Đã hết giờ, không thể đặt hạn trước ngày hiện tại!"*, làm đỏ viền input và **chặn không cho lưu** (validate lại trong `handleSaveTodo`). Dữ liệu lưu dạng chuỗi `YYYY-MM-DD`.
+6. Gửi POST `/api/todos` → backend validate session + quyền → INSERT vào `todos` + `todo_subtasks` → publish SSE event `todo_created`.
+7. Frontend nhận SSE → tự động refetch danh sách → Kanban cập nhật realtime.
 
 ### 2. Chuyển trạng thái trên Kanban
 
@@ -84,7 +85,7 @@ Ngoài ra, Admin/Head có thể chuyển về **Hủy (cancelled)** bất kỳ l
 
 1. Nhấn icon 🗑️ trên thẻ → confirm dialog.
 2. Frontend kiểm tra `canDeleteTodo(todo)`:
-   - User: **không có quyền xóa**.
+   - User: **được xóa công việc do chính mình tạo**.
    - Head: được xóa công việc phòng ban mình quản lý + công việc cá nhân do mình tạo.
    - Admin: xóa mọi công việc.
 3. Gửi DELETE `/api/todos/{id}` → backend validate → DELETE `todo_subtasks` + DELETE `todos` → publish SSE `todo_deleted`.
@@ -135,7 +136,7 @@ Ngoài ra, Admin/Head có thể chuyển về **Hủy (cancelled)** bất kỳ l
 
 ### Quy tắc xóa
 
-- User thường **không thể xóa** bất kỳ công việc nào.
+- User thường **chỉ xóa được công việc do chính mình tạo** (dù được giao công việc của người khác cũng không xóa được).
 - Head không thể xóa công việc cá nhân của người khác nếu không thuộc phòng ban mình.
 - Khi xóa, subtask liên quan cũng bị xóa theo (CASCADE qua application code).
 

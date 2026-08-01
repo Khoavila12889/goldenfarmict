@@ -35,6 +35,7 @@ export default function Todos() {
   const [formAssigneeCode, setFormAssigneeCode] = useState('')
   const [formPriority, setFormPriority] = useState('medium')
   const [formDueDate, setFormDueDate] = useState('')
+  const [dueDateError, setDueDateError] = useState('')
   const [formTags, setFormTags] = useState('')
   const [formSubtasks, setFormSubtasks] = useState([])
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('')
@@ -60,7 +61,7 @@ export default function Todos() {
       if (todo.scope === 'personal' && String(todo.creator_code) === userCode) return true
       return false
     }
-    return false
+    return String(todo.creator_code) === userCode
   }
 
   const canChangeStatus = (todo) => {
@@ -173,6 +174,7 @@ export default function Todos() {
     setFormAssigneeCode(userCode)
     setFormPriority('medium')
     setFormDueDate('')
+    setDueDateError('')
     setFormTags('')
     setFormSubtasks([])
     setShowModal(true)
@@ -187,6 +189,7 @@ export default function Todos() {
     setFormAssigneeCode(todo.assignee_code ? String(todo.assignee_code) : '')
     setFormPriority(todo.priority)
     setFormDueDate(todo.due_date || '')
+    setDueDateError('')
     setFormTags(todo.tags || '')
     setFormSubtasks(todo.subtasks ? todo.subtasks.map(s => ({ ...s })) : [])
     setShowModal(true)
@@ -208,9 +211,26 @@ export default function Todos() {
     setFormSubtasks(formSubtasks.filter((_, i) => i !== index))
   }
 
+  const validateDueDate = (dtStr) => {
+    if (!dtStr || !/^\d{4}-\d{2}-\d{2}$/.test(dtStr)) return ''
+    const today = new Date().toISOString().split('T')[0]
+    return dtStr < today ? 'Đã hết giờ, không thể đặt hạn trước ngày hiện tại!' : ''
+  }
+
+  const handleDueDateChange = (raw) => {
+    setFormDueDate(raw)
+    setDueDateError(validateDueDate(raw))
+  }
+
   const handleSaveTodo = async (e) => {
     e.preventDefault()
     if (!formTitle.trim()) return
+
+    const dueErr = validateDueDate(formDueDate)
+    if (dueErr) {
+      setDueDateError(dueErr)
+      return
+    }
 
     const selectedEmp = employees.find(e => String(e.employee_code) === String(formAssigneeCode))
     const payload = {
@@ -609,20 +629,14 @@ export default function Todos() {
                   <div className="form-group">
                     <label>Hạn hoàn thành (Due Date)</label>
                     <input
-                      type="text"
-                      className="form-control"
-                      placeholder="DD/MM/YYYY"
-                      value={formDueDate ? formatDate(formDueDate) : ''}
-                      onChange={(e) => {
-                        const val = e.target.value
-                        const parts = val.split('/')
-                        if (parts.length === 3 && parts[0].length >= 1 && parts[1].length >= 1 && parts[2].length === 4) {
-                          setFormDueDate(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`)
-                        } else {
-                          setFormDueDate(val)
-                        }
-                      }}
+                      type="date"
+                      className={`form-control${dueDateError ? ' is-error' : ''}`}
+                      value={formDueDate || ''}
+                      onChange={(e) => handleDueDateChange(e.target.value)}
                     />
+                    {dueDateError && (
+                      <div className="due-date-error">⚠️ {dueDateError}</div>
+                    )}
                   </div>
 
                   <div className="form-group">

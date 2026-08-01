@@ -589,34 +589,79 @@ export default function SalarySlipAdmin() {
       { /* ─── Tab: Upload Excel ─── */ }
       {activeTab === 'upload' && (
         <div className="sa-upload-tab">
-          <div className="bk-card" style={{ padding: '1.25rem', maxWidth: 600 }}>
-            <div className="bk-form-group" style={{ marginBottom: '1rem' }}>
-              <button className="bk-btn" style={{ width: '100%', height: '36px' }} onClick={handleDownloadTemplate}>
-                <Download size={16} /> Tải file mẫu Excel
-              </button>
-            </div>
-            <div className="bk-form-group">
-              <label className="bk-form-label">
-                File Excel dữ liệu lương — tháng {parseMonthLabel(selectedMonth)}
+          <div className="bk-card" style={{ padding: '1.5rem', maxWidth: 550, margin: '0 auto' }}>
+
+            {/* Bước 1: Chọn tháng dữ liệu cần Import */}
+            <div className="bk-form-group" style={{ marginBottom: '1.25rem' }}>
+              <label className="bk-form-label" style={{ fontWeight: 600, display: 'block', marginBottom: '0.5rem', color: '#1e293b' }}>
+                1. Chọn tháng cần import dữ liệu lương:
               </label>
-              <div className={`salary-file-zone ${file ? 'uploaded' : ''}`}
-                onClick={() => document.getElementById('salary-excel-input').click()}>
-                <input id="salary-excel-input" type="file" accept=".xlsx,.xls"
+              <div className="salary-month-selector import-month-selector">
+                <button className="salary-month-nav-btn" onClick={() => navigate(-1)} disabled={prevDisabled} title="Tháng trước">
+                  <ChevronLeft size={18} />
+                </button>
+                <button className="salary-month-display import-month-btn" onClick={openMonthPicker} title="Click để chọn tháng">
+                  <Calendar size={18} style={{ color: '#045d33' }} />
+                  <span>Tháng {parseMonthLabel(selectedMonth)}</span>
+                </button>
+                <input 
+                  ref={monthInputRef} 
+                  type="month" 
+                  className="salary-month-hidden"
+                  value={selectedMonth} 
+                  max={capMonth} 
+                  onChange={handleMonthChange} 
+                />
+                <button className="salary-month-nav-btn" onClick={() => navigate(1)} disabled={nextDisabled} title="Tháng sau">
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Bước 2: Upload file Excel */}
+            <div className="bk-form-group" style={{ marginBottom: '1.25rem' }}>
+              <label className="bk-form-label" style={{ fontWeight: 600, display: 'block', marginBottom: '0.5rem', color: '#1e293b' }}>
+                2. Chọn file Excel bảng lương (Tháng {parseMonthLabel(selectedMonth)}):
+              </label>
+              <div 
+                className={`salary-file-zone ${file ? 'uploaded' : ''}`}
+                onClick={() => document.getElementById('salary-excel-input').click()}
+              >
+                <input 
+                  id="salary-excel-input" 
+                  type="file" 
+                  accept=".xlsx,.xls"
                   style={{ display: 'none' }}
-                  onChange={(e) => { setFile(e.target.files[0]); setUploadResult(null); setUploadError(null) }} />
+                  onChange={(e) => { setFile(e.target.files[0]); setUploadResult(null); setUploadError(null) }} 
+                />
                 {file ? (
-                  <><Check size={20} /><span className="salary-file-text uploaded">{file.name}</span></>
+                  <>
+                    <Check size={20} style={{ color: '#045d33' }} />
+                    <span className="salary-file-text uploaded">{file.name}</span>
+                  </>
                 ) : (
-                  <><Upload size={20} /><span className="salary-file-text">Chọn file Excel (.xlsx, .xls)</span></>
+                  <>
+                    <Upload size={20} style={{ color: '#64748b' }} />
+                    <span className="salary-file-text">Bấm vào đây để chọn file Excel (.xlsx, .xls)</span>
+                  </>
                 )}
               </div>
             </div>
 
-            <button className="bk-btn bk-btn-primary" style={{ width: '100%', marginTop: '0.5rem', height: '36px' }}
-              disabled={!file || uploading} onClick={handleUpload}>
-              {uploading ? <><Loader size={16} className="spin" /> Đang xử lý...</> : <><Upload size={16} /> Import Phiếu Lương</>}
+            {/* Bước 3: Nút bấm Import */}
+            <button 
+              className="bk-btn bk-btn-primary import-submit-btn" 
+              disabled={!file || uploading} 
+              onClick={() => handleUpload(false)}
+            >
+              {uploading ? (
+                <><Loader size={18} className="spin" /> Đang xử lý dữ liệu...</>
+              ) : (
+                <><Upload size={18} /> Import Phiếu Lương Tháng {parseMonthLabel(selectedMonth)}</>
+              )}
             </button>
 
+            {/* Tiến trình Upload */}
             {uploading && (
               <div className="salary-progress-wrap visible" style={{ marginTop: '0.75rem' }}>
                 <div className="salary-progress-bar-bg">
@@ -626,6 +671,7 @@ export default function SalarySlipAdmin() {
               </div>
             )}
 
+            {/* Cảnh báo ghi đè tháng đã có dữ liệu */}
             {pendingMonth && (
               <div className="salary-status warning" style={{ marginTop: '0.75rem' }}>
                 <p className="salary-status-title">
@@ -633,8 +679,7 @@ export default function SalarySlipAdmin() {
                   Tháng đã có dữ liệu
                 </p>
                 <p className="salary-status-desc">
-                  Tháng <strong>{pendingMonth.month}</strong> đã có <strong>{pendingMonth.existing_count}</strong> bản ghi.
-                  Bạn có muốn ghi đè không?
+                  Tháng <strong>{pendingMonth.month}</strong> đã có <strong>{pendingMonth.existing_count}</strong> bản ghi. Bạn có muốn ghi đè không?
                 </p>
                 <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
                   <button className="bk-btn bk-btn-primary" onClick={confirmOverwrite}><Upload size={16} /> Ghi đè</button>
@@ -643,6 +688,7 @@ export default function SalarySlipAdmin() {
               </div>
             )}
 
+            {/* Kết quả thành công */}
             {uploadResult && (
               <div className="salary-status success" style={{ marginTop: '0.75rem' }}>
                 <p className="salary-status-title">
@@ -652,23 +698,13 @@ export default function SalarySlipAdmin() {
                 <p className="salary-status-desc">
                   Tháng: <strong>{uploadResult.month}</strong> — Đã nhập: <strong>{uploadResult.imported}</strong> nhân viên
                 </p>
-                {uploadResult.errors?.length > 0 && (
-                  <details style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>
-                    <summary style={{ cursor: 'pointer', color: 'var(--bk-warning)' }}>
-                      <AlertCircle size={14} style={{ verticalAlign: 'middle', marginRight: '0.25rem' }} />
-                      {uploadResult.errors.length} lỗi
-                    </summary>
-                    <ul style={{ margin: '0.35rem 0 0 1.25rem', color: 'var(--bk-danger)' }}>
-                      {uploadResult.errors.map((e, i) => <li key={i}>{e}</li>)}
-                    </ul>
-                  </details>
-                )}
                 <button className="bk-btn" style={{ marginTop: '0.75rem' }} onClick={resetUpload}>
                   <Upload size={16} /> Import tiếp
                 </button>
               </div>
             )}
 
+            {/* Báo lỗi */}
             {uploadError && (
               <div className="salary-status error" style={{ marginTop: '0.75rem' }}>
                 <p className="salary-status-title" style={{ color: 'var(--bk-danger)' }}>
@@ -678,6 +714,7 @@ export default function SalarySlipAdmin() {
                 <button className="bk-btn" style={{ marginTop: '0.75rem' }} onClick={resetUpload}>Thử lại</button>
               </div>
             )}
+
           </div>
         </div>
       )}

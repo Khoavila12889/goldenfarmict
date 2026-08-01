@@ -11,7 +11,8 @@ Phân hệ Quản lý Công việc & Todos giúp bạn dễ dàng theo dõi, l�
 **Các điểm nổi bật:**
 - **Theo dõi tiến độ trực quan:** Dễ dàng nhận biết trạng thái công việc qua các cột Kanban (Cần làm, Đang thực hiện, Chờ duyệt, Đã hoàn thành).
 - **Cập nhật thời gian thực (Realtime):** Mọi thay đổi trạng thái hay công việc mới sẽ tự động hiển thị ngay lập tức cho các thành viên liên quan.
-- **Chuẩn hóa thời gian:** Toàn bộ hạn hoàn thành hiển thị theo chuẩn DD/MM/YYYY (Ví dụ: 25/07/2026).
+- **Chuẩn hóa thời gian:** Hạn hoàn thành hiển thị theo chuẩn **DD/MM/YYYY** (Ví dụ: 25/07/2026), chọn bằng **lịch (calendar)** khi click vào ô, không nhập tay.
+- **Kiểm tra hạn hợp lệ:** Không thể đặt hạn hoàn thành trước ngày hiện tại — hệ thống hiện cảnh báo và chặn lưu.
 
 ---
 
@@ -59,7 +60,7 @@ Nằm ở ngay đầu trang, giúp bạn nắm bắt nhanh tổng quan công vi�
 | **Phạm vi (Scope)** | Chọn **Cá nhân** (Chỉ bạn thấy) hoặc **Phòng ban** (Cả phòng thấy) | Bắt buộc |
 | **Người thực hiện** | Chọn người nhận nhiệm vụ từ danh sách nhân viên | Tùy chọn |
 | **Độ ưu tiên** | Chọn: Thấp, Trung bình, Cao, Khẩn cấp 🚨 | Bắt buộc |
-| **Hạn hoàn thành** | Nhập theo định dạng **DD/MM/YYYY** (Ví dụ: 30/07/2026) | Tùy chọn |
+| **Hạn hoàn thành** | Click vào ô để mở **lịch (calendar)**, chọn ngày (hiển thị DD/MM/YYYY). **Không thể chọn ngày đã qua** — sẽ báo lỗi ⚠️ *"Đã hết giờ, không thể đặt hạn trước ngày hiện tại!"* | Tùy chọn |
 | **Tags / Nhãn** | Nhập các từ khóa phân loại, cách nhau bằng dấu phẩy (VD: IT, Báo cáo) | Tùy chọn |
 
 ### Bước 2: Tạo danh sách việc nhỏ (Subtasks Checklist)
@@ -101,4 +102,4 @@ Tùy vào vai trò (Role) của bạn trong hệ thống, quyền hạn thao tá
 |---------|-----------|
 | **Quản trị viên (Admin)** | Có toàn quyền xem, chỉnh sửa, chuyển trạng thái và xóa **tất cả** công việc |
 | **Trưởng phòng (Head)** | Có toàn quyền quản lý công việc thuộc phòng ban mình phụ trách và công việc do mình tạo ra/được giao |
-| **Nhân viên (User)** | **Được phép:** Tạo mới công việc, chỉnh sửa/chuyển trạng thái công việc do mình tạo hoặc được giao<br>**Hạn chế:** Các công việc không thuộc quyền hạn sẽ có biểu tượng cảnh báo ⚠️ *Chỉ xem*, nút chỉnh sửa/xóa và ô chuyển trạng thái sẽ bị ẩn hoặc vô hiệu hóa |
+| **Nhân viên (User)** | **Được phép:** Tạo mới công việc, chỉnh sửa/chuyển trạng thái công việc do mình tạo hoặc được giao, **xóa công việc do chính mình tạo**<br>**Hạn chế:** Các công việc không thuộc quyền hạn sẽ có biểu tượng cảnh báo ⚠️ *Chỉ xem*, nút chỉnh sửa/xóa và ô chuyển trạng thái sẽ bị ẩn hoặc vô hiệu hóa |

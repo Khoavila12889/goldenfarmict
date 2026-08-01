@@ -634,6 +634,18 @@ select.form-control:disabled {
   cursor: default;
 }
 
+.form-control.is-error {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
+}
+
+.due-date-error {
+  margin-top: 2px;
+  font-size: 0.75rem;
+  color: #dc2626;
+  font-weight: 500;
+}
+
 textarea.form-control {
   resize: vertical;
   font-family: inherit;
