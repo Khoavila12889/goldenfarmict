@@ -19,6 +19,11 @@ function parseMonthLabel(monthStr) {
   return `${m}/${y}`
 }
 
+const MONTH_NAMES = [
+  'T 1', 'T 2', 'T 3', 'T 4', 'T 5', 'T 6',
+  'T 7', 'T 8', 'T 9', 'T 10', 'T 11', 'T 12'
+]
+
 function usePreviousMonth() {
   const d = new Date()
   d.setMonth(d.getMonth() - 1)
@@ -67,6 +72,11 @@ export default function SalarySlipAdmin() {
 
   const [selectedMonth, setSelectedMonth] = useState(usePreviousMonth)
   const monthInputRef = useRef(null)
+
+  /* ── Custom Month Picker States ── */
+  const [showPicker, setShowPicker] = useState(false)
+  const [pickerYear, setPickerYear] = useState(() => new Date().getFullYear())
+  const pickerRef = useRef(null)
 
   const [employees, setEmployees] = useState([])
   const [empLoading, setEmpLoading] = useState(false)
@@ -151,11 +161,41 @@ export default function SalarySlipAdmin() {
     return () => { cancelled = true }
   }, [selectedMonth, searchTerm, userCode, token, role])
 
+  /* ── Sync Picker Year with Selected Month ── */
+  useEffect(() => {
+    if (selectedMonth) {
+      setPickerYear(parseInt(selectedMonth.split('-')[0], 10))
+    }
+  }, [selectedMonth])
+
+  /* ── Click outside to close picker ── */
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target)) {
+        setShowPicker(false)
+      }
+    }
+    if (showPicker) document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showPicker])
+
   function navigate(dir) {
     const [y, m] = selectedMonth.split('-').map(Number)
     const d = new Date(y, m - 1 + dir, 1)
     const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
     if (next < '2020-01' || next > capMonth) return
+    setSelectedMonth(next)
+    setSelectedEmp(null)
+    setSalaryData(null)
+    setEditedFields({})
+    setSaveMsg(null)
+    setShowPicker(false)
+  }
+
+  function handleSelectMonth(monthIndex) {
+    const next = `${pickerYear}-${String(monthIndex + 1).padStart(2, '0')}`
+    if (next > capMonth) return
+    setShowPicker(false)
     setSelectedMonth(next)
     setSelectedEmp(null)
     setSalaryData(null)
@@ -589,32 +629,60 @@ export default function SalarySlipAdmin() {
       { /* ─── Tab: Upload Excel ─── */ }
       {activeTab === 'upload' && (
         <div className="sa-upload-tab">
-          <div className="bk-card" style={{ padding: '1.5rem', maxWidth: 550, margin: '0 auto' }}>
+          <div className="bk-card" style={{ padding: '1.5rem', maxWidth: 550, margin: 0 }}>
 
             {/* Bước 1: Chọn tháng dữ liệu cần Import */}
             <div className="bk-form-group" style={{ marginBottom: '1.25rem' }}>
               <label className="bk-form-label" style={{ fontWeight: 600, display: 'block', marginBottom: '0.5rem', color: '#1e293b' }}>
                 1. Chọn tháng cần import dữ liệu lương:
               </label>
-              <div className="salary-month-selector import-month-selector">
+              <div className="salary-month-selector import-month-selector" ref={pickerRef}>
                 <button className="salary-month-nav-btn" onClick={() => navigate(-1)} disabled={prevDisabled} title="Tháng trước">
                   <ChevronLeft size={18} />
                 </button>
-                <button className="salary-month-display import-month-btn" onClick={openMonthPicker} title="Click để chọn tháng">
+                <button className="salary-month-display import-month-btn" onClick={() => setShowPicker(!showPicker)} title="Click để chọn tháng">
                   <Calendar size={18} style={{ color: '#045d33' }} />
                   <span>Tháng {parseMonthLabel(selectedMonth)}</span>
                 </button>
-                <input 
-                  ref={monthInputRef} 
-                  type="month" 
-                  className="salary-month-hidden"
-                  value={selectedMonth} 
-                  max={capMonth} 
-                  onChange={handleMonthChange} 
-                />
                 <button className="salary-month-nav-btn" onClick={() => navigate(1)} disabled={nextDisabled} title="Tháng sau">
                   <ChevronRight size={18} />
                 </button>
+
+                {/* Custom Month Picker Popup */}
+                {showPicker && (
+                  <div className="salary-picker-popup">
+                    <div className="salary-picker-header">
+                      <button className="salary-picker-nav" onClick={() => setPickerYear(y => y - 1)}>
+                        <ChevronLeft size={16} />
+                      </button>
+                      <span className="salary-picker-year">{pickerYear}</span>
+                      <button
+                        className="salary-picker-nav"
+                        onClick={() => setPickerYear(y => y + 1)}
+                        disabled={pickerYear >= now.getFullYear()}
+                      >
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+                    <div className="salary-picker-grid">
+                      {MONTH_NAMES.map((mName, index) => {
+                        const monthValue = `${pickerYear}-${String(index + 1).padStart(2, '0')}`
+                        const isDisabled = monthValue > capMonth
+                        const isActive = monthValue === selectedMonth
+                        return (
+                          <button
+                            key={index}
+                            className={`salary-picker-cell ${isActive ? 'active' : ''}`}
+                            disabled={isDisabled}
+                            onClick={() => handleSelectMonth(index)}
+                          >
+                            {mName}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
