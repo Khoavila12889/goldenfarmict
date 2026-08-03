@@ -344,7 +344,7 @@ def _browse_gdrive(cfg, folder_id):
     try:
         results = service.files().list(
             q=f"'{current_id}' in parents and trashed=false",
-            fields="files(id, name, mimeType, size, modifiedTime)",
+            fields="files(id, name, mimeType, size, modifiedTime, thumbnailLink)",
             pageSize=500,
             orderBy="folder,name"
         ).execute()
@@ -360,6 +360,8 @@ def _browse_gdrive(cfg, folder_id):
             "is_dir": is_dir,
             "size": int(f.get('size', 0)) if not is_dir else 0,
             "modified": f.get('modifiedTime', ''),
+            # Google trả thumbnailLink cho file ảnh — dùng làm thumbnail card.
+            "thumbnail_link": (f.get('thumbnailLink', '') or '') if not is_dir else '',
         })
     return entries
 
@@ -773,7 +775,93 @@ async def download_file(
     except Exception as e:
         raise HTTPException(502, f"Download error: {str(e)}")
 
-def _download_ftp(cfg, file_path):
+
+# ─── Thumbnail (on-the-fly resize cho card ảnh) ────────────────
+
+_IMAGE_EXTS = ('jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tif', 'tiff')
+_THUMB_CACHE_MAX_AGE = 3600  # seconds
+
+
+def _guess_mime(filename: str) -> str:
+    import mimetypes
+    mime, _ = mimetypes.guess_type(filename)
+    return mime or 'application/octet-stream'
+
+
+@router.get("/thumbnail")
+def file_thumbnail(
+    config_id: int = Query(...),
+    file_path: str = Query(...),
+    file_id: str = Query(''),
+    user_code: str = Query(''),
+    user_role: str = Query('user'),
+    size: int = Query(400),
+):
+    """Trả về ảnh thumbnail (đã resize) cho file ảnh từ SMB/FTP.
+
+    Google Drive dùng thẳng `thumbnailLink` từ API (frontend), nên endpoint này
+    chỉ phục vụ SMB/FTP/local. Permission check giống preview: cần quyền đọc
+    thư mục chứa file. Nếu Pillow không có hoặc resize lỗi -> trả nguyên file
+    (vẫn dùng được như preview).
+    """
+    cfg = fetchone("SELECT * FROM storage_config WHERE id=:id", {"id": config_id})
+    if not cfg:
+        raise HTTPException(404, "Storage not found")
+
+    folder_path = os.path.dirname(file_path).replace('\\', '/')
+    if not _check_folder_permission(config_id, folder_path, user_code, user_role):
+        raise HTTPException(403, "No permission to access this file")
+
+    ext = file_path.rsplit('.', 1)[-1].lower() if '.' in file_path else ''
+    if ext not in _IMAGE_EXTS:
+        raise HTTPException(415, "Not an image file")
+
+    try:
+        data = _get_file_bytes(cfg, file_path, file_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Thumbnail read error: {str(e)}")
+
+    mime = _guess_mime(file_path)
+    cache_headers = {"Cache-Control": f"public, max-age={_THUMB_CACHE_MAX_AGE}"}
+
+    # SVG (vector) và GIF (animated): gửi nguyên file, không resize.
+    if ext in ('svg', 'gif'):
+        from fastapi.responses import Response
+        return Response(content=data, media_type=mime, headers=cache_headers)
+
+    try:
+        from PIL import Image
+        import io as _io
+        img = Image.open(_io.BytesIO(data))
+        img.load()
+        img.thumbnail((size, size), Image.Resampling.LANCZOS)
+
+        out = _io.BytesIO()
+        if img.mode in ('RGBA', 'LA', 'P'):
+            if img.mode == 'P' and 'transparency' not in img.info:
+                img = img.convert('RGB')
+            else:
+                img = img.convert('RGBA')
+            out_mime = 'image/png'
+            img.save(out, format='PNG', optimize=True)
+        else:
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            out_mime = 'image/jpeg'
+            img.save(out, format='JPEG', quality=82, optimize=True, progressive=True)
+        out.seek(0)
+        from fastapi.responses import Response
+        return Response(content=out.getvalue(), media_type=out_mime, headers=cache_headers)
+    except ImportError:
+        from fastapi.responses import Response
+        return Response(content=data, media_type=mime, headers=cache_headers)
+    except Exception:
+        from fastapi.responses import Response
+        return Response(content=data, media_type=mime, headers=cache_headers)
+
+
     import logging
 
     try:

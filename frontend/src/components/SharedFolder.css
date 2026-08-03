@@ -292,3 +292,84 @@
   border: none;
   border-radius: 0;
 }
+
+/* ─────────────────────────────────────────────────────────────────
+   SharedFolder – IMAGE GALLERY ENHANCEMENTS
+   ─────────────────────────────────────────────────────────────────── */
+
+/* Card image: không padding, thumbnail chiếm toàn bộ phần trên */
+.sf-card.sf-card-image {
+  padding: 0;
+  overflow: hidden;
+  gap: 0;
+}
+
+.sf-card.sf-card-image .sf-card-icon {
+  width: 100%;
+  height: 100px;
+  overflow: hidden;
+  position: relative;
+  background: #0f172a;
+  flex-shrink: 0;
+  border-radius: 12px 12px 0 0;
+}
+
+/* Ảnh thumbnail cover */
+.sf-card-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+  transition: transform 0.35s ease, opacity 0.2s;
+}
+
+.sf-card.sf-card-image:hover .sf-card-thumb {
+  transform: scale(1.08);
+  opacity: 0.82;
+}
+
+/* Hover overlay */
+.sf-card.sf-card-image .sf-card-icon::after {
+  content: '🔍';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  background: rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+  border-radius: 12px 12px 0 0;
+}
+
+.sf-card.sf-card-image:hover .sf-card-icon::after {
+  opacity: 1;
+}
+
+/* Fallback icon wrapper */
+.sf-card-icon-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+/* Name + meta padding cho card image */
+.sf-card.sf-card-image .sf-card-name {
+  padding: 0.4rem 0.6rem 0.1rem;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.sf-card.sf-card-image .sf-card-meta {
+  padding: 0 0.6rem 0.5rem;
+  text-align: left;
+}
+
+@media (max-width: 480px) {
+  .sf-card.sf-card-image .sf-card-icon { height: 80px; }
+}

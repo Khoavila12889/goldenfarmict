@@ -1,17 +1,38 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import {
   FolderOpen, Folder, File, FileText, FileSpreadsheet, Image, Archive,
   ChevronRight, Home, Download, Loader2, AlertCircle, ArrowLeft, X
 } from 'lucide-react'
 import { getShareContents, getShareDownloadUrl, getShareArchiveUrl } from '../services/api'
 import { useShareOnlyOffice } from '../hooks/useShareOnlyOffice'
+import ImageLightbox from './ImageLightbox'
 import './SharedFolder.css'
 
 const OFFICE_EXTS = new Set(['docx','xlsx','pptx','doc','xls','ppt','odt','ods','odp','csv','txt','rtf','pdf'])
-const IMAGE_EXTS = new Set(['jpg','jpeg','png','gif','webp','svg','bmp','ico'])
+const IMAGE_EXTS = new Set(['jpg','jpeg','png','gif','webp','svg','bmp','ico','avif','tif','tiff'])
 
 function getExt(name) {
   return name.split('.').pop().toLowerCase()
+}
+
+function isImageFile(name) {
+  return IMAGE_EXTS.has(getExt(name))
+}
+
+/**
+ * URL thumbnail cho SharedFolder:
+ * - Nếu entry có `thumbnailLink` (Google Drive) -> dùng luôn
+ * - Khác -> kô có dedicated thumbnail endpoint cho share,
+ *   dùng tạm thời URL download inline (file nhỏ) với tất cả những gì có
+ */
+function buildShareThumbnailUrl(token, entry) {
+  if (!entry || !isImageFile(entry.name)) return null
+  // GDrive thumbnail link
+  if (entry.thumbnailLink) {
+    return entry.thumbnailLink.replace(/=s\d+$/, '=s400')
+  }
+  // Fallback: inline download URL (browser sẽ cache, chỉ phù hợp file nhỏ)
+  return getShareDownloadUrl(token, entry.path, entry.id || '', 'inline')
 }
 
 function getFileIcon(name, isDir) {
@@ -56,8 +77,31 @@ export default function SharedFolder({ token, info }) {
   const [zipBusy, setZipBusy] = useState(false)
   const [zipError, setZipError] = useState('')
 
+  // ── Lightbox state ────────────────────────────────────────────
+  const [showLightbox, setShowLightbox] = useState(false)
+  const [lightboxIndex, setLightboxIndex] = useState(0)
+
   const currentPath = crumbs.at(-1).id
   const canDownload = info?.permissions?.includes?.('download') !== false
+
+  // ── Memoized image list + lightbox slides ──────────────────────
+  const imageEntries = useMemo(() =>
+    entries.filter(e => !e.is_dir && isImageFile(e.name))
+  , [entries])
+
+  const lightboxSlides = useMemo(() =>
+    imageEntries.map(e => {
+      const downloadAttachmentUrl = getShareDownloadUrl(token, e.path, e.id || '', 'attachment')
+      const thumbUrl = buildShareThumbnailUrl(token, e)
+      return {
+        src: thumbUrl,
+        thumbnail: thumbUrl,
+        downloadUrl: downloadAttachmentUrl,
+        alt: e.name,
+        title: e.name,
+      }
+    })
+  , [imageEntries, token])
 
   const loadContents = useCallback((path) => {
     setLoading(true)
@@ -103,6 +147,14 @@ export default function SharedFolder({ token, info }) {
   }
 
   function openFile(entry) {
+    // ── Ảnh → lightbox ─────────────────────────────────────
+    if (isImageFile(entry.name)) {
+      const idx = imageEntries.findIndex(e => e.name === entry.name && e.path === entry.path)
+      setLightboxIndex(idx >= 0 ? idx : 0)
+      setShowLightbox(true)
+      return
+    }
+    // ── Office / khác → overlay cũ ───────────────────────────
     setSelected({ name: entry.name, path: entry.path, id: entry.id || '', size: entry.size })
   }
 
@@ -280,18 +332,37 @@ export default function SharedFolder({ token, info }) {
         <div className="sf-grid">
           {entries.map((e, i) => {
             const { icon: IconComp, color: iconColor } = getFileIcon(e.name, e.is_dir)
+            const isImg = !e.is_dir && isImageFile(e.name)
+            const thumbUrl = isImg ? buildShareThumbnailUrl(token, e) : null
             return (
               <div
                 key={e.id || i}
-                className="sf-card"
+                className={`sf-card${isImg ? ' sf-card-image' : ''}`}
                 onClick={() => e.is_dir ? openFolder(e) : openFile(e)}
               >
                 <div className="sf-card-icon">
-                  <IconComp size={36} style={{ color: iconColor }} />
+                  {isImg && thumbUrl ? (
+                    <img
+                      src={thumbUrl}
+                      alt={e.name}
+                      loading="lazy"
+                      className="sf-card-thumb"
+                      onError={(ev) => {
+                        ev.currentTarget.style.display = 'none'
+                        ev.currentTarget.nextSibling.style.display = 'flex'
+                      }}
+                    />
+                  ) : null}
+                  <span
+                    className="sf-card-icon-fallback"
+                    style={{ display: isImg && thumbUrl ? 'none' : 'flex' }}
+                  >
+                    <IconComp size={36} style={{ color: iconColor }} />
+                  </span>
                 </div>
                 <div className="sf-card-name" title={e.name}>{e.name}</div>
                 <div className="sf-card-meta">
-                  {e.is_dir ? 'Thư mục' : formatSize(e.size)}
+                  {e.is_dir ? 'Thư mục' : ''}
                 </div>
                 {!e.is_dir && canDownload && (
                   <button className="sf-card-action" title="Tải xuống"
@@ -312,6 +383,14 @@ export default function SharedFolder({ token, info }) {
           })}
         </div>
       )}
+
+      {/* ─── Image Lightbox ─────────────────────────────────── */}
+      <ImageLightbox
+        open={showLightbox}
+        onClose={() => setShowLightbox(false)}
+        slides={lightboxSlides}
+        index={lightboxIndex}
+      />
     </div>
   )
 }

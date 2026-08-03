@@ -31,6 +31,9 @@ argon2-cffi>=23.1.0
 # JWT cho ONLYOFFICE integration
 pyjwt>=2.8.0
 
+# Pillow — resize ảnh thumbnail on-the-fly (module Documents)
+Pillow>=10.0.0
+
 # PostgreSQL driver
 psycopg2-binary>=2.9.0
 

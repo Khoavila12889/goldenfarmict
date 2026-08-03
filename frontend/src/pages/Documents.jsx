@@ -11,9 +11,36 @@ import './Documents.css'
 import FileViewer from '../components/FileViewer'
 import OnlyOfficeViewer from '../components/OnlyOfficeViewer'
 import ShareDocument from '../components/ShareDocument'
+import ImageLightbox from '../components/ImageLightbox'
 import { getStorageConfigs, browseStorage, getStoragePermissions, createStoragePermission, deleteStoragePermission, createStorageConfig, updateStorageConfig, deleteStorageConfig, testStorageConnection, testStorageConnectionDirect, getStorageDepartments } from '../services/api'
 import { formatDate } from '../utils/date'
 const INITIAL_CONFIG = { name: '', type: 'smb', host: '', port: 445, username: '', password: '', remote_path: '', domain: '' }
+
+// ─── Image helpers ────────────────────────────────────────────────
+const IMAGE_EXTS = new Set(['jpg','jpeg','png','gif','webp','svg','bmp','ico','avif','tif','tiff'])
+
+function isImageFile(name) {
+  return IMAGE_EXTS.has((name || '').split('.').pop().toLowerCase())
+}
+
+/**
+ * Trả về URL thumbnail để hiển thị trong card:
+ * - Google Drive: dùng thumbnailLink (nếu có) – không cần backend call
+ * - SMB/FTP:     dùng endpoint /api/documents/thumbnail?... để resize on-the-fly
+ */
+function buildThumbnailUrl(cfg, entry, currentPath, userCode, userRole) {
+  if (!cfg) return null
+  // Google Drive – thumbnailLink có sẵn từ API response
+  if (cfg.type === 'gdrive' && entry.thumbnailLink) {
+    // Tăng kích thước thumbnail GDrive: thay =s220 -> =s400
+    return entry.thumbnailLink.replace(/=s\d+$/, '=s400')
+  }
+  // SMB / FTP – dùng endpoint thumbnail backend
+  const normalizedPath = currentPath === '/'
+    ? entry.name
+    : `${currentPath.replace(/\/$/, '')}/${entry.name}`
+  return `/api/documents/thumbnail?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}&user_code=${userCode}&user_role=${userRole}&size=400`
+}
 
 function getFileIcon(name, isDir) {
   if (isDir) return { icon: FolderOpen, color: '#f59e0b' }
@@ -65,7 +92,7 @@ function formatSize(bytes) {
 // For Google Drive the path is used only for folder-permission checks +
 // filename/ext detection; the real Google file ID must be sent separately
 // via `file_id`, otherwise the backend would download the PARENT FOLDER.
-function buildFileDownloadUrl(cfg, entry, currentPath, userCode, userRole) {
+function buildFileDownloadUrl(cfg, entry, currentPath, userCode, userRole, inline = false) {
   const isGdrive = cfg?.type === 'gdrive'
   const normalizedPath = currentPath === '/'
     ? entry.name
@@ -73,10 +100,9 @@ function buildFileDownloadUrl(cfg, entry, currentPath, userCode, userRole) {
   let url = `/api/documents/download?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}`
   if (isGdrive && entry.id) url += `&file_id=${encodeURIComponent(entry.id)}`
   url += `&user_code=${userCode}&user_role=${userRole}`
+  if (inline) url += '&inline=true'
   return url
 }
-
-
 
 function SkeletonRows({ count = 5 }) {
   return (
@@ -137,6 +163,10 @@ export default function Documents() {
   const [shareOpen, setShareOpen] = useState(false)
   const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, file: null })
 
+  // ── Lightbox state ──────────────────────────────────────────────
+  const [showLightbox, setShowLightbox] = useState(false)
+  const [lightboxIndex, setLightboxIndex] = useState(0)
+
   const fileInputRef = useRef(null)
 
   // View mode & search
@@ -158,6 +188,33 @@ export default function Documents() {
     const q = searchQuery.toLowerCase()
     return entries.filter(e => e.name.toLowerCase().includes(q))
   }, [entries, searchQuery])
+
+  /**
+   * Mảng memoized chỉ chứa file ảnh trong thư mục hiện tại (không lọc theo search).
+   * Dùng để build danh sách slides cho Lightbox – giữ đúng thứ tự gốc.
+   */
+  const imageEntries = useMemo(() => {
+    return entries.filter(e => !e.is_dir && isImageFile(e.name))
+  }, [entries])
+
+  /** Slides dành cho Lightbox – src dùng API thumbnail size=1920 để né lỗi 502, downloadUrl giữ nguyên cho nút tải */
+  const lightboxSlides = useMemo(() => {
+    if (!activeConfig) return []
+    const currentPath = breadcrumbs.at(-1).id
+    return imageEntries.map(e => {
+      const thumbUrlSmall = buildThumbnailUrl(activeConfig, e, currentPath, userCode, userRole)
+      const thumbUrlLarge = thumbUrlSmall ? thumbUrlSmall.replace('size=400', 'size=1920') : null
+      const downloadUrl = buildFileDownloadUrl(activeConfig, e, currentPath, userCode, userRole, false)
+      return {
+        src: thumbUrlLarge || thumbUrlSmall,
+        thumbnail: thumbUrlSmall,
+        downloadUrl: downloadUrl,
+        alt: e.name,
+        title: e.name,
+        description: e.size ? formatDate(e.modified) : undefined,
+      }
+    })
+  }, [imageEntries, activeConfig, breadcrumbs, userCode, userRole])
 
   function selectConfig(cfg) {
     setActiveConfig(cfg)
@@ -219,6 +276,15 @@ export default function Documents() {
     if (entry.is_dir) return
     const currentPath = breadcrumbs.at(-1).id
 
+    // ── Ảnh → mở Lightbox ────────────────────────────────────────
+    if (isImageFile(entry.name)) {
+      const idx = imageEntries.findIndex(e => e.name === entry.name)
+      setLightboxIndex(idx >= 0 ? idx : 0)
+      setShowLightbox(true)
+      return
+    }
+
+    // ── Office / PDF → OnlyOffice viewer ────────────────────────
     if (isOfficeFile(entry.name)) {
       setOoFile({ ...entry, browsePath: currentPath, storageType: activeConfig.type })
       setOoConfigId(activeConfig.id)
@@ -226,6 +292,7 @@ export default function Documents() {
       return
     }
 
+    // ── Các file khác → FileViewer chung ────────────────────────
     const fileUrl = buildFileDownloadUrl(activeConfig, entry, currentPath, userCode, userRole)
     setViewerFile({
       name: entry.name,
@@ -252,6 +319,19 @@ export default function Documents() {
     if (entry.is_dir) return
     const currentPath = breadcrumbs.at(-1).id
     const fileUrl = buildFileDownloadUrl(activeConfig, entry, currentPath, userCode, userRole)
+    const isImg = isImageFile(entry.name)
+
+    const triggerBlobDownload = (blob, fileName) => {
+      const blobUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = blobUrl
+      link.download = fileName
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 2000)
+    }
+
     try {
       const response = await fetch(fileUrl, {
         headers: {
@@ -260,15 +340,23 @@ export default function Documents() {
       })
       if (!response.ok) throw new Error('HTTP ' + response.status)
       const blob = await response.blob()
-      const blobUrl = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = blobUrl
-      link.download = entry.name
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 2000)
+      triggerBlobDownload(blob, entry.name)
     } catch (err) {
+      // Nếu là file ảnh và endpoint download bị lỗi (502 bad gateway), fallback tải thông qua API thumbnail chất lượng cao
+      if (isImg) {
+        try {
+          const thumbUrlLarge = buildThumbnailUrl(activeConfig, entry, currentPath, userCode, userRole)?.replace('size=400', 'size=1920')
+          if (thumbUrlLarge) {
+            const fallbackRes = await fetch(thumbUrlLarge)
+            if (fallbackRes.ok) {
+              const blob = await fallbackRes.blob()
+              triggerBlobDownload(blob, entry.name)
+              setContextMenu({ visible: false })
+              return
+            }
+          }
+        } catch (_) {}
+      }
       alert('Tải file thất bại: ' + (err.message || ''))
     }
     setContextMenu({ visible: false })
@@ -558,21 +646,51 @@ export default function Documents() {
               )}
               {filteredEntries.map((e, i) => {
                 const { icon: IconComp, color: iconColor } = getFileIcon(e.name, e.is_dir)
+                const currentPath = breadcrumbs.at(-1).id
+                const isImg = !e.is_dir && isImageFile(e.name)
+                const thumbUrl = isImg
+                  ? buildThumbnailUrl(activeConfig, e, currentPath, userCode, userRole)
+                  : null
                 return (
                   <div
                     key={i}
-                    className={`doc-card${e.is_dir ? ' doc-card-dir' : ''}`}
+                    className={`doc-card${e.is_dir ? ' doc-card-dir' : ''}${isImg ? ' doc-card-image' : ''}`}
                     onClick={() => e.is_dir ? openFolder(e) : handlePreviewFile(e)}
                     onContextMenu={(ev) => handleContextMenu(ev, e)}
                   >
+                    {/* ── Card Icon / Thumbnail ─────────────────── */}
                     <div className="doc-card-icon">
-                      <IconComp size={36} style={{ color: iconColor }} />
+                      {isImg && thumbUrl ? (
+                        <img
+                          src={thumbUrl}
+                          alt={e.name}
+                          loading="lazy"
+                          className="doc-card-thumb"
+                          onError={(ev) => {
+                            ev.currentTarget.style.display = 'none'
+                            ev.currentTarget.nextSibling.style.display = 'flex'
+                          }}
+                        />
+                      ) : null}
+                      {/* Fallback icon (luôn render, ẩn nếu thumb OK) */}
+                      <span
+                        className="doc-card-icon-fallback"
+                        style={{ display: isImg && thumbUrl ? 'none' : 'flex' }}
+                      >
+                        <IconComp size={36} style={{ color: iconColor }} />
+                      </span>
                     </div>
+
                     <div className="doc-card-name" title={e.name}>{e.name}</div>
                     <div className="doc-card-meta">
                       {e.is_dir ? '' : formatSize(e.size)}
                       {!e.is_dir && e.modified ? ` · ${formatDate(e.modified)}` : ''}
                     </div>
+
+                    {isImg && (
+                      <span className="doc-card-img-badge" title="Ảnh">📷</span>
+                    )}
+
                     {!e.is_dir && canPreviewFile(e.name) && (
                       <button className="doc-card-preview"
                         onClick={(ev) => { ev.stopPropagation(); handlePreviewFile(e) }}
@@ -618,16 +736,42 @@ export default function Documents() {
                 )}
                 {filteredEntries.map((e, i) => {
                   const { icon: IconComp, color: iconColor } = getFileIcon(e.name, e.is_dir)
+                  const currentPath = breadcrumbs.at(-1).id
+                  const isImg = !e.is_dir && isImageFile(e.name)
+                  const thumbUrl = isImg
+                    ? buildThumbnailUrl(activeConfig, e, currentPath, userCode, userRole)
+                    : null
                   return (
                     <div
                       key={i}
                       className="doc-grid-row"
-                      onClick={() => e.is_dir && openFolder(e)}
+                      onClick={() => e.is_dir ? openFolder(e) : (isImg ? handlePreviewFile(e) : undefined)}
                       onContextMenu={(ev) => handleContextMenu(ev, e)}
-                      style={{ cursor: e.is_dir ? 'pointer' : 'default' }}
+                      style={{ cursor: (e.is_dir || isImg) ? 'pointer' : 'default' }}
                     >
                       <div className="doc-col-name">
-                        <IconComp size={18} style={{ color: iconColor, flexShrink: 0 }} />
+                        {/* Mini-thumbnail cho ảnh trong List view */}
+                        {isImg && thumbUrl ? (
+                          <div className="doc-list-thumb-wrap">
+                            <img
+                              src={thumbUrl}
+                              alt={e.name}
+                              loading="lazy"
+                              className="doc-list-thumb"
+                              onError={(ev) => {
+                                ev.currentTarget.style.display = 'none'
+                                ev.currentTarget.parentElement.nextSibling?.removeAttribute('style')
+                                const fallback = ev.currentTarget.closest('.doc-col-name')?.querySelector('.doc-list-icon-fallback')
+                                if (fallback) fallback.style.display = 'flex'
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <IconComp size={18} style={{ color: iconColor, flexShrink: 0 }} />
+                        )}
+                        {isImg && thumbUrl && (
+                          <IconComp size={18} className="doc-list-icon-fallback" style={{ color: iconColor, flexShrink: 0, display: 'none' }} />
+                        )}
                         <span className="doc-entry-name">{e.name}</span>
                       </div>
                       <div className="doc-col-size">{e.is_dir ? '' : formatSize(e.size)}</div>
@@ -861,6 +1005,14 @@ export default function Documents() {
           setShareOpen(false)
           setShareFile(null)
         }}
+      />
+
+      {/* ─── Image Lightbox ─────────────────────────────────────── */}
+      <ImageLightbox
+        open={showLightbox}
+        onClose={() => setShowLightbox(false)}
+        slides={lightboxSlides}
+        index={lightboxIndex}
       />
     </div>
   )

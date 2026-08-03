@@ -994,3 +994,136 @@
   .doc-search-wrap-mini { width: 100px; }
   .doc-search-wrap-mini:focus-within { width: 120px; }
 }
+
+/* ─────────────────────────────────────────────────────────────────
+   IMAGE GALLERY ENHANCEMENTS
+   ─────────────────────────────────────────────────────────────────── */
+
+/* ── Card Image variant: lớn hơn, ưu tiên hiển thị thumbnail ─── */
+
+.doc-card.doc-card-image {
+  padding: 0;
+  overflow: hidden;
+  min-height: 160px;
+  cursor: pointer;
+}
+
+.doc-card.doc-card-image .doc-card-icon {
+  width: 100%;
+  height: 120px;
+  border-radius: 0;
+  margin-bottom: 0;
+  background: #0f172a;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* Thumbnail ảnh thực tế – object-fit cover, lazy load */
+.doc-card-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+  transition: transform 0.35s ease, opacity 0.2s;
+  opacity: 1;
+}
+
+.doc-card.doc-card-image:hover .doc-card-thumb {
+  transform: scale(1.07);
+  opacity: 0.85;
+}
+
+/* Hover overlay "🔍 Click để xem" */
+.doc-card.doc-card-image .doc-card-icon::after {
+  content: '🔍 Xem ảnh';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  border-radius: 0;
+  pointer-events: none;
+}
+
+.doc-card.doc-card-image:hover .doc-card-icon::after {
+  opacity: 1;
+}
+
+/* Fallback icon container (flex centered) */
+.doc-card-icon-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+/* Text + meta padding cho image card */
+.doc-card.doc-card-image .doc-card-name {
+  padding: 0.45rem 0.65rem 0.1rem;
+  text-align: left;
+}
+
+.doc-card.doc-card-image .doc-card-meta {
+  padding: 0 0.65rem 0.5rem;
+  text-align: left;
+}
+
+/* Badge 📷 góc trái phía trên */
+.doc-card-img-badge {
+  position: absolute;
+  top: 0.35rem;
+  left: 0.35rem;
+  font-size: 0.72rem;
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+  border-radius: 4px;
+  padding: 1px 5px;
+  line-height: 1.5;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ── List view: mini-thumbnail 32×32 ─────────────────────────── */
+
+.doc-list-thumb-wrap {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+}
+
+.doc-list-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+  transition: transform 0.25s ease;
+}
+
+.doc-grid-row:hover .doc-list-thumb {
+  transform: scale(1.1);
+}
+
+/* ── Responsive adjustments for image cards ─────────────────── */
+
+@media (max-width: 768px) {
+  .doc-card.doc-card-image .doc-card-icon { height: 100px; }
+}
+
+@media (max-width: 480px) {
+  .doc-card.doc-card-image { min-height: 130px; }
+  .doc-card.doc-card-image .doc-card-icon { height: 85px; }
+}
