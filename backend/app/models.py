@@ -424,3 +424,35 @@ class DepartmentPermission(Base):
     can_edit = Column(Integer, default=0)
     created_at = Column(String, default='')
     updated_at = Column(String, default='')
+
+
+class DocumentShare(Base):
+    """File-level share grants (All users / Department / Public link).
+
+    A share references a file OR folder inside a storage config:
+      - config_id + file_path uniquely identify the item (SMB/FTP path, or
+        Google Drive 'folderId/name' style path).
+      - file_id carries the real Google Drive file id for GDrive downloads.
+      - item_type: 'file' | 'folder' — when 'folder', file_path is the shared
+        folder (absolute storage path for SMB/FTP, folder id for GDrive) and
+        access is inherited by every file/folder nested inside it.
+    share_type: ALL | DEPT | PUBLIC
+      - ALL    -> every authenticated internal user may access
+      - DEPT   -> authenticated users whose department matches department_id
+      - PUBLIC -> anyone with the share_token may access (no login needed)
+    share_token is always generated (used as the stable public link identifier).
+    """
+    __tablename__ = 'document_shares'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    config_id = Column(Integer, nullable=False, index=True)
+    item_type = Column(String, nullable=False, default='file', index=True)
+    file_path = Column(String, nullable=False, default='', index=True)
+    file_id = Column(String, nullable=False, default='')
+    file_name = Column(String, default='')
+    share_type = Column(String, nullable=False, default='ALL', index=True)
+    department_id = Column(Integer, nullable=True, index=True)
+    share_token = Column(String, default='', unique=True, index=True)
+    created_by = Column(String, default='')
+    created_at = Column(String, default='')
+    updated_at = Column(String, default='')
+    expires_at = Column(String, default='')

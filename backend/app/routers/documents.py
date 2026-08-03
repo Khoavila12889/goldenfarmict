@@ -565,6 +565,116 @@ def _check_folder_permission(storage_id, folder_path, user_code, user_role):
     return bool(row['can_read'])
 
 
+def _check_share_access(config_id, file_path, user_code, user_role):
+    """Check whether the current user is allowed to access a file via a share.
+
+    ALL  -> any authenticated user.
+    DEPT -> authenticated user whose department matches the share's department.
+    PUBLIC -> handled separately via token, not here.
+
+    Folder shares (item_type='folder') grant access to every file nested inside
+    the shared folder (inherited permission).
+
+    Returns the matching share row or None.
+    """
+    if not user_code:
+        return None
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    shares = fetchall("""
+        SELECT * FROM document_shares
+        WHERE config_id=:sid AND share_type IN ('ALL','DEPT')
+          AND (expires_at IS NULL OR expires_at = '' OR expires_at > :now)
+        ORDER BY expires_at DESC
+    """, {"sid": config_id, "now": now_str})
+    if not shares:
+        return None
+
+    target = _norm_path(file_path)
+    for s in shares:
+        if s.get('item_type', 'file') == 'folder':
+            root = _norm_path(s.get('file_path', ''))
+            if not _path_within(root, target):
+                continue
+        elif s.get('file_path') != file_path:
+            continue
+
+        if s['share_type'] == 'ALL':
+            return s
+        if s['share_type'] == 'DEPT':
+            emp = fetchone("SELECT department FROM employees WHERE employee_code=:code", {"code": user_code})
+            user_dept = (emp['department'] or '') if emp else ''
+            dept = fetchone("SELECT name FROM departments WHERE id=:id", {"id": s['department_id']})
+            if dept and dept['name'] == user_dept:
+                return s
+    return None
+
+
+def _norm_path(p: str) -> str:
+    """Normalize a storage path to '/'-separated absolute form."""
+    p = (p or '').strip().replace('\\', '/')
+    if not p:
+        return '/'
+    if not p.startswith('/'):
+        p = '/' + p
+    return os.path.normpath(p)
+
+
+def _path_within(root: str, target: str) -> bool:
+    """True when `target` equals `root` or lives strictly inside `root`.
+
+    A path can never 'escape' above the root because traversal is resolved
+    with normpath before the prefix comparison.
+    """
+    root = _norm_path(root)
+    target = _norm_path(target)
+    if root == '/':
+        return True
+    return target == root or target.startswith(root.rstrip('/') + '/')
+
+
+def _gdrive_service(cfg):
+    """Build a Google Drive service object from a storage config."""
+    if not _GOOGLE_AVAILABLE:
+        raise HTTPException(502, "Google libraries not installed (pip install google-api-python-client google-auth)")
+    try:
+        creds_dict = json.loads(cfg['password'])
+        creds = service_account.Credentials.from_service_account_info(creds_dict)
+        return build('drive', 'v3', credentials=creds)
+    except json.JSONDecodeError:
+        raise HTTPException(502, "Service Account JSON không hợp lệ")
+    except Exception as e:
+        raise HTTPException(502, f"Google Drive auth error: {str(e)}")
+
+
+def _gdrive_folder_within(cfg, root_folder_id: str, folder_id: str) -> bool:
+    """True when `folder_id` is `root_folder_id` or a descendant of it.
+
+    Walks the `parents` chain up to the drive root, so a guest can never
+    browse an arbitrary folder id that lives outside the shared folder.
+    """
+    if not folder_id:
+        return False
+    root = (root_folder_id or '').strip() or (cfg.get('remote_path') or 'root')
+    svc = _gdrive_service(cfg)
+    current = folder_id
+    seen = set()
+    for _ in range(200):
+        if current == root:
+            return True
+        if current in seen:
+            return False
+        seen.add(current)
+        try:
+            meta = svc.files().get(fileId=current, fields="parents").execute()
+        except Exception:
+            return False
+        parents = meta.get('parents') or []
+        if not parents:
+            return False
+        current = parents[0]
+    return False
+
+
 def _check_download_allowed(storage_id, folder_path, user_code, user_role):
     """Check if user is allowed to download files from this folder"""
     folder_path = folder_path.replace('\\', '/').rstrip('/') or '/'
@@ -621,10 +731,12 @@ async def download_file(
     folder_path = os.path.dirname(file_path).replace('\\', '/')
 
     allowed = _check_folder_permission(config_id, folder_path, user_code, user_role)
+    share_grant = _check_share_access(config_id, file_path, user_code, user_role)
+    allowed = allowed or (share_grant is not None)
     if not allowed:
         raise HTTPException(403, "No permission to access this file")
     download_allowed = _check_download_allowed(config_id, folder_path, user_code, user_role)
-    if not download_allowed:
+    if not download_allowed and share_grant is None:
         raise HTTPException(403, "Download not allowed for this file")
 
     logging.info(f"[DOWNLOAD] Permission OK, type={cfg['type']}, host={cfg['host']}")
@@ -1047,6 +1159,8 @@ def onlyoffice_config(
 
     folder_path = os.path.dirname(file_path).replace('\\', '/')
     allowed = _check_folder_permission(config_id, folder_path, user_code, user_role)
+    share_grant = _check_share_access(config_id, file_path, user_code, user_role)
+    allowed = allowed or (share_grant is not None)
     if not allowed:
         raise HTTPException(403, "No permission to access this file")
 

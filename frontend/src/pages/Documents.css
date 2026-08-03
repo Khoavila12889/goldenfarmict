@@ -484,6 +484,7 @@
 }
 
 .doc-card-preview,
+.doc-card-share,
 .doc-card-download {
   position: absolute;
   top: 0.4rem;
@@ -504,12 +505,15 @@
 
 .doc-card-preview { right: 0.4rem; }
 .doc-card-download { right: 2.4rem; }
+.doc-card-share { right: 4.4rem; }
 
 .doc-card:hover .doc-card-preview,
+.doc-card:hover .doc-card-share,
 .doc-card:hover .doc-card-download { opacity: 1; }
 
 .doc-card-preview:hover { color: #00468C; background: #eff6ff; }
 .doc-card-download:hover { color: #16a34a; background: #f0fdf4; }
+.doc-card-share:hover { color: #7c3aed; background: #f5f3ff; }
 
 .doc-card-skeleton {
   gap: 0.5rem;
@@ -769,16 +773,18 @@
 .oov-overlay {
   position: fixed;
   inset: 0;
-  background: #fcf9f9; /* Đổi thành nền trắng vì container sẽ che toàn màn hình */
+  background: #fff; /* Nền trắng, container che toàn bộ viewport */
   z-index: 9999; /* Tăng z-index để chắc chắn đè lên sidebar và navbar (header màu xanh) */
   display: flex;
-  align-items: flex-start; /* Cho form neo từ sát góc trên thay vì ở giữa */
-  justify-content: flex-start;
+  overflow: hidden; /* Chặn scrollbar tràn do 100vw/100vh gây ra */
 }
 
 .oov-container {
-  width: 100vw;
-  height: 100vh;
+  position: absolute;
+  inset: 0; /* Phủ chính xác toàn viewport, tránh khoảng trắng do scrollbar */
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   max-width: none;
   background: #fff;
   border-radius: 0;
@@ -827,10 +833,9 @@
   flex-shrink: 0;
 }
 
-/* Đảm bảo container là gốc tọa độ cho nút lơ lửng */
+/* Đảm bảo container là gốc tọa độ cho nút lơ lửng (giữ absolute để phủ full viewport) */
 .oov-container {
-  position: relative; 
-  /* (Giữ lại các CSS cũ của .oov-container như width, height, background...) */
+  position: absolute;
 }
 
 /* Nút Đóng lơ lửng góc phải đè lên iframe */
@@ -864,7 +869,14 @@
 
 .oov-body {
   flex: 1;
+  min-height: 0; /* Cho phép co về 0 trong flex column, hết phần trắng thừa */
   width: 100%;
+  height: 100%;
+  display: flex; /* Ghi đè shared.css (vốn là center) để làm nền dẻo theo cột */
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  background: #fff; /* Ghi đè nền xám #f8fafc của shared.css */
   position: relative;
   overflow: hidden;
 }
@@ -874,6 +886,14 @@
   height: 100%;
   position: absolute;
   inset: 0;
+  display: block;
+  border: none;
+  flex: 1;
+  min-height: 0;
+}
+
+.oov-overlay-state {
+  background: #fff; /* Ghi đè nền xám #f8fafc khi loading/error */
 }
 
 .oov-loading {

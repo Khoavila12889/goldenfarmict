@@ -17,6 +17,7 @@ import Permissions from './pages/Permissions'
 import Todos from './pages/Todos'
 import HelpPage from './pages/HelpPage'
 import MonitorPage from './pages/MonitorPage'
+import PublicSharePage from './pages/PublicSharePage'
 import Layout from './components/Layout'
 
 function ProtectedRoute({ children }) {
@@ -42,6 +43,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginGuard />} />
+      <Route path="/s/:token" element={<PublicSharePage />} />
       <Route
         path="/"
         element={

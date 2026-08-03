@@ -12,7 +12,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from app.core.auth import hash_password
 from app.core import events
-from app.routers import auth, employees, equipment, tickets, bookings, dashboard, licenses, software, approvals, business_trips, departments, salary_slips, salary_user, documents, todos, comments, attachments, monitor
+from app.routers import auth, employees, equipment, tickets, bookings, dashboard, licenses, software, approvals, business_trips, departments, salary_slips, salary_user, documents, todos, comments, attachments, monitor, shares
 
 app = FastAPI(title="GOLDENFARM ICT API", version="1.0.0")
 
@@ -39,6 +39,7 @@ app.include_router(departments.router)
 app.include_router(salary_slips.router)
 app.include_router(salary_user.router)
 app.include_router(documents.router)
+app.include_router(shares.router)
 app.include_router(todos.router)
 app.include_router(comments.router)
 app.include_router(attachments.router)
@@ -66,6 +67,18 @@ def on_startup():
         except Exception as e:
             sess.rollback()
             print(f"  → users.is_first_login migration: {e}")
+
+    # document_shares.item_type — distinguishes file vs folder shares
+    with SessionLocal() as sess:
+        try:
+            sess.execute(text(
+                "ALTER TABLE document_shares "
+                "ADD COLUMN IF NOT EXISTS item_type VARCHAR(20) NOT NULL DEFAULT 'file'"
+            ))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → document_shares.item_type migration: {e}")
 
     # Seed default admin user if not exists
     session = SessionLocal()

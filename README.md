@@ -153,6 +153,8 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
   - **Expiration date**: Đặt ngày hết hạn cho từng permission
   - **Permission inheritance**: quyền folder cha áp dụng cho folder con
 - **Export/Import Config**: Lưu cấu hình storage dưới dạng file JSON, import lại sau
+- **🔗 Chia sẻ link (File & Thư mục)**: Mỗi file hoặc thư mục có thể tạo **link chia sẻ** với 3 hình thức — **Tất cả nhân viên** (ALL), **Theo phòng ban** (DEPT), **Công khai / Link** (PUBLIC). Link dùng chung một Modal "Chia sẻ", hiển thị URL + **QR code**, nút **Sao chép** (hoạt động cả trên mạng LAN HTTP nhờ fallback `document.execCommand`), đặt **ngày hết hạn** tùy chọn, và danh sách **chia sẻ hiện tại** để **thu hồi**.
+- **📂 Chia sẻ thư mục (Share Folder)**: Khi chia sẻ một **thư mục**, khách mở link sẽ thấy giao diện duyệt thư mục (Grid/List) thay vì ONLYOFFICE — gồm **breadcrumb bị chặn ở thư mục gốc** (không thể đi ra ngoài phạm vi chia sẻ), mở file con qua **ONLYOFFICE / preview ảnh-PDF**, tải từng file, hoặc **nén .zip toàn bộ thư mục** (chỉ khi thư mục nhỏ — giới hạn mặc định 200 file / 200MB). Mọi request phía backend đều **tái xác thực vị trí** (path-prefix cho SMB/FTP, duyệt `parents` cho Google Drive) nên khách không thể thoát khỏi thư mục được chia sẻ.
   ### ✅ Quản lý Công việc & Todos (User & Phòng ban)
 - **Kanban Board 4 cột**: Cần làm, Đang xử lý, Chờ duyệt, Đã hoàn thành với hiệu ứng Glassmorphism hiện đại.
 - **Phạm vi phân quyền (Scope)**: Switch giữa cá nhân (Personal Todos) và phòng ban (Department Shared Todos).
@@ -180,6 +182,43 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
   - 🟢 **Đang sử dụng** — đang trong khung giờ
   - ⏰ **Đã hết giờ** (`end_time` đã qua) — opacity thấp, gạch ngang title
 - **Overlap detection**: Client-side (gọi API check) + Server-side (SQL)
+
+### 🔗 Quy trình User Chia sẻ Link (File & Thư mục)
+
+**Bước 1 — Mở modal chia sẻ**
+- Vào **Tài liệu** → hover thẻ **File** hoặc **Thư mục** → nhấn icon **Chia sẻ** (🔗).
+- Hoặc chuột phải vào file/thư mục → chọn **Chia sẻ** / **Chia sẻ thư mục**.
+
+**Bước 2 — Chọn đối tượng**
+
+| Hình thức | Ai truy cập được |
+|-----------|------------------|
+| **Tất cả nhân viên** (ALL) | Mọi user nội bộ đã đăng nhập |
+| **Theo phòng ban** (DEPT) | User thuộc phòng ban đã chọn |
+| **Công khai / Link** (PUBLIC) | Bất kỳ ai giữ link, **không cần đăng nhập** |
+
+- (Tùy chọn) Chọn **Ngày hết hạn** — để trống nghĩa là không hết hạn.
+
+**Bước 3 — Tạo & chia sẻ link**
+- Nhấn **"Tạo link chia sẻ"** → hệ thống sinh `share_token` ngẫu nhiên (32 byte entropy cao).
+- Copy link bằng nút **Sao chép** (hoạt động cả trên HTTP/LAN nhờ fallback) hoặc quét **QR code**.
+- Link có dạng: `http://<host>/s/<token>`.
+
+**Bước 4 — Quản lý & thu hồi**
+- Phần **"Chia sẻ hiện tại"** trong modal liệt kê các link đang hoạt động + trạng thái hết hạn.
+- Nhấn icon **Thu hồi** để vô hiệu link ngay lập tức (chỉ người tạo hoặc admin/head).
+
+**Khách truy cập link**
+- **Link file**: mở **ONLYOFFICE** (docx/xlsx/pptx/pdf…) chế độ xem (view-only), hoặc xem ảnh/PDF, hoặc tải xuống.
+- **Link thư mục**: hiển thị **Grid/List** các file & thư mục con. Breadcrumb chỉ cho **đi sâu** vào thư mục con, **không thể thoát lên trên thư mục gốc** đã chia sẻ. Mở file con qua **ONLYOFFICE/preview**, tải từng file, hoặc **nén .zip toàn bộ thư mục** (chỉ khi đủ nhỏ — mặc định ≤ 200 file / 200MB).
+- Link **PUBLIC** không cần đăng nhập; link **ALL/DEPT** yêu cầu đăng nhập nội bộ.
+- Link **hết hạn** tự động chặn truy cập (HTTP 403).
+
+**Bảo mật**
+- `share_token` entropy cao 32 byte, chỉ dùng trong URL công khai; không lộ thông tin đường dẫn storage.
+- Backend **tái kiểm tra `expires_at`** trên mọi request (info/contents/download/archive/onlyoffice).
+- Với thư mục: mỗi request `contents/download/archive` đều **xác thực lại vị trí** — `_path_within` (SMB/FTP — chống path traversal bằng `normpath`) hoặc `_gdrive_folder_within` (duyệt chuỗi `parents` cho Google Drive).
+- Quyền **kế thừa**: file bên trong thư mục được chia sẻ tự động được phép mở qua ONLYOFFICE bằng token của link thư mục đó.
 
 ## Phân quyền (3 lớp)
 
@@ -635,6 +674,19 @@ goldenfarm-ict-web/
 | `PUT` | `/api/documents/permissions/{perm_id}` | Cập nhật granular permissions (từng field) |
 | `DELETE` | `/api/documents/permissions/{perm_id}` | Xoá phân quyền |
 
+### Chia sẻ link (Documents — `/api/documents/shares`, `/api/shares`)
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `GET` | `/api/documents/shares` | Danh sách link chia sẻ của một item (`config_id`, `file_path`) |
+| `POST` | `/api/documents/shares` | Tạo link chia sẻ (file/folder, `item_type`, `share_type`, `department_id`, `expires_at`) |
+| `DELETE` | `/api/documents/shares/{id}` | Thu hồi link chia sẻ |
+| `GET` | `/api/shares/{token}/info` | Thông tin link (tên, `item_type`, `share_type`, hết hạn) — công khai |
+| `GET` | `/api/shares/{token}/contents` | Danh sách file/thư mục con của link **thư mục** (`path` = vị trí hiện tại, tái xác thực phạm vi) |
+| `GET` | `/api/shares/{token}/download` | Tải file (folder share: kèm `file_path`/`file_id`) |
+| `GET` | `/api/shares/{token}/archive` | Tải .zip toàn bộ thư mục (giới hạn 200 file / 200MB, 413 nếu quá lớn) |
+| `GET` | `/api/shares/{token}/onlyoffice/config` | Editor config ONLYOFFICE (folder share: kèm `file_path`/`file_id`/`file_name`) |
+| `POST` | `/api/shares/{token}/callback` | Callback ONLYOFFICE (view-only) |
+
 ## Database
 
 **Database**: PostgreSQL 16 — kết nối qua `DATABASE_URL` (mặc định service `db` trong docker-compose)
@@ -662,6 +714,7 @@ goldenfarm-ict-web/
 | `departments` | 20 | name UNIQUE, head_id → employees.id |
 | `storage_config` | 3 | Cấu hình storage SMB/FTP/GDrive |
 | `storage_permissions` | 0 | Phân quyền thư mục storage |
+| `document_shares` | 0 | Link chia sẻ file/folder — `item_type` ('file'/'folder'), `share_type` (ALL/DEPT/PUBLIC), `share_token` UNIQUE, `department_id`, `expires_at` |
 | `salary_slips` | 2 | Phiếu lương (dạng cột) |
 | `salaries` | 4 | Phiếu lương (dạng JSON), ON CONFLICT upsert |
 | `salary_upload_logs` | 1 | Lịch sử upload Excel |

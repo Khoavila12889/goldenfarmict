@@ -514,6 +514,70 @@ export function getOnlyOfficeConfig(configId, filePath, userCode, userRole, file
   })
 }
 
+// ─── Document Sharing ───────────────────────────────────────────
+function shareAuthParams() {
+  const userCode = sessionStorage.getItem('user_code') || ''
+  const token = sessionStorage.getItem('token') || ''
+  const role = sessionStorage.getItem('user_role') || 'user'
+  return { user_code: userCode, token, user_role: role }
+}
+
+export function getDocumentShares(configId, filePath) {
+  return api.get('/documents/shares', {
+    params: { config_id: configId, file_path: filePath, ...shareAuthParams() }
+  })
+}
+
+export function createDocumentShare(data) {
+  return api.post('/documents/shares', data, { params: shareAuthParams() })
+}
+
+export function deleteDocumentShare(id) {
+  return api.delete(`/documents/shares/${id}`, { params: shareAuthParams() })
+}
+
+export function getShareInfo(token) {
+  return api.get(`/shares/${token}/info`, { params: shareAuthParams() })
+}
+
+export function getShareContents(token, path = '') {
+  return api.get(`/shares/${token}/contents`, {
+    params: { path, ...shareAuthParams() }
+  })
+}
+
+export function getShareOnlyOfficeConfig(token, file = {}) {
+  return api.get(`/shares/${token}/onlyoffice/config`, {
+    params: {
+      ...(file.file_path ? { file_path: file.file_path } : {}),
+      ...(file.file_id ? { file_id: file.file_id } : {}),
+      ...(file.file_name ? { file_name: file.file_name } : {}),
+      ...shareAuthParams(),
+    }
+  })
+}
+
+export function getShareDownloadUrl(token, filePath = '', fileId = '') {
+  const userCode = sessionStorage.getItem('user_code') || ''
+  const userToken = sessionStorage.getItem('token') || ''
+  const role = sessionStorage.getItem('user_role') || 'user'
+  const auth = `user_code=${encodeURIComponent(userCode)}&user_role=${encodeURIComponent(role)}&token=${encodeURIComponent(userToken)}`
+  let url = `/api/shares/${token}/download?${auth}`
+  if (filePath) url += `&file_path=${encodeURIComponent(filePath)}`
+  if (fileId) url += `&file_id=${encodeURIComponent(fileId)}`
+  return url
+}
+
+export function getShareArchiveUrl(token, path = '') {
+  const userCode = sessionStorage.getItem('user_code') || ''
+  const userToken = sessionStorage.getItem('token') || ''
+  const role = sessionStorage.getItem('user_role') || 'user'
+  const auth = `user_code=${encodeURIComponent(userCode)}&user_role=${encodeURIComponent(role)}&token=${encodeURIComponent(userToken)}`
+  let url = `/api/shares/${token}/archive?${auth}`
+  if (path) url += `&path=${encodeURIComponent(path)}`
+  return url
+}
+
 // ─── Auth / Password Reset ──────────────────────────────────────
 export function forgotPassword(employee_code) {
   return api.post('/auth/forgot-password', { employee_code })

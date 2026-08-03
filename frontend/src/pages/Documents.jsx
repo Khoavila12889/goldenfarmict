@@ -4,12 +4,13 @@ import {
   Server, Wifi, Cloud, RefreshCw, ChevronRight, Home, Shield,
   MoreVertical, FileText, Archive, Image, Eye,
   FileSpreadsheet, FileCode, Music, Video, FileCog,
-  Download, LayoutGrid, List, Search, X, Upload
+  Download, LayoutGrid, List, Search, X, Upload, Share2
 } from 'lucide-react'
 import '../styles/shared.css'
 import './Documents.css'
 import FileViewer from '../components/FileViewer'
 import OnlyOfficeViewer from '../components/OnlyOfficeViewer'
+import ShareDocument from '../components/ShareDocument'
 import { getStorageConfigs, browseStorage, getStoragePermissions, createStoragePermission, deleteStoragePermission, createStorageConfig, updateStorageConfig, deleteStorageConfig, testStorageConnection, testStorageConnectionDirect, getStorageDepartments } from '../services/api'
 import { formatDate } from '../utils/date'
 const INITIAL_CONFIG = { name: '', type: 'smb', host: '', port: 445, username: '', password: '', remote_path: '', domain: '' }
@@ -132,6 +133,8 @@ export default function Documents() {
   const [ooFile, setOoFile] = useState(null)
   const [ooOpen, setOoOpen] = useState(false)
   const [ooConfigId, setOoConfigId] = useState(null)
+  const [shareFile, setShareFile] = useState(null)
+  const [shareOpen, setShareOpen] = useState(false)
   const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, file: null })
 
   const fileInputRef = useRef(null)
@@ -269,6 +272,33 @@ export default function Documents() {
       alert('Tải file thất bại: ' + (err.message || ''))
     }
     setContextMenu({ visible: false })
+  }
+
+  function handleShareEntry(entry) {
+    const currentPath = breadcrumbs.at(-1).id
+    const isGdrive = activeConfig?.type === 'gdrive'
+    const isFolder = !!entry.is_dir
+    let normalizedPath
+    let fileId = ''
+    if (isFolder && isGdrive) {
+      normalizedPath = entry.id
+      fileId = entry.id
+    } else {
+      normalizedPath = currentPath === '/'
+        ? entry.name
+        : `${currentPath.replace(/\/$/, '')}/${entry.name}`
+      fileId = isGdrive ? entry.id : ''
+    }
+    setShareFile({
+      entry,
+      configId: activeConfig.id,
+      filePath: normalizedPath,
+      fileId,
+      fileName: entry.name,
+      itemType: isFolder ? 'folder' : 'file',
+      isDir: isFolder,
+    })
+    setShareOpen(true)
   }
 
   function browseBreadcrumb(idx) {
@@ -550,6 +580,11 @@ export default function Documents() {
                         <Eye size={14} />
                       </button>
                     )}
+                    <button className="doc-card-share"
+                      onClick={(ev) => { ev.stopPropagation(); handleShareEntry(e) }}
+                      title={e.is_dir ? 'Chia sẻ thư mục' : 'Chia sẻ'}>
+                      <Share2 size={14} />
+                    </button>
                     {!e.is_dir && (
                       <button className="doc-card-download"
                         onClick={(ev) => { ev.stopPropagation(); handleDownloadFile(e) }}
@@ -604,6 +639,10 @@ export default function Documents() {
                             <Eye size={14} />
                           </button>
                         )}
+                        <button className="doc-row-action" title={e.is_dir ? 'Chia sẻ thư mục' : 'Chia sẻ'}
+                          onClick={(ev) => { ev.stopPropagation(); handleShareEntry(e); }}>
+                          <Share2 size={14} />
+                        </button>
                         {!e.is_dir && (
                           <button className="doc-row-action" title="Tải xuống"
                             onClick={(ev) => { ev.stopPropagation(); handleDownloadFile(e); }}>
@@ -781,6 +820,9 @@ export default function Documents() {
               <Eye size={15} /> Xem trước
             </div>
           )}
+          <div className="doc-context-menu-item" onClick={() => { handleShareEntry(contextMenu.file); setContextMenu({ visible: false }) }}>
+            <Share2 size={15} /> {contextMenu.file.is_dir ? 'Chia sẻ thư mục' : 'Chia sẻ'}
+          </div>
           {!contextMenu.file.is_dir && (
             <div className="doc-context-menu-item" onClick={() => handleDownloadFile(contextMenu.file)}>
               <Download size={15} /> Tải xuống
@@ -808,6 +850,16 @@ export default function Documents() {
           setOoOpen(false)
           setOoFile(null)
           setOoConfigId(null)
+        }}
+      />
+
+      {/* ─── Share Document Modal ───────────────────────────────── */}
+      <ShareDocument
+        file={shareFile}
+        isOpen={shareOpen}
+        onClose={() => {
+          setShareOpen(false)
+          setShareFile(null)
         }}
       />
     </div>
