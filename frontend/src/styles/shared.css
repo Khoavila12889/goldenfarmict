@@ -361,6 +361,52 @@
   height: 100%;
 }
 
+/* Floating close button for OnlyOffice modal */
+.oov-close-btn-floating {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 1001;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.15s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.oov-close-btn-floating:hover {
+  background: rgba(0, 0, 0, 0.8);
+  transform: scale(1.05);
+}
+
+.oov-close-btn-floating:active {
+  transform: scale(0.95);
+}
+
+.oov-close-btn-floating svg {
+  width: 18px;
+  height: 18px;
+}
+
+.oov-close-btn-floating span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Mobile responsive */
 @media (max-width: 768px) {
   .oov-container {
@@ -380,5 +426,18 @@
   .oov-close-btn {
     width: 32px;
     height: 32px;
+  }
+  
+  /* Adjust floating close button for mobile */
+  .oov-close-btn-floating {
+    top: 0.75rem;
+    right: 0.75rem;
+    width: 36px;
+    height: 36px;
+  }
+  
+  .oov-close-btn-floating svg {
+    width: 16px;
+    height: 16px;
   }
 }

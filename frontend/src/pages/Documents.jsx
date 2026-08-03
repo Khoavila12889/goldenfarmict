@@ -24,21 +24,30 @@ function isImageFile(name) {
 }
 
 /**
- * Trả về URL thumbnail để hiển thị trong card:
- * - Google Drive: dùng thumbnailLink (nếu có) – không cần backend call
- * - SMB/FTP:     dùng endpoint /api/documents/thumbnail?... để resize on-the-fly
+ * Build thumbnail URL for images.
+ * For Google Drive: use entry.thumbnailLink (if available) with higher size (=s800),
+ * or call backend /api/documents/thumbnail with &file_id=${entry.id} (REQUIRED).
+ * For SMB/FTP: call backend /api/documents/thumbnail with &size=400.
  */
 function buildThumbnailUrl(cfg, entry, currentPath, userCode, userRole) {
-  if (!cfg) return null
-  // Google Drive – thumbnailLink có sẵn từ API response
-  if (cfg.type === 'gdrive' && entry.thumbnailLink) {
-    // Tăng kích thước thumbnail GDrive: thay =s220 -> =s400
-    return entry.thumbnailLink.replace(/=s\d+$/, '=s400')
-  }
-  // SMB / FTP – dùng endpoint thumbnail backend
+  if (!cfg || !entry || !isImageFile(entry.name)) return null
+  
+  const isGdrive = cfg.type === 'gdrive'
   const normalizedPath = currentPath === '/'
     ? entry.name
     : `${currentPath.replace(/\/$/, '')}/${entry.name}`
+  
+  // Google Drive: prefer thumbnailLink with higher resolution (=s800)
+  if (isGdrive) {
+    if (entry.thumbnailLink) {
+      // Upgrade thumbnail size from =s220 or =s220-c to =s800 for better quality
+      return entry.thumbnailLink.replace(/=s\d+(-c)?$/, '=s800')
+    }
+    // Fallback: call backend thumbnail endpoint with REQUIRED file_id parameter
+    return `/api/documents/thumbnail?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}&file_id=${encodeURIComponent(entry.id)}&user_code=${userCode}&user_role=${userRole}&size=800`
+  }
+  
+  // SMB/FTP: call backend thumbnail endpoint
   return `/api/documents/thumbnail?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}&user_code=${userCode}&user_role=${userRole}&size=400`
 }
 
