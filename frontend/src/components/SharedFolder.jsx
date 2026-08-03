@@ -109,16 +109,32 @@ export default function SharedFolder({ token, info }) {
         return
       }
       const blob = await res.blob()
+      if (!blob || blob.size === 0) {
+        setZipError('File .zip rỗng hoặc không thể tải xuống')
+        return
+      }
+      let fileName = `${(info?.file_name || 'folder').replace(/[\\/:*?"<>|]/g, '_')}.zip`
+      const cd = res.headers?.get('Content-Disposition') || ''
+      if (cd) {
+        const mStar = /filename\*=UTF-8''([^;]+)/i.exec(cd)
+        if (mStar) {
+          fileName = decodeURIComponent(mStar[1])
+        } else {
+          const m = /filename="?([^";]+)"?/i.exec(cd)
+          if (m) fileName = m[1]
+        }
+      }
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${(info?.file_name || 'folder').replace(/[\\/:*?"<>|]/g, '_')}.zip`
+      a.download = fileName
+      a.rel = 'noopener'
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
       setTimeout(() => URL.revokeObjectURL(url), 3000)
     } catch (e) {
-      setZipError('Lỗi tải xuống: ' + (e.message || ''))
+      setZipError('Lỗi tải xuống: ' + (e?.message || ''))
     } finally {
       setZipBusy(false)
     }

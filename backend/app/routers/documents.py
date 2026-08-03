@@ -228,6 +228,24 @@ def browse(config_id: int, path: str = Query('/'), user_code: str = Query(''), u
 
     return {"data": filtered, "path": path, "config": {"id": cfg['id'], "name": cfg['name'], "type": cfg['type']}}
 
+def _is_hidden_system_name(name: str) -> bool:
+    """True for NAS/system entries that must be hidden from listings.
+
+    Covers Synology/SMB artifacts and dotfiles:
+      - leading '.'   (e.g. .docker, .DS_Store)
+      - leading '_'   (e.g. _DAV, _dev)
+      - leading '#'   (e.g. #recycle, #snapshot)
+      - contains '@eaDir'  (Synology thumbnail/metadata folders)
+    """
+    name = (name or '')
+    return (
+        name.startswith('.')
+        or name.startswith('_')
+        or name.startswith('#')
+        or '@eaDir' in name
+    )
+
+
 def _browse_ftp(cfg, path):
     ftp = ftplib.FTP()
     ftp.connect(cfg['host'], cfg['port'] or 21, timeout=15)
@@ -254,7 +272,7 @@ def _parse_ftp_list(lines):
         if len(parts) < 9:
             continue
         name = ' '.join(parts[8:])
-        if name in ('.', '..'):
+        if name in ('.', '..') or _is_hidden_system_name(name):
             continue
         perms = parts[0]
         is_dir = perms.startswith('d')
@@ -297,7 +315,7 @@ def _browse_smb(cfg, path):
         raise HTTPException(502, f"SMB list error: {str(e)}")
     entries = []
     for f in shares:
-        if f.filename in ('.', '..'):
+        if f.filename in ('.', '..') or _is_hidden_system_name(f.filename):
             continue
         modified = ''
         try:

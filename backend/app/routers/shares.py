@@ -42,6 +42,7 @@ from .documents import (
     _browse_smb,
     _browse_ftp,
     _browse_gdrive,
+    _is_hidden_system_name,
 )
 
 router = APIRouter(prefix="/api", tags=["shares"])
@@ -427,6 +428,8 @@ def _collect_folder_files(cfg: dict, current: str, is_gdrive: bool):
         for e in entries:
             if len(files) >= _ARCHIVE_MAX_FILES or total >= _ARCHIVE_MAX_BYTES:
                 return
+            if _is_hidden_system_name(e.get('name', '')):
+                continue
             child_rel = e['name'] if not rel else f"{rel}/{e['name']}"
             if e['is_dir']:
                 child_path = e['id'] if is_gdrive else _norm_path(os.path.join(path, e['name']))
@@ -524,29 +527,43 @@ def share_archive(
             for f in files:
                 data = _get_file_bytes(cfg, f['path'], f['file_id'])
                 zf.writestr(f['rel'], data)
+        spool.seek(0, 2)  # SEEK_END
+        zip_size = spool.tell()
         spool.seek(0)
+    except HTTPException:
+        spool.close()
+        raise
+    except Exception as exc:
+        spool.close()
+        raise HTTPException(500, f"Lỗi khi tạo file .zip: {exc}")
 
-        safe_name = zip_name.encode('ascii', 'ignore').decode('ascii') or 'folder.zip'
-        from fastapi.responses import StreamingResponse
+    safe_name = zip_name.encode('ascii', 'ignore').decode('ascii') or 'folder.zip'
 
-        def iter_spool():
+    def iter_spool():
+        # The spool must stay open until Starlette finishes streaming the
+        # body (which happens AFTER this endpoint returns). Closing it here
+        # (in the generator's finally) instead of in the endpoint guarantees
+        # we never read from a closed file mid-stream.
+        try:
             while True:
                 chunk = spool.read(64 * 1024)
                 if not chunk:
                     break
                 yield chunk
+        finally:
+            spool.close()
 
-        return StreamingResponse(
-            iter_spool(),
-            media_type='application/zip',
-            headers={
-                "Content-Disposition": f"attachment; filename=\"{safe_name}\"; filename*=UTF-8''{quote(zip_name)}",
-                "X-Content-Type-Options": "nosniff",
-                "Access-Control-Allow-Origin": "*",
-            },
-        )
-    finally:
-        spool.close()
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(
+        iter_spool(),
+        media_type='application/zip',
+        headers={
+            "Content-Disposition": f"attachment; filename=\"{safe_name}\"; filename*=UTF-8''{quote(zip_name)}",
+            "Content-Length": str(zip_size),
+            "X-Content-Type-Options": "nosniff",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
 
 
 @router.get("/shares/{share_token}/download")
