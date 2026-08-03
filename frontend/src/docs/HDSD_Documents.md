@@ -66,7 +66,7 @@ Phân hệ Tài liệu cho phép truy cập và quản lý tệp tin từ các k
 - **Link thư mục**:
   - Hiển thị danh sách **Grid/List** các file và thư mục con.
   - **Breadcrumb** chỉ cho đi sâu vào thư mục con — không thể thoát lên trên thư mục gốc được chia sẻ.
-  - Click file con → mở **ONLYOFFICE / preview ảnh-PDF**; nhấn **Tải xuống** để lấy từng file.
+  - Click file con → mở **toàn màn hình** qua **ONLYOFFICE / preview ảnh-PDF** (như trình xem tài liệu nội bộ); thanh trên cùng có nút **Quay lại thư mục**, **Tải xuống** và **Đóng** (hoặc phím **Esc**).
   - Nhấn **Tải .zip** để nén toàn bộ thư mục (chỉ khi thư mục đủ nhỏ — mặc định ≤ 200 file / 200MB; nếu quá lớn hệ thống hướng dẫn tải từng file).
 - Link **PUBLIC** không cần đăng nhập; link **ALL/DEPT** yêu cầu đăng nhập nội bộ.
 - Link **hết hạn** sẽ tự chặn truy cập với thông báo lỗi.

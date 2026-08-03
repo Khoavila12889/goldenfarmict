@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import {
   FolderOpen, Folder, File, FileText, FileSpreadsheet, Image, Archive,
-  ChevronRight, Home, Download, Loader2, AlertCircle, ArrowLeft
+  ChevronRight, Home, Download, Loader2, AlertCircle, ArrowLeft, X
 } from 'lucide-react'
 import { getShareContents, getShareDownloadUrl, getShareArchiveUrl } from '../services/api'
 import { useShareOnlyOffice } from '../hooks/useShareOnlyOffice'
@@ -80,6 +80,17 @@ export default function SharedFolder({ token, info }) {
     scriptId: 'shared-folder-docsapi-script',
   })
 
+  useEffect(() => {
+    if (!selected) return
+    const handleEsc = (e) => { if (e.key === 'Escape') setSelected(null) }
+    document.addEventListener('keydown', handleEsc)
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', handleEsc)
+      document.body.style.overflow = ''
+    }
+  }, [selected])
+
   function openFolder(entry) {
     setCrumbs(prev => [...prev, { id: entry.path, name: entry.name }])
     loadContents(entry.path)
@@ -140,7 +151,7 @@ export default function SharedFolder({ token, info }) {
     }
   }
 
-  // ─── File view (OnlyOffice / preview / download) ───
+  // ─── File view (full-screen overlay, like OnlyOffice viewer) ───
   if (selected) {
     const ext = getExt(selected.name)
     const isOffice = OFFICE_EXTS.has(ext)
@@ -148,33 +159,38 @@ export default function SharedFolder({ token, info }) {
     const isPdf = ext === 'pdf'
     const downloadUrl = getShareDownloadUrl(token, selected.path, selected.id)
     return (
-      <div className="sf-file-view">
-        <div className="sf-file-bar">
+      <div className="sf-overlay">
+        <div className="sf-overlay-bar">
           <button className="psp-btn psp-btn-ghost" onClick={() => setSelected(null)}>
             <ArrowLeft size={15} /> Quay lại thư mục
           </button>
           <div className="sf-file-name" title={selected.name}>{selected.name}</div>
-          <a className="psp-btn psp-btn-primary" href={downloadUrl} download>
-            <Download size={15} /> Tải xuống
-          </a>
+          <div className="sf-overlay-bar-right">
+            <a className="psp-btn psp-btn-primary" href={downloadUrl} download>
+              <Download size={15} /> Tải xuống
+            </a>
+            <button className="sf-overlay-close" onClick={() => setSelected(null)} title="Đóng (Esc)">
+              <X size={15} /> Đóng
+            </button>
+          </div>
         </div>
-        <div className="sf-file-body">
+        <div className="sf-overlay-body">
           {isOffice && (
-            <div className="sf-editor-wrap">
+            <div className="sf-editor-wrap sf-editor-wrap-full">
               {ooError && (
                 <div className="psp-error"><AlertCircle size={18} /> {ooError}</div>
               )}
               <div id={officePlaceholder} className="psp-editor" style={{ visibility: ooError ? 'hidden' : 'visible' }} />
             </div>
           )}
-          {!isOffice && isImage && <img src={downloadUrl} alt={selected.name} className="psp-image" />}
+          {!isOffice && isImage && <img src={downloadUrl} alt={selected.name} className="psp-image sf-overlay-image" />}
           {!isOffice && isPdf && (
-            <object data={downloadUrl} type="application/pdf" className="psp-pdf">
+            <object data={downloadUrl} type="application/pdf" className="psp-pdf sf-overlay-pdf">
               <p>Trình duyệt không hỗ trợ xem PDF. <a href={downloadUrl} target="_blank" rel="noopener noreferrer">Nhấn để tải xuống</a>.</p>
             </object>
           )}
           {!isOffice && !isImage && !isPdf && (
-            <div className="psp-file-body psp-unknown">
+            <div className="psp-file-body psp-unknown sf-overlay-unknown">
               <File size={40} />
               <p className="psp-unknown-title">{selected.name}</p>
               <p className="psp-unknown-desc">Loại tệp này không thể xem trực tuyến.</p>

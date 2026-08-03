@@ -187,12 +187,11 @@ export default function PublicSharePage() {
 
   return (
     <div className="psp-wrap">
-      <header className="psp-header">
-        <div className="psp-brand">GOLDENFARM <span>ICT</span></div>
-        {isLoggedIn && (
+      {isLoggedIn && (
+        <header className="psp-header psp-header-right">
           <button className="psp-btn psp-btn-ghost" onClick={() => navigate('/documents')}>← Về tài liệu</button>
-        )}
-      </header>
+        </header>
+      )}
 
       <main className={`psp-main${isOffice ? ' psp-main-editor' : ''}`}>
         {loading && (

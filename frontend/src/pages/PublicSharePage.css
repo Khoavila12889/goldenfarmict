@@ -18,6 +18,10 @@
   flex-shrink: 0;
 }
 
+.psp-header-right {
+  justify-content: flex-end;
+}
+
 .psp-brand {
   font-size: 1.05rem;
   font-weight: 800;
