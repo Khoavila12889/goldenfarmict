@@ -57,17 +57,23 @@ Phân hệ Tài liệu cho phép truy cập và quản lý tệp tin từ các k
      - **Theo phòng ban** — user thuộc phòng ban đã chọn.
      - **Công khai / Link** — bất kỳ ai giữ link, **không cần đăng nhập**.
    - (Tùy chọn) Chọn **Ngày hết hạn** — để trống là không hết hạn.
+   - Chọn **Quyền truy cập** (mặc định **Xem + Tải xuống**):
+     - **Xem** — luôn bật: mở/xem trực tuyến qua ONLYOFFICE/preview.
+     - **Tải xuống** — cho phép tải file / nén thư mục `.zip`.
+     - **Chỉnh sửa** — mở ONLYOFFICE ở chế độ sửa và lưu ngược về kho; chỉ áp dụng cho link **nội bộ** (ALL/DEPT). Link **Công khai** luôn chỉ xem (quyền này bị ẩn).
 3. Nhấn **"Tạo link chia sẻ"** → link được sinh ra.
 4. **Sao chép link** (nút **Sao chép** hoạt động cả trên mạng LAN HTTP) hoặc quét **QR code** để gửi.
-5. Phần **"Chia sẻ hiện tại"** hiển thị các link đang hoạt động; nhấn icon **Thu hồi** để vô hiệu link ngay.
+5. Phần **"Chia sẻ hiện tại"** hiển thị các link đang hoạt động (kèm **chip quyền**); nhấn icon **Thu hồi** để vô hiệu link ngay.
 
 **Khách truy cập link chia sẻ**
-- **Link file**: mở trực tiếp qua **ONLYOFFICE** (docx/xlsx/pptx/pdf…) ở chế độ xem, hoặc xem ảnh/PDF, hoặc tải xuống.
+- **Link file**: mở trực tiếp qua **ONLYOFFICE** (docx/xlsx/pptx/pdf…) ở chế độ xem, hoặc xem ảnh/PDF, hoặc tải xuống (nếu có quyền).
 - **Link thư mục**:
   - Hiển thị danh sách **Grid/List** các file và thư mục con.
   - **Breadcrumb** chỉ cho đi sâu vào thư mục con — không thể thoát lên trên thư mục gốc được chia sẻ.
   - Click file con → mở **toàn màn hình** qua **ONLYOFFICE / preview ảnh-PDF** (như trình xem tài liệu nội bộ); thanh trên cùng có nút **Quay lại thư mục**, **Tải xuống** và **Đóng** (hoặc phím **Esc**).
   - Nhấn **Tải .zip** để nén toàn bộ thư mục (chỉ khi thư mục đủ nhỏ — mặc định ≤ 200 file / 200MB; nếu quá lớn hệ thống hướng dẫn tải từng file).
+- Nếu link **không cho phép tải xuống**: các nút **Tải xuống / .zip** bị ẩn và yêu cầu tải bị backend chặn — nhưng **vẫn xem online** bình thường.
+- Nếu link nội bộ **cho phép chỉnh sửa**: ONLYOFFICE mở ở chế độ **sửa**, lưu thay đổi ngược về kho; ngược lại **chỉ xem** (link công khai luôn chỉ xem).
 - Link **PUBLIC** không cần đăng nhập; link **ALL/DEPT** yêu cầu đăng nhập nội bộ.
 - Link **hết hạn** sẽ tự chặn truy cập với thông báo lỗi.
 

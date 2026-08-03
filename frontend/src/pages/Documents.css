@@ -505,7 +505,7 @@
 
 .doc-card-preview { right: 0.4rem; }
 .doc-card-download { right: 2.4rem; }
-.doc-card-share { right: 4.4rem; }
+.doc-card-share { right: 0.4rem; }
 
 .doc-card:hover .doc-card-preview,
 .doc-card:hover .doc-card-share,

@@ -557,7 +557,7 @@ export function getShareOnlyOfficeConfig(token, file = {}) {
   })
 }
 
-export function getShareDownloadUrl(token, filePath = '', fileId = '') {
+export function getShareDownloadUrl(token, filePath = '', fileId = '', disposition = 'inline') {
   const userCode = sessionStorage.getItem('user_code') || ''
   const userToken = sessionStorage.getItem('token') || ''
   const role = sessionStorage.getItem('user_role') || 'user'
@@ -565,6 +565,7 @@ export function getShareDownloadUrl(token, filePath = '', fileId = '') {
   let url = `/api/shares/${token}/download?${auth}`
   if (filePath) url += `&file_path=${encodeURIComponent(filePath)}`
   if (fileId) url += `&file_id=${encodeURIComponent(fileId)}`
+  if (disposition === 'attachment') url += '&disposition=attachment'
   return url
 }
 

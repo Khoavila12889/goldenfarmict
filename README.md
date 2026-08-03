@@ -153,8 +153,9 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
   - **Expiration date**: Đặt ngày hết hạn cho từng permission
   - **Permission inheritance**: quyền folder cha áp dụng cho folder con
 - **Export/Import Config**: Lưu cấu hình storage dưới dạng file JSON, import lại sau
-- **🔗 Chia sẻ link (File & Thư mục)**: Mỗi file hoặc thư mục có thể tạo **link chia sẻ** với 3 hình thức — **Tất cả nhân viên** (ALL), **Theo phòng ban** (DEPT), **Công khai / Link** (PUBLIC). Link dùng chung một Modal "Chia sẻ", hiển thị URL + **QR code**, nút **Sao chép** (hoạt động cả trên mạng LAN HTTP nhờ fallback `document.execCommand`), đặt **ngày hết hạn** tùy chọn, và danh sách **chia sẻ hiện tại** để **thu hồi**.
+- **🔗 Chia sẻ link (File & Thư mục)**: Mỗi file hoặc thư mục có thể tạo **link chia sẻ** với 3 hình thức — **Tất cả nhân viên** (ALL), **Theo phòng ban** (DEPT), **Công khai / Link** (PUBLIC), kèm **quyền truy cập** (Xem / Tải xuống / Chỉnh sửa). Link dùng chung một Modal "Chia sẻ", hiển thị URL + **QR code**, nút **Sao chép** (hoạt động cả trên mạng LAN HTTP nhờ fallback `document.execCommand`), đặt **ngày hết hạn** tùy chọn, và danh sách **chia sẻ hiện tại** để **thu hồi**.
 - **📂 Chia sẻ thư mục (Share Folder)**: Khi chia sẻ một **thư mục**, khách mở link sẽ thấy giao diện duyệt thư mục (Grid/List) thay vì ONLYOFFICE — gồm **breadcrumb bị chặn ở thư mục gốc** (không thể đi ra ngoài phạm vi chia sẻ), tải từng file, hoặc **nén .zip toàn bộ thư mục** (chỉ khi thư mục nhỏ — giới hạn mặc định 200 file / 200MB). Khi bấm vào một file con, trình xem mở **toàn màn hình (full-screen overlay) giống hệt trình xem ONLYOFFICE của module nội bộ** — editor ONLYOFFICE / ảnh / PDF chiếm trọn viewport, thanh công cụ gồm nút **Quay lại thư mục**, **Tải xuống** và **Đóng** (hoặc phím **Esc**) để trở về danh sách. Mọi request phía backend đều **tái xác thực vị trí** (path-prefix cho SMB/FTP, duyệt `parents` cho Google Drive) nên khách không thể thoát khỏi thư mục được chia sẻ.
+- **🔐 Quyền chia sẻ**: mỗi link lưu danh sách quyền `view,download,edit` — `view` luôn bật (xem online), `download` bật/tắt nút Tải xuống và `.zip` (backend chặn HTTP 403), `edit` chỉ cho link nội bộ (ALL/DEPT) mở ONLYOFFICE ở chế độ sửa và **lưu ngược về kho**; link PUBLIC luôn **view-only**.
   ### ✅ Quản lý Công việc & Todos (User & Phòng ban)
 - **Kanban Board 4 cột**: Cần làm, Đang xử lý, Chờ duyệt, Đã hoàn thành với hiệu ứng Glassmorphism hiện đại.
 - **Phạm vi phân quyền (Scope)**: Switch giữa cá nhân (Personal Todos) và phòng ban (Department Shared Todos).
@@ -199,13 +200,20 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 
 - (Tùy chọn) Chọn **Ngày hết hạn** — để trống nghĩa là không hết hạn.
 
+**Bước 2b — Chọn quyền truy cập** (mặc định: **Xem + Tải xuống**)
+| Quyền | Ý nghĩa |
+|-------|---------|
+| **Xem** (view) | Luôn bật — mở/xem trực tuyến qua ONLYOFFICE/preview |
+| **Tải xuống** (download) | Tải file / nén thư mục `.zip` |
+| **Chỉnh sửa** (edit) | Mở ONLYOFFICE ở chế độ **edit** + lưu ngược về kho — **chỉ áp dụng** cho link nội bộ (ALL/DEPT); link **PUBLIC luôn chỉ xem** (quyền này bị ẩn) |
+
 **Bước 3 — Tạo & chia sẻ link**
 - Nhấn **"Tạo link chia sẻ"** → hệ thống sinh `share_token` ngẫu nhiên (32 byte entropy cao).
 - Copy link bằng nút **Sao chép** (hoạt động cả trên HTTP/LAN nhờ fallback) hoặc quét **QR code**.
 - Link có dạng: `http://<host>/s/<token>`.
 
 **Bước 4 — Quản lý & thu hồi**
-- Phần **"Chia sẻ hiện tại"** trong modal liệt kê các link đang hoạt động + trạng thái hết hạn.
+- Phần **"Chia sẻ hiện tại"** trong modal liệt kê các link đang hoạt động + trạng thái hết hạn + **chip quyền** (Xem / Tải xuống / Chỉnh sửa).
 - Nhấn icon **Thu hồi** để vô hiệu link ngay lập tức (chỉ người tạo hoặc admin/head).
 
 **Khách truy cập link**
@@ -213,12 +221,15 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 - **Link thư mục**: hiển thị **Grid/List** các file & thư mục con. Breadcrumb chỉ cho **đi sâu** vào thư mục con, **không thể thoát lên trên thư mục gốc** đã chia sẻ. Mở file con qua **ONLYOFFICE/preview**, tải từng file, hoặc **nén .zip toàn bộ thư mục** (chỉ khi đủ nhỏ — mặc định ≤ 200 file / 200MB).
 - Link **PUBLIC** không cần đăng nhập; link **ALL/DEPT** yêu cầu đăng nhập nội bộ.
 - Link **hết hạn** tự động chặn truy cập (HTTP 403).
+- Nếu link **không có quyền "Tải xuống"**: các nút Tải xuống / `.zip` bị ẩn, endpoint download chặn với HTTP 403 (xem online không bị ảnh hưởng).
+- Nếu link **có quyền "Chỉnh sửa"**: ONLYOFFICE mở ở chế độ edit và lưu ngược về kho; ngược lại view-only (PUBLIC luôn view-only).
 
 **Bảo mật**
 - `share_token` entropy cao 32 byte, chỉ dùng trong URL công khai; không lộ thông tin đường dẫn storage.
 - Backend **tái kiểm tra `expires_at`** trên mọi request (info/contents/download/archive/onlyoffice).
 - Với thư mục: mỗi request `contents/download/archive` đều **xác thực lại vị trí** — `_path_within` (SMB/FTP — chống path traversal bằng `normpath`) hoặc `_gdrive_folder_within` (duyệt chuỗi `parents` cho Google Drive).
 - Quyền **kế thừa**: file bên trong thư mục được chia sẻ tự động được phép mở qua ONLYOFFICE bằng token của link thư mục đó.
+- Phân biệt **preview vs download**: endpoint `/download` mặc định trả `Content-Disposition: inline` (chỉ cần quyền `view` — dùng cho xem ảnh/PDF và ONLYOFFICE tải file server-to-server); khi có `?disposition=attachment` mới yêu cầu quyền `download`.
 
 ## Phân quyền (3 lớp)
 
@@ -678,14 +689,14 @@ goldenfarm-ict-web/
 | Method | Endpoint | Mô tả |
 |--------|----------|-------|
 | `GET` | `/api/documents/shares` | Danh sách link chia sẻ của một item (`config_id`, `file_path`) |
-| `POST` | `/api/documents/shares` | Tạo link chia sẻ (file/folder, `item_type`, `share_type`, `department_id`, `expires_at`) |
+| `POST` | `/api/documents/shares` | Tạo link chia sẻ (file/folder, `item_type`, `share_type`, `department_id`, `expires_at`, `permissions`) |
 | `DELETE` | `/api/documents/shares/{id}` | Thu hồi link chia sẻ |
-| `GET` | `/api/shares/{token}/info` | Thông tin link (tên, `item_type`, `share_type`, hết hạn) — công khai |
+| `GET` | `/api/shares/{token}/info` | Thông tin link (tên, `item_type`, `share_type`, `permissions`, hết hạn) — công khai |
 | `GET` | `/api/shares/{token}/contents` | Danh sách file/thư mục con của link **thư mục** (`path` = vị trí hiện tại, tái xác thực phạm vi) |
-| `GET` | `/api/shares/{token}/download` | Tải file (folder share: kèm `file_path`/`file_id`) |
-| `GET` | `/api/shares/{token}/archive` | Tải .zip toàn bộ thư mục (giới hạn 200 file / 200MB, 413 nếu quá lớn) |
-| `GET` | `/api/shares/{token}/onlyoffice/config` | Editor config ONLYOFFICE (folder share: kèm `file_path`/`file_id`/`file_name`) |
-| `POST` | `/api/shares/{token}/callback` | Callback ONLYOFFICE (view-only) |
+| `GET` | `/api/shares/{token}/download` | Tải/xem file (`disposition=inline` chỉ cần quyền `view`; `disposition=attachment` cần quyền `download`) |
+| `GET` | `/api/shares/{token}/archive` | Tải .zip toàn bộ thư mục (cần quyền `download`, giới hạn 200 file / 200MB, 413 nếu quá lớn) |
+| `GET` | `/api/shares/{token}/onlyoffice/config` | Editor config ONLYOFFICE (folder share: kèm `file_path`/`file_id`/`file_name`) — trả `permissions` theo quyền share |
+| `POST` | `/api/shares/{token}/callback` | Callback ONLYOFFICE — lưu ngược về kho khi share nội bộ có quyền `edit`, ngược lại bỏ qua |
 
 ## Database
 
@@ -714,7 +725,7 @@ goldenfarm-ict-web/
 | `departments` | 20 | name UNIQUE, head_id → employees.id |
 | `storage_config` | 3 | Cấu hình storage SMB/FTP/GDrive |
 | `storage_permissions` | 0 | Phân quyền thư mục storage |
-| `document_shares` | 0 | Link chia sẻ file/folder — `item_type` ('file'/'folder'), `share_type` (ALL/DEPT/PUBLIC), `share_token` UNIQUE, `department_id`, `expires_at` |
+| `document_shares` | 0 | Link chia sẻ file/folder — `item_type` ('file'/'folder'), `share_type` (ALL/DEPT/PUBLIC), `permissions` (comma list `view,download,edit`), `share_token` UNIQUE, `department_id`, `expires_at` |
 | `salary_slips` | 2 | Phiếu lương (dạng cột) |
 | `salaries` | 4 | Phiếu lương (dạng JSON), ON CONFLICT upsert |
 | `salary_upload_logs` | 1 | Lịch sử upload Excel |

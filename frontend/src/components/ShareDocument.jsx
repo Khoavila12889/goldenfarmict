@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import QRCode from 'react-qr-code'
-import { X, Loader2, Copy, Check, Link2, Users, Building2, Globe, Trash2, AlertCircle } from 'lucide-react'
+import { X, Loader2, Copy, Check, Link2, Users, Building2, Globe, Trash2, AlertCircle, Eye, Download, Pencil } from 'lucide-react'
 import { getStorageDepartments, getDocumentShares, createDocumentShare, deleteDocumentShare, getShareDownloadUrl } from '../services/api'
 import './ShareDocument.css'
 
@@ -10,11 +10,18 @@ const SHARE_TYPES = [
   { value: 'PUBLIC', label: 'Công khai (Link)', icon: Globe, desc: 'Bất kỳ ai có link đều truy cập được' },
 ]
 
+const PERM_OPTIONS = [
+  { value: 'view', label: 'Xem', icon: Eye, desc: 'Mở và xem trực tuyến', alwaysOn: true },
+  { value: 'download', label: 'Tải xuống', icon: Download, desc: 'Tải file / nén .zip' },
+  { value: 'edit', label: 'Chỉnh sửa', icon: Pencil, desc: 'Chỉnh sửa qua ONLYOFFICE', internalOnly: true },
+]
+
 export default function ShareDocument({ file, isOpen, onClose }) {
   const [shareType, setShareType] = useState('ALL')
   const [departmentId, setDepartmentId] = useState('')
   const [departments, setDepartments] = useState([])
   const [expiresAt, setExpiresAt] = useState('')
+  const [permissions, setPermissions] = useState(['view', 'download'])
   const [saving, setSaving] = useState(false)
   const [savedToken, setSavedToken] = useState('')
   const [copied, setCopied] = useState(false)
@@ -29,6 +36,7 @@ export default function ShareDocument({ file, isOpen, onClose }) {
     setShareType('ALL')
     setDepartmentId('')
     setExpiresAt('')
+    setPermissions(['view', 'download'])
     setSavedToken('')
     setCopied(false)
     setError('')
@@ -110,6 +118,7 @@ export default function ShareDocument({ file, isOpen, onClose }) {
         share_type: shareType,
         department_id: shareType === 'DEPT' ? Number(departmentId) : null,
         expires_at: expiresAt || '',
+        permissions: permissions.join(','),
       }
       const r = await createDocumentShare(payload)
       const created = r.data?.data
@@ -141,6 +150,21 @@ export default function ShareDocument({ file, isOpen, onClose }) {
   const shareTypeIcon = SHARE_TYPES.find(t => t.value === shareType)?.icon || Users
   const ShareIcon = shareTypeIcon
 
+  function togglePerm(perm, on) {
+    setPermissions(prev => {
+      if (on) return prev.includes(perm) ? prev : [...prev, perm]
+      return prev.filter(p => p !== perm)
+    })
+  }
+
+  function selectShareType(value) {
+    setShareType(value)
+    if (value === 'PUBLIC') {
+      // Public links can never be edited.
+      setPermissions(prev => prev.filter(p => p !== 'edit'))
+    }
+  }
+
   return (
     <div className="shd-overlay" onClick={onClose}>
       <div className="shd-modal" onClick={e => e.stopPropagation()}>
@@ -166,7 +190,7 @@ export default function ShareDocument({ file, isOpen, onClose }) {
                 <button
                   key={t.value}
                   className={`shd-type-card${active ? ' active' : ''}`}
-                  onClick={() => setShareType(t.value)}
+                  onClick={() => selectShareType(t.value)}
                 >
                   <Icon size={18} />
                   <span className="shd-type-name">{t.label}</span>
@@ -203,6 +227,34 @@ export default function ShareDocument({ file, isOpen, onClose }) {
             />
           </div>
 
+          {/* ─── Permissions ─── */}
+          <div className="shd-field-label">Quyền truy cập</div>
+          <div className="shd-perm-grid">
+            {PERM_OPTIONS.map(p => {
+              if (p.internalOnly && shareType === 'PUBLIC') return null
+              const Icon = p.icon
+              const active = permissions.includes(p.value)
+              return (
+                <label key={p.value} className={`shd-perm-card${active ? ' active' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={active}
+                    disabled={p.alwaysOn}
+                    onChange={e => togglePerm(p.value, e.target.checked)}
+                  />
+                  <Icon size={17} />
+                  <div className="shd-perm-text">
+                    <span className="shd-perm-name">{p.label}</span>
+                    <span className="shd-perm-desc">{p.desc}</span>
+                  </div>
+                </label>
+              )
+            })}
+          </div>
+          {shareType === 'PUBLIC' && (
+            <div className="shd-perm-note">Link công khai chỉ xem được — không cho phép chỉnh sửa. Quyền chỉnh sửa chỉ dành cho chia sẻ nội bộ.</div>
+          )}
+
           {error && (
             <div className="shd-error">
               <AlertCircle size={15} /> {error}
@@ -227,6 +279,12 @@ export default function ShareDocument({ file, isOpen, onClose }) {
                       <div className="shd-share-meta">
                         {s.expires_at ? `Hết hạn: ${s.expires_at.slice(0, 10)}` : 'Không hết hạn'}
                         {s.expired ? ' · Đã hết hạn' : ''}
+                      </div>
+                      <div className="shd-share-perms">
+                        {(s.permissions || 'view,download').split(',').filter(Boolean).map(p => {
+                          const po = PERM_OPTIONS.find(o => o.value === p)
+                          return po ? <span key={p} className="shd-perm-chip">{po.label}</span> : null
+                        })}
                       </div>
                     </div>
                     {s.share_token && !s.expired && (

@@ -126,6 +126,84 @@
 
 .shd-field { display: flex; flex-direction: column; }
 
+/* ─── Permission picker ─── */
+.shd-perm-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.shd-perm-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  padding: 0.7rem 0.75rem;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  color: #334155;
+  transition: all 0.15s ease;
+}
+
+.shd-perm-card:hover { border-color: #b9c7dc; background: #f8fafc; }
+
+.shd-perm-card.active {
+  border-color: #00468C;
+  background: #eef4fc;
+  box-shadow: 0 0 0 1px #00468C inset;
+}
+
+.shd-perm-card input { accent-color: #00468C; }
+
+.shd-perm-card input:disabled { cursor: default; }
+
+.shd-perm-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shd-perm-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.shd-perm-desc {
+  font-size: 0.64rem;
+  line-height: 1.35;
+  color: #64748b;
+}
+
+.shd-perm-note {
+  font-size: 0.7rem;
+  color: #64748b;
+  background: #f1f5f9;
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  line-height: 1.5;
+}
+
+/* Permission chips inside "Chia sẻ hiện tại" */
+.shd-share-perms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.3rem;
+}
+
+.shd-perm-chip {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #00468C;
+  background: #eef4fc;
+  border: 1px solid #c7d9f0;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
 .shd-error {
   display: flex;
   align-items: center;

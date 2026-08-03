@@ -178,9 +178,11 @@
   animation: sfFadeIn 0.15s ease;
 }
 
+/* Opacity only (NO transform): a transform creates a containing block for
+   fixed/absolute descendants and breaks the ONLYOFFICE editor layout. */
 @keyframes sfFadeIn {
-  from { opacity: 0; transform: scale(0.985); }
-  to { opacity: 1; transform: scale(1); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .sf-overlay-bar {
@@ -237,6 +239,34 @@
   min-height: 0;
   border-radius: 0;
 }
+
+/* Error / loading overlays sit on top of the editor (absolute) so the
+   ONLYOFFICE placeholder never changes its React index/position. */
+.sf-editor-error {
+  position: absolute;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  max-width: calc(100% - 2rem);
+  box-sizing: border-box;
+}
+
+.sf-editor-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.sf-editor-loading p { margin: 0; }
 
 .sf-overlay-image {
   max-width: 100%;

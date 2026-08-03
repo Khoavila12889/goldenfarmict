@@ -57,6 +57,7 @@ export default function SharedFolder({ token, info }) {
   const [zipError, setZipError] = useState('')
 
   const currentPath = crumbs.at(-1).id
+  const canDownload = info?.permissions?.includes?.('download') !== false
 
   const loadContents = useCallback((path) => {
     setLoading(true)
@@ -70,7 +71,7 @@ export default function SharedFolder({ token, info }) {
   useEffect(() => { loadContents('') }, [loadContents])
 
   const officePlaceholder = 'shared-folder-office-placeholder'
-  const { error: ooError } = useShareOnlyOffice({
+  const { error: ooError, ready: ooReady } = useShareOnlyOffice({
     enabled: !!selected && OFFICE_EXTS.has(getExt(selected.name)),
     token,
     filePath: selected?.path || '',
@@ -158,6 +159,7 @@ export default function SharedFolder({ token, info }) {
     const isImage = IMAGE_EXTS.has(ext)
     const isPdf = ext === 'pdf'
     const downloadUrl = getShareDownloadUrl(token, selected.path, selected.id)
+    const downloadAttachmentUrl = getShareDownloadUrl(token, selected.path, selected.id, 'attachment')
     return (
       <div className="sf-overlay">
         <div className="sf-overlay-bar">
@@ -166,9 +168,11 @@ export default function SharedFolder({ token, info }) {
           </button>
           <div className="sf-file-name" title={selected.name}>{selected.name}</div>
           <div className="sf-overlay-bar-right">
-            <a className="psp-btn psp-btn-primary" href={downloadUrl} download>
-              <Download size={15} /> Tải xuống
-            </a>
+            {canDownload && (
+              <a className="psp-btn psp-btn-primary" href={downloadAttachmentUrl} download>
+                <Download size={15} /> Tải xuống
+              </a>
+            )}
             <button className="sf-overlay-close" onClick={() => setSelected(null)} title="Đóng (Esc)">
               <X size={15} /> Đóng
             </button>
@@ -177,9 +181,19 @@ export default function SharedFolder({ token, info }) {
         <div className="sf-overlay-body">
           {isOffice && (
             <div className="sf-editor-wrap sf-editor-wrap-full">
-              {ooError && (
-                <div className="psp-error"><AlertCircle size={18} /> {ooError}</div>
-              )}
+              {/*
+                The error + loading overlays are ALWAYS mounted (toggled via
+                display) and the ONLYOFFICE placeholder keeps a stable React
+                index, so React never recreates the placeholder node (which
+                would destroy the editor and leave a blank page).
+              */}
+              <div className="psp-error sf-editor-error" style={{ display: ooError ? 'flex' : 'none' }}>
+                <AlertCircle size={18} /> {ooError || ''}
+              </div>
+              <div className="sf-editor-loading" style={{ display: (ooError || ooReady) ? 'none' : 'flex' }}>
+                <Loader2 size={32} className="psp-spin" />
+                <p>Đang khởi tạo trình xem tài liệu...</p>
+              </div>
               <div id={officePlaceholder} className="psp-editor" style={{ visibility: ooError ? 'hidden' : 'visible' }} />
             </div>
           )}
@@ -194,9 +208,13 @@ export default function SharedFolder({ token, info }) {
               <File size={40} />
               <p className="psp-unknown-title">{selected.name}</p>
               <p className="psp-unknown-desc">Loại tệp này không thể xem trực tuyến.</p>
-              <a className="psp-btn psp-btn-primary" href={downloadUrl} download>
-                <Download size={15} /> Tải xuống
-              </a>
+              {canDownload ? (
+                <a className="psp-btn psp-btn-primary" href={downloadAttachmentUrl} download>
+                  <Download size={15} /> Tải xuống
+                </a>
+              ) : (
+                <p className="psp-unknown-desc">Chia sẻ này không cho phép tải xuống tệp.</p>
+              )}
             </div>
           )}
         </div>
@@ -224,9 +242,11 @@ export default function SharedFolder({ token, info }) {
             </React.Fragment>
           ))}
         </div>
-        <button className="psp-btn psp-btn-ghost sf-zip-btn" onClick={downloadZip} disabled={zipBusy} title="Tải toàn bộ thư mục (.zip)">
-          {zipBusy ? <Loader2 size={15} className="psp-spin" /> : <Download size={15} />} .zip
-        </button>
+        {canDownload && (
+          <button className="psp-btn psp-btn-ghost sf-zip-btn" onClick={downloadZip} disabled={zipBusy} title="Tải toàn bộ thư mục (.zip)">
+            {zipBusy ? <Loader2 size={15} className="psp-spin" /> : <Download size={15} />} .zip
+          </button>
+        )}
       </div>
 
       {zipError && (
@@ -273,12 +293,12 @@ export default function SharedFolder({ token, info }) {
                 <div className="sf-card-meta">
                   {e.is_dir ? 'Thư mục' : formatSize(e.size)}
                 </div>
-                {!e.is_dir && (
+                {!e.is_dir && canDownload && (
                   <button className="sf-card-action" title="Tải xuống"
                     onClick={(ev) => {
                       ev.stopPropagation()
                       const a = document.createElement('a')
-                      a.href = getShareDownloadUrl(token, e.path, e.id)
+                      a.href = getShareDownloadUrl(token, e.path, e.id, 'attachment')
                       a.download = e.name
                       document.body.appendChild(a)
                       a.click()

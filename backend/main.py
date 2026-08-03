@@ -80,6 +80,19 @@ def on_startup():
             sess.rollback()
             print(f"  → document_shares.item_type migration: {e}")
 
+    # document_shares.permissions — comma list: view,download,edit
+    # (edit only ever granted for internal ALL/DEPT shares).
+    with SessionLocal() as sess:
+        try:
+            sess.execute(text(
+                "ALTER TABLE document_shares "
+                "ADD COLUMN IF NOT EXISTS permissions VARCHAR(100) NOT NULL DEFAULT 'view,download'"
+            ))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → document_shares.permissions migration: {e}")
+
     # Seed default admin user if not exists
     session = SessionLocal()
     try:

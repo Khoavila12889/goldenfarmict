@@ -195,7 +195,8 @@
 
 /* Ép iframe ONLYOFFICE tràn hết khung (giống bản nội bộ) */
 .psp-editor iframe,
-#share-editor-placeholder iframe {
+#share-editor-placeholder iframe,
+#shared-folder-office-placeholder iframe {
   width: 100% !important;
   height: 100% !important;
   border: none !important;

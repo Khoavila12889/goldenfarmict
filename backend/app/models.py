@@ -452,6 +452,7 @@ class DocumentShare(Base):
     share_type = Column(String, nullable=False, default='ALL', index=True)
     department_id = Column(Integer, nullable=True, index=True)
     share_token = Column(String, default='', unique=True, index=True)
+    permissions = Column(String, nullable=False, default='view,download')
     created_by = Column(String, default='')
     created_at = Column(String, default='')
     updated_at = Column(String, default='')

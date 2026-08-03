@@ -27,6 +27,7 @@ from ..core.db import fetchall, fetchone, execute, insert
 from ..core.auth import verify_token
 from .documents import (
     _get_file_bytes,
+    _put_file_bytes,
     _OO_MIME,
     _sign_doc_token,
     _verify_doc_token,
@@ -49,6 +50,34 @@ router = APIRouter(prefix="/api", tags=["shares"])
 
 _ALLOWED_TYPES = ('ALL', 'DEPT', 'PUBLIC')
 _ALLOWED_ITEMS = ('file', 'folder')
+
+# Permissions stored as a comma list in document_shares.permissions:
+#   view     — open/preview (always granted; baseline of sharing)
+#   download — allow downloading the file / zipping the folder
+#   edit     — OnlyOffice edit mode (internal ALL/DEPT only, never PUBLIC)
+_ALLOWED_PERMISSIONS = ('view', 'download', 'edit')
+
+
+def _parse_permissions(share: dict) -> set:
+    """Return the permission set of a share (defaults to view+download)."""
+    raw = (share.get('permissions') or 'view,download')
+    return {p.strip() for p in raw.split(',') if p.strip() in _ALLOWED_PERMISSIONS} | {'view'}
+
+
+def _normalize_permissions(perms: str, share_type: str) -> str:
+    """Validate + canonicalize a comma list of permissions.
+
+    - Keeps only known permission names.
+    - 'view' is always granted.
+    - PUBLIC shares can never be edited -> 'edit' is stripped.
+    """
+    allowed = {'view', 'download', 'edit'}
+    if share_type == 'PUBLIC':
+        allowed.discard('edit')
+    chosen = {p.strip() for p in (perms or '').split(',') if p.strip() in allowed}
+    chosen.add('view')
+    ordered = [p for p in ('view', 'download', 'edit') if p in chosen]
+    return ','.join(ordered)
 
 # Limits for the "download folder as .zip" convenience feature.
 _ARCHIVE_MAX_FILES = int(os.environ.get('SHARE_ARCHIVE_MAX_FILES', '200'))
@@ -116,8 +145,13 @@ def _resolve_file_meta(cfg, file_path: str) -> str:
     return os.path.basename(file_path)
 
 
-def _build_public_stream(cfg, file_path: str, file_id: str, filename: str):
-    """Download file bytes (server-side auth) and return a StreamingResponse."""
+def _build_public_stream(cfg, file_path: str, file_id: str, filename: str, disposition: str = 'inline'):
+    """Download file bytes (server-side auth) and return a StreamingResponse.
+
+    `disposition` is 'inline' (preview / OnlyOffice server-to-server fetch,
+    only needs the 'view' permission) or 'attachment' (saving a copy, needs
+    the 'download' permission).
+    """
     ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
     mime_type = _OO_MIME.get(ext)
     if not mime_type:
@@ -129,7 +163,7 @@ def _build_public_stream(cfg, file_path: str, file_id: str, filename: str):
     data = _get_file_bytes(cfg, file_path, file_id)
 
     safe_name = filename.encode('ascii', 'ignore').decode('ascii') or 'document'
-    cd = f"inline; filename=\"{safe_name}\"; filename*=UTF-8''{quote(filename)}"
+    cd = f"{disposition}; filename=\"{safe_name}\"; filename*=UTF-8''{quote(filename)}"
 
     from fastapi.responses import StreamingResponse
     return StreamingResponse(
@@ -180,6 +214,7 @@ class ShareIn(BaseModel):
     share_type: str = 'ALL'
     department_id: int | None = None
     expires_at: str = ''
+    permissions: str = 'view,download'
 
 
 @router.get("/documents/shares")
@@ -224,6 +259,7 @@ def create_share(
         raise HTTPException(404, "Storage config không tồn tại")
 
     expires_at = _normalize_expiry(body.expires_at)
+    permissions = _normalize_permissions(body.permissions, body.share_type)
     filename = body.file_name or _resolve_file_meta(cfg, body.file_path)
     department_id = body.department_id if body.share_type == 'DEPT' else None
 
@@ -248,6 +284,7 @@ def create_share(
         "share_type": body.share_type,
         "department_id": department_id,
         "share_token": share_token,
+        "permissions": permissions,
         "created_by": user_code,
         "created_at": now,
         "updated_at": now,
@@ -258,7 +295,7 @@ def create_share(
         execute("""
             UPDATE document_shares SET
                 file_id=:file_id, file_name=:file_name, department_id=:department_id,
-                expires_at=:expires_at, updated_at=:updated_at
+                permissions=:permissions, expires_at=:expires_at, updated_at=:updated_at
             WHERE id=:id
         """, {**params, "id": existing['id']})
         row = fetchone("SELECT * FROM document_shares WHERE id=:id", {"id": existing['id']})
@@ -266,10 +303,10 @@ def create_share(
         new_id = insert("""
             INSERT INTO document_shares
                 (config_id, item_type, file_path, file_id, file_name, share_type,
-                 department_id, share_token, created_by, created_at, updated_at, expires_at)
+                 department_id, share_token, permissions, created_by, created_at, updated_at, expires_at)
             VALUES
                 (:config_id, :item_type, :file_path, :file_id, :file_name, :share_type,
-                 :department_id, :share_token, :created_by, :created_at, :updated_at, :expires_at)
+                 :department_id, :share_token, :permissions, :created_by, :created_at, :updated_at, :expires_at)
             RETURNING id
         """, params)
         row = fetchone("SELECT * FROM document_shares WHERE id=:id", {"id": new_id})
@@ -329,6 +366,7 @@ def share_info(
             "share_type": share['share_type'],
             "department_id": share.get('department_id'),
             "department_name": dept_name,
+            "permissions": _parse_permissions(share),
             "expires_at": share.get('expires_at', ''),
             "expired": expired,
         }
@@ -471,6 +509,8 @@ def share_archive(
         raise HTTPException(400, "Link chia sẻ này không phải là thư mục")
     if _is_expired(share.get('expires_at', '')):
         raise HTTPException(403, "Link chia sẻ đã hết hạn")
+    if 'download' not in _parse_permissions(share):
+        raise HTTPException(403, "Link chia sẻ này không cho phép tải xuống")
 
     # Same authorization model as /download: PUBLIC open, ALL/DEPT via
     # session or signed token.
@@ -575,10 +615,15 @@ def share_download(
     file_path: str = Query(''),
     file_id: str = Query(''),
     file_name: str = Query(''),
+    disposition: str = Query('inline'),
 ):
     share = _get_share_by_token(share_token)
     if _is_expired(share.get('expires_at', '')):
         raise HTTPException(403, "Link chia sẻ đã hết hạn")
+    # Preview/serving (inline) only needs the baseline 'view' permission;
+    # saving a copy (attachment) requires the 'download' permission.
+    if disposition != 'inline' and 'download' not in _parse_permissions(share):
+        raise HTTPException(403, "Link chia sẻ này không cho phép tải xuống")
 
     # PUBLIC -> anyone. ALL/DEPT -> valid session OR valid signed download token
     # (the signed token lets OnlyOffice Document Server fetch server-to-server).
@@ -618,7 +663,7 @@ def share_download(
         resolved_id = share.get('file_id', '')
         filename = share.get('file_name') or os.path.basename(share['file_path'])
 
-    return _build_public_stream(cfg, abs_path, resolved_id, filename)
+    return _build_public_stream(cfg, abs_path, resolved_id, filename, disposition)
 
 
 @router.get("/shares/{share_token}/onlyoffice/config")
@@ -642,6 +687,12 @@ def share_onlyoffice_config(
     is_public = share['share_type'] == 'PUBLIC'
     if not is_public:
         _require_user(user_code, token, user_role)
+
+    perms = _parse_permissions(share)
+    # PUBLIC shares are always read-only; 'edit' is only honoured for
+    # internal ALL/DEPT shares that explicitly grant it.
+    can_edit = (not is_public) and 'edit' in perms
+    can_download = 'download' in perms
 
     cfg = fetchone("SELECT * FROM storage_config WHERE id=:id", {"id": share['config_id']})
     if not cfg:
@@ -699,25 +750,25 @@ def share_onlyoffice_config(
             "title": filename,
             "url": document_url,
             "permissions": {
-                "edit": False,
-                "download": True,
+                "edit": can_edit,
+                "download": can_download,
                 "print": True,
-                "review": False,
-                "comment": False,
-                "copy": True,
+                "review": can_edit,
+                "comment": can_edit,
+                "copy": can_download,
             },
         },
         "editorConfig": {
             "callbackUrl": callback_url,
             "lang": "vi",
-            "mode": "view",
+            "mode": "edit" if can_edit else "view",
             "user": {
                 "id": user_code or "guest",
                 "name": user_code or "Guest",
             },
             "customization": {
-                "autosave": False,
-                "forcesave": False,
+                "autosave": can_edit,
+                "forcesave": can_edit,
                 "chat": False,
                 "compactHeader": False,
                 "compactToolbar": False,
@@ -740,14 +791,48 @@ def share_onlyoffice_config(
 
 @router.post("/shares/{share_token}/callback")
 def share_callback(share_token: str, body: dict = None):
-    """OnlyOffice save callback for shared (view-only) documents.
+    """OnlyOffice save callback for shared documents.
 
-    Public shares are view-only, so we never write back. We only ack.
+    PUBLIC shares are always view-only -> never write back.
+    Internal ALL/DEPT shares that grant the 'edit' permission save the
+    edited file back to storage (same flow as the internal module).
     """
     import logging
-    status = (body or {}).get('status', 0)
-    key = (body or {}).get('key', '')
+    share = _get_share_by_token(share_token)
+    body = body or {}
+    status = body.get('status', 0)
+    key = body.get('key', '')
     logging.info(f"[SHARE] OnlyOffice callback status={status}, key={key[:40] if key else ''}...")
+
+    # status 2 = ready for save, 6 = force-save
+    if status in (2, 6):
+        perms = _parse_permissions(share)
+        can_edit = share.get('share_type') != 'PUBLIC' and 'edit' in perms
+        if can_edit:
+            url = body.get('url', '')
+            if not url:
+                raise HTTPException(400, "No download URL provided for saving")
+            payload = _resolve_doc_key(key) if key else None
+            if not payload:
+                raise HTTPException(400, "Invalid document key")
+            config_id = payload.get("config_id")
+            file_path = payload.get("file_path")
+            if not config_id or not file_path:
+                raise HTTPException(400, "Invalid key payload")
+            cfg = fetchone("SELECT * FROM storage_config WHERE id=:id", {"id": config_id})
+            if not cfg:
+                raise HTTPException(404, "Storage config not found")
+            # Re-validate the target lives inside the shared folder.
+            if share.get('item_type', 'file') == 'folder':
+                _resolve_folder_target(share, cfg, file_path, payload.get("file_id", ''))
+            import requests
+            resp = requests.get(url, timeout=60)
+            if resp.status_code != 200:
+                raise HTTPException(502, f"Failed to download saved file from ONLYOFFICE: HTTP {resp.status_code}")
+            _put_file_bytes(cfg, file_path, resp.content, payload.get("file_id", ""))
+            logging.info(f"[SHARE] File saved successfully: {file_path}")
+        else:
+            logging.info("[SHARE] Save callback ignored (view-only share)")
     return {"error": 0}
 
 

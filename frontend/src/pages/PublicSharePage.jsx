@@ -29,6 +29,8 @@ export default function PublicSharePage() {
   const initAttemptedRef = useRef(false)
 
   const downloadUrl = token ? getShareDownloadUrl(token) : ''
+  const downloadAttachmentUrl = token ? getShareDownloadUrl(token, '', '', 'attachment') : ''
+  const canDownload = info?.permissions?.includes?.('download') !== false
 
   const userCode = sessionStorage.getItem('user_code') || ''
   const userRole = sessionStorage.getItem('user_role') || 'user'
@@ -178,9 +180,13 @@ export default function PublicSharePage() {
         <FileText size={40} />
         <p className="psp-unknown-title">{info.file_name}</p>
         <p className="psp-unknown-desc">Loại tệp này không thể xem trực tuyến.</p>
-        <a className="psp-btn psp-btn-primary" href={downloadUrl} download>
-          <Download size={15} /> Tải xuống
-        </a>
+        {canDownload ? (
+          <a className="psp-btn psp-btn-primary" href={downloadAttachmentUrl} download>
+            <Download size={15} /> Tải xuống
+          </a>
+        ) : (
+          <p className="psp-unknown-desc">Chia sẻ này không cho phép tải xuống tệp.</p>
+        )}
       </div>
     )
   }
