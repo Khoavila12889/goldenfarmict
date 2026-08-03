@@ -421,7 +421,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 1rem;
+  padding: 0.8rem 0.6rem;
   background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
@@ -449,7 +449,7 @@
   justify-content: center;
   width: 48px;
   height: 48px;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.4rem;
   border-radius: 10px;
   background: #f8fafc;
 }
@@ -1004,35 +1004,37 @@
 .doc-card.doc-card-image {
   padding: 0;
   overflow: hidden;
-  min-height: 160px;
+  min-height: 140px;
   cursor: pointer;
 }
 
 .doc-card.doc-card-image .doc-card-icon {
   width: 100%;
-  height: 120px;
+  height: 90px;
   border-radius: 0;
   margin-bottom: 0;
   background: #0f172a;
   overflow: hidden;
   position: relative;
   flex-shrink: 0;
+  padding: 4px;
 }
 
-/* Thumbnail ảnh thực tế – object-fit cover, lazy load */
+/* Thumbnail ảnh thực tế – object-fit contain, lazy load, bo góc mềm */
 .doc-card-thumb {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   object-position: center;
   display: block;
   transition: transform 0.35s ease, opacity 0.2s;
   opacity: 1;
+  border-radius: 6px;
 }
 
 .doc-card.doc-card-image:hover .doc-card-thumb {
-  transform: scale(1.07);
-  opacity: 0.85;
+  transform: scale(1.05);
+  opacity: 0.9;
 }
 
 /* Hover overlay "🔍 Click để xem" */
@@ -1068,12 +1070,12 @@
 
 /* Text + meta padding cho image card */
 .doc-card.doc-card-image .doc-card-name {
-  padding: 0.45rem 0.65rem 0.1rem;
+  padding: 0.35rem 0.5rem 0.1rem;
   text-align: left;
 }
 
 .doc-card.doc-card-image .doc-card-meta {
-  padding: 0 0.65rem 0.5rem;
+  padding: 0 0.5rem 0.4rem;
   text-align: left;
 }
 
@@ -1120,10 +1122,12 @@
 /* ── Responsive adjustments for image cards ─────────────────── */
 
 @media (max-width: 768px) {
-  .doc-card.doc-card-image .doc-card-icon { height: 100px; }
+  .doc-card.doc-card-image { min-height: 130px; }
+  .doc-card.doc-card-image .doc-card-icon { height: 85px; }
 }
 
 @media (max-width: 480px) {
-  .doc-card.doc-card-image { min-height: 130px; }
-  .doc-card.doc-card-image .doc-card-icon { height: 85px; }
+  .doc-card.doc-card-image { min-height: 120px; }
+  .doc-card.doc-card-image .doc-card-icon { height: 75px; }
+  .doc-card.doc-card-image .doc-card-name { font-size: 0.75rem; }
 }

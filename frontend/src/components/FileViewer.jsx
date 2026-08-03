@@ -222,6 +222,7 @@ export default function FileViewer({ file, isOpen, onClose }) {
                 playsInline
                 className="fv-video"
                 onError={() => setImgError('Không thể phát video')}
+                poster={file.thumbnailUrl || ''}
               >
                 Trình duyệt không hỗ trợ phát video.
               </video>
