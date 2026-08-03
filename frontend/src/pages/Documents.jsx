@@ -60,6 +60,21 @@ function formatSize(bytes) {
   return (i === 0 ? size.toFixed(0) : size.toFixed(1)) + ' ' + units[i]
 }
 
+// Builds the download/preview URL for a file.
+// For Google Drive the path is used only for folder-permission checks +
+// filename/ext detection; the real Google file ID must be sent separately
+// via `file_id`, otherwise the backend would download the PARENT FOLDER.
+function buildFileDownloadUrl(cfg, entry, currentPath, userCode, userRole) {
+  const isGdrive = cfg?.type === 'gdrive'
+  const normalizedPath = currentPath === '/'
+    ? entry.name
+    : `${currentPath.replace(/\/$/, '')}/${entry.name}`
+  let url = `/api/documents/download?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}`
+  if (isGdrive && entry.id) url += `&file_id=${encodeURIComponent(entry.id)}`
+  url += `&user_code=${userCode}&user_role=${userRole}`
+  return url
+}
+
 
 
 function SkeletonRows({ count = 5 }) {
@@ -202,16 +217,13 @@ export default function Documents() {
     const currentPath = breadcrumbs.at(-1).id
 
     if (isOfficeFile(entry.name)) {
-      setOoFile({ ...entry, browsePath: currentPath })
+      setOoFile({ ...entry, browsePath: currentPath, storageType: activeConfig.type })
       setOoConfigId(activeConfig.id)
       setOoOpen(true)
       return
     }
 
-    const normalizedPath = currentPath === '/'
-      ? entry.name
-      : `${currentPath.replace(/\/$/, '')}/${entry.name}`
-    const fileUrl = `/api/documents/download?config_id=${activeConfig.id}&file_path=${encodeURIComponent(normalizedPath)}&user_code=${userCode}&user_role=${userRole}`
+    const fileUrl = buildFileDownloadUrl(activeConfig, entry, currentPath, userCode, userRole)
     setViewerFile({
       name: entry.name,
       url: fileUrl,
@@ -236,10 +248,7 @@ export default function Documents() {
   async function handleDownloadFile(entry) {
     if (entry.is_dir) return
     const currentPath = breadcrumbs.at(-1).id
-    const normalizedPath = currentPath === '/'
-      ? entry.name
-      : `${currentPath.replace(/\/$/, '')}/${entry.name}`
-    const fileUrl = `/api/documents/download?config_id=${activeConfig.id}&file_path=${encodeURIComponent(normalizedPath)}&user_code=${userCode}&user_role=${userRole}`
+    const fileUrl = buildFileDownloadUrl(activeConfig, entry, currentPath, userCode, userRole)
     try {
       const response = await fetch(fileUrl, {
         headers: {

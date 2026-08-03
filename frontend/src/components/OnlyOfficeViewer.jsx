@@ -55,7 +55,7 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose }) {
       ? file.name
       : `${currentPath.replace(/\/$/, '')}/${file.name}`
 
-    getOnlyOfficeConfig(configId, normalizedPath, userCode, userRole)
+    getOnlyOfficeConfig(configId, normalizedPath, userCode, userRole, file.id)
       .then(r => {
         setEditorConfig(r.data)
         setLoading(false)

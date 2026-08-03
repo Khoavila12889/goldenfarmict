@@ -606,6 +606,7 @@ import io
 async def download_file(
     config_id: int = Query(...),
     file_path: str = Query(...),
+    file_id: str = Query(''),
     user_code: str = Query(''),
     user_role: str = Query('user')
 ):
@@ -634,7 +635,7 @@ async def download_file(
         elif cfg['type'] == 'smb':
             return _download_smb(cfg, file_path)
         elif cfg['type'] == 'gdrive':
-            return _download_gdrive(cfg, file_path)
+            return _download_gdrive(cfg, file_path, file_id)
         else:
             raise HTTPException(400, f"Unsupported storage type: {cfg['type']}")
     except HTTPException:
@@ -734,11 +735,49 @@ def _download_smb(cfg, file_path):
         }
     )
 
-def _download_gdrive(cfg, file_id):
+_GDRIVE_EXPORT_MIME = {
+    'application/vnd.google-apps.document': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',  # docx
+    'application/vnd.google-apps.spreadsheet': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',    # xlsx
+    'application/vnd.google-apps.presentation': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',  # pptx
+    'application/vnd.google-apps.drawing': 'image/png',
+    'application/vnd.google-apps.form': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+}
+
+def _gdrive_download_stream(service, file_id):
+    """Fetch file bytes from Google Drive using the server-side service account.
+
+    Regular files use alt=media; Google-native formats (Docs/Sheets/Slides)
+    cannot use alt=media and must be exported to a standard Office MIME type.
+
+    Returns (filename, mime_type, BytesIO).
+    """
+    meta = service.files().get(fileId=file_id, fields="name, mimeType").execute()
+    filename = meta.get('name', 'download')
+    mime = meta.get('mimeType', 'application/octet-stream')
+    buf = io.BytesIO()
+
+    if mime.startswith('application/vnd.google-apps.'):
+        export_mime = _GDRIVE_EXPORT_MIME.get(mime)
+        if not export_mime:
+            raise HTTPException(400, f"Google native format chưa được hỗ trợ xuất: {mime}")
+        buf.write(service.files().export(fileId=file_id, mimeType=export_mime).execute())
+        mime = export_mime
+    else:
+        from googleapiclient.http import MediaIoBaseDownload
+        dl = MediaIoBaseDownload(buf, service.files().get_media(fileId=file_id))
+        done = False
+        while not done:
+            _, done = dl.next_chunk()
+
+    buf.seek(0)
+    return filename, mime, buf
+
+
+def _download_gdrive(cfg, file_path, file_id=''):
     if not _GOOGLE_AVAILABLE:
         raise HTTPException(502, "Google libraries not installed")
 
-    file_id = file_id.split('/')[0]
+    file_id = (file_id or '').strip() or file_path.split('/')[0]
 
     try:
         creds_dict = json.loads(cfg['password'])
@@ -748,30 +787,17 @@ def _download_gdrive(cfg, file_id):
         raise HTTPException(502, f"Google Drive auth error: {str(e)}")
 
     try:
-        file_metadata = service.files().get(fileId=file_id, fields="name, mimeType").execute()
-        filename = file_metadata.get('name', 'download')
-        mime_type = file_metadata.get('mimeType', 'application/octet-stream')
-
-        request = service.files().get_media(fileId=file_id)
-        file_data = io.BytesIO()
-
-        from googleapiclient.http import MediaIoBaseDownload
-        downloader = MediaIoBaseDownload(file_data, request)
-
-        done = False
-        while not done:
-            status, done = downloader.next_chunk()
-
-        file_data.seek(0)
-
+        filename, mime_type, file_data = _gdrive_download_stream(service, file_id)
         return StreamingResponse(
             file_data,
             media_type=mime_type,
             headers={
                 "Content-Disposition": f'inline; filename="{filename}"',
-                "Cache-Control": "no-cache"
+                "Cache-Control": "no-cache",
             }
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(404, f"File not found or cannot be downloaded: {str(e)}")
 
@@ -872,7 +898,7 @@ def _cleanup_oo_keys():
         del _oo_doc_keys[k]
 
 
-def _make_doc_key(config_id: int, file_path: str) -> str:
+def _make_doc_key(config_id: int, file_path: str, file_id: str = '') -> str:
     """Build an OnlyOffice document key.
 
     Constraints (OnlyOffice API):
@@ -883,7 +909,7 @@ def _make_doc_key(config_id: int, file_path: str) -> str:
     Fall back to a short hash + in-memory map when the path is too long.
     """
     ts = int(_time.time())
-    raw = json.dumps({"c": config_id, "p": file_path, "t": ts}, separators=(',', ':'))
+    raw = json.dumps({"c": config_id, "p": file_path, "t": ts, "f": file_id}, separators=(',', ':'))
     b64 = base64.urlsafe_b64encode(raw.encode()).decode().rstrip('=')
     sig = hmac.new(
         _ONLYOFFICE_SECRET.encode(), raw.encode(), hashlib.sha256
@@ -899,6 +925,7 @@ def _make_doc_key(config_id: int, file_path: str) -> str:
         _oo_doc_keys[h] = {
             "config_id": config_id,
             "file_path": file_path,
+            "file_id": file_id,
             "exp": ts + _DOC_KEY_EXPIRE,
         }
     return h
@@ -915,7 +942,7 @@ def _resolve_doc_key(key: str) -> dict | None:
             if meta.get('exp', 0) < _time.time():
                 del _oo_doc_keys[key]
                 return None
-            return {"config_id": meta["config_id"], "file_path": meta["file_path"]}
+            return {"config_id": meta["config_id"], "file_path": meta["file_path"], "file_id": meta.get("file_id", "")}
 
     # Compact signed form: base64url(json).sig16
     if '.' not in key:
@@ -930,12 +957,12 @@ def _resolve_doc_key(key: str) -> dict | None:
         if not hmac.compare_digest(sig, expected):
             return None
         data = json.loads(raw)
-        return {"config_id": data["c"], "file_path": data["p"]}
+        return {"config_id": data["c"], "file_path": data["p"], "file_id": data.get("f", "")}
     except Exception:
         return None
 
 
-def _get_file_bytes(cfg, file_path: str) -> bytes:
+def _get_file_bytes(cfg, file_path: str, file_id: str = '') -> bytes:
     """Download file from storage and return raw bytes."""
     import io as _io
     buf = _io.BytesIO()
@@ -957,23 +984,19 @@ def _get_file_bytes(cfg, file_path: str) -> bytes:
                 conn.retrieveFile(share, smb_p, buf)
                 conn.close()
         elif cfg['type'] == 'gdrive':
-            file_id = file_path.split('/')[0]
+            file_id = (file_id or '').strip() or file_path.split('/')[0]
             creds_dict = json.loads(cfg['password'])
             creds = service_account.Credentials.from_service_account_info(creds_dict)
             svc = build('drive', 'v3', credentials=creds)
-            request = svc.files().get_media(fileId=file_id)
-            from googleapiclient.http import MediaIoBaseDownload
-            dl = MediaIoBaseDownload(buf, request)
-            done = False
-            while not done:
-                _, done = dl.next_chunk()
+            _, _, stream = _gdrive_download_stream(svc, file_id)
+            buf.write(stream.read())
     except Exception as e:
         raise HTTPException(502, f"Failed to read file: {str(e)}")
     buf.seek(0)
     return buf.read()
 
 
-def _put_file_bytes(cfg, file_path: str, data: bytes):
+def _put_file_bytes(cfg, file_path: str, data: bytes, file_id: str = ''):
     """Write raw bytes back to storage, overwriting the original file."""
     import io as _io
     try:
@@ -994,7 +1017,7 @@ def _put_file_bytes(cfg, file_path: str, data: bytes):
                 conn.storeFile(share, smb_p, _io.BytesIO(data))
                 conn.close()
         elif cfg['type'] == 'gdrive':
-            file_id = file_path.split('/')[0]
+            file_id = (file_id or '').strip() or file_path.split('/')[0]
             creds_dict = json.loads(cfg['password'])
             creds = service_account.Credentials.from_service_account_info(creds_dict)
             svc = build('drive', 'v3', credentials=creds)
@@ -1010,6 +1033,7 @@ def onlyoffice_config(
     request: Request,
     config_id: int = Query(...),
     file_path: str = Query(...),
+    file_id: str = Query(''),
     user_code: str = Query(''),
     user_role: str = Query('user')
 ):
@@ -1040,6 +1064,7 @@ def onlyoffice_config(
     download_token = _sign_doc_token({
         "config_id": config_id,
         "file_path": file_path,
+        "file_id": file_id,
         "exp": int(_time.time()) + _TEMP_TOKEN_EXPIRE,
     })
 
@@ -1061,7 +1086,7 @@ def onlyoffice_config(
     # Public URL the BROWSER uses to load DocsAPI JS
     doc_service = _ONLYOFFICE_PUBLIC_URL.rstrip('/')
     document_type = _oo_document_type(ext)
-    doc_key = _make_doc_key(config_id, file_path)
+    doc_key = _make_doc_key(config_id, file_path, file_id)
 
     # Build config WITHOUT token / custom fields first — JWT must sign only the public payload
     editor_config = {
@@ -1168,6 +1193,7 @@ def onlyoffice_download(token: str = Query(...)):
 
     config_id = payload.get("config_id")
     file_path = payload.get("file_path")
+    file_id = payload.get("file_id", "")
     if not config_id or not file_path:
         raise HTTPException(400, "Invalid token payload")
 
@@ -1184,7 +1210,7 @@ def onlyoffice_download(token: str = Query(...)):
     if not mime_type:
         mime_type = 'application/octet-stream'
 
-    data = _get_file_bytes(cfg, file_path)
+    data = _get_file_bytes(cfg, file_path, file_id)
 
     # ASCII-safe Content-Disposition; non-ASCII names use filename*
     safe_name = filename.encode('ascii', 'ignore').decode('ascii') or 'document'
@@ -1240,7 +1266,7 @@ def onlyoffice_callback(body: OnlyOfficeCallback):
         if resp.status_code != 200:
             raise HTTPException(502, f"Failed to download saved file from ONLYOFFICE: HTTP {resp.status_code}")
 
-        _put_file_bytes(cfg, file_path, resp.content)
+        _put_file_bytes(cfg, file_path, resp.content, payload.get("file_id", ""))
 
         from ..core.events import publish_sync
         publish_sync("document_updated", {

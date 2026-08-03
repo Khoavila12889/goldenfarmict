@@ -508,9 +508,9 @@ export function getStorageDepartments() {
   return api.get('/documents/departments')
 }
 
-export function getOnlyOfficeConfig(configId, filePath, userCode, userRole) {
+export function getOnlyOfficeConfig(configId, filePath, userCode, userRole, fileId = '') {
   return api.get('/documents/onlyoffice/config', {
-    params: { config_id: configId, file_path: filePath, user_code: userCode, user_role: userRole }
+    params: { config_id: configId, file_path: filePath, file_id: fileId, user_code: userCode, user_role: userRole }
   })
 }
 
