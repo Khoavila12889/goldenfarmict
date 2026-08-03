@@ -231,6 +231,18 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 - Quyền **kế thừa**: file bên trong thư mục được chia sẻ tự động được phép mở qua ONLYOFFICE bằng token của link thư mục đó.
 - Phân biệt **preview vs download**: endpoint `/download` mặc định trả `Content-Disposition: inline` (chỉ cần quyền `view` — dùng cho xem ảnh/PDF và ONLYOFFICE tải file server-to-server); khi có `?disposition=attachment` mới yêu cầu quyền `download`.
 
+**Cơ chế xem file trong Share Folder (ONLYOFFICE)**
+1. Khách bấm vào file con → frontend gọi `GET /api/shares/{folder_token}/onlyoffice/config?file_path=...&file_id=...&file_name=...`.
+2. Backend xác thực file con **nằm trong thư mục được share** (`_resolve_folder_target`) rồi sinh `document.url` là **absolute URL** trỏ vào endpoint tải file con:
+   ```
+   {BACKEND_PUBLIC_URL}/api/shares/{folder_token}/download?token=<signed>&file_path=...&file_id=...&file_name=...
+   ```
+   → file con được **định danh tường minh** bằng query param (không chỉ nằm trong signed token), nên Document Server fetch được với mọi `share_type` (PUBLIC/ALL/DEPT).
+3. OnlyOffice Document Server tải file **server-to-server** qua URL đó (không cần cookie phiên — dùng signed token).
+4. `GET /api/shares/{folder_token}/download` xác thực: share chưa hết hạn → (ALL/DEPT) session hợp lệ **hoặc** signed token đúng `share_token` chưa hết hạn; PUBLIC mở tự do. Sau đó giải quyết file con từ query param hoặc payload signed token, **tái kiểm tra vị trí** (`_path_within` cho SMB/FTP chống path traversal / `_gdrive_folder_within` duyệt `parents` cho Google Drive) rồi mới stream nội dung.
+- `disposition=inline` (mặc định) chỉ cần quyền `view` — dùng cho xem ảnh/PDF và OnlyOffice fetch file; `disposition=attachment` (nút **Tải xuống**) cần quyền `download`, backend trả 403 nếu thiếu.
+- Điểm đồng bộ với **Share File**: luồng chỉ khác ở chỗ file con phải định danh thêm `file_path`/`file_id`/`file_name` và được chặn ngoài phạm vi thư mục gốc; mọi bước xác thực/stream giống hệt file chia sẻ đơn lẻ.
+
 ## Phân quyền (3 lớp)
 
 ### Lớp 1 — Vai trò người dùng (`users.role`)

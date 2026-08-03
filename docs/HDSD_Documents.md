@@ -77,6 +77,11 @@ Phân hệ Tài liệu cho phép truy cập và quản lý tệp tin từ các k
 - Link **PUBLIC** không cần đăng nhập; link **ALL/DEPT** yêu cầu đăng nhập nội bộ.
 - Link **hết hạn** sẽ tự chặn truy cập với thông báo lỗi.
 
+**Cơ chế xem file con trong Share Folder** (cho IT)
+- File con được xác thực bằng **token của thư mục cha** + định danh file con (`file_path`/`file_id`/`file_name`) — giống hệt luồng Share File.
+- Backend sinh `document.url` là **absolute URL** trỏ vào `GET /api/shares/{token}/download?...`; OnlyOffice Document Server tải file server-to-server bằng signed token.
+- Mỗi request đều **tái kiểm tra**: link còn hạn, file con **nằm trong thư mục được chia sẻ** (chống path traversal / vượt phạm vi), quyền `download` khi tải xuống thật sự (`disposition=attachment`); xem online chỉ cần quyền `view`.
+
 ---
 
 ## IV. QUYỀN HẠN
