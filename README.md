@@ -693,9 +693,9 @@ goldenfarm-ict-web/
 | `DELETE` | `/api/documents/shares/{id}` | Thu hồi link chia sẻ |
 | `GET` | `/api/shares/{token}/info` | Thông tin link (tên, `item_type`, `share_type`, `permissions`, hết hạn) — công khai |
 | `GET` | `/api/shares/{token}/contents` | Danh sách file/thư mục con của link **thư mục** (`path` = vị trí hiện tại, tái xác thực phạm vi) |
-| `GET` | `/api/shares/{token}/download` | Tải/xem file (`disposition=inline` chỉ cần quyền `view`; `disposition=attachment` cần quyền `download`) |
+| `GET` | `/api/shares/{token}/download` | Tải/xem file — folder share chỉ định file con bằng `file_path`/`file_id`/`file_name` (được xác thực nằm trong thư mục share); `disposition=inline` chỉ cần quyền `view`, `disposition=attachment` cần quyền `download` |
 | `GET` | `/api/shares/{token}/archive` | Tải .zip toàn bộ thư mục (cần quyền `download`, giới hạn 200 file / 200MB, 413 nếu quá lớn) |
-| `GET` | `/api/shares/{token}/onlyoffice/config` | Editor config ONLYOFFICE (folder share: kèm `file_path`/`file_id`/`file_name`) — trả `permissions` theo quyền share |
+| `GET` | `/api/shares/{token}/onlyoffice/config` | Editor config ONLYOFFICE (folder share: kèm `file_path`/`file_id`/`file_name`) — `document.url` trỏ tuyệt đối vào `/download` kèm token thư mục + định danh file con; trả `permissions` theo quyền share |
 | `POST` | `/api/shares/{token}/callback` | Callback ONLYOFFICE — lưu ngược về kho khi share nội bộ có quyền `edit`, ngược lại bỏ qua |
 
 ## Database

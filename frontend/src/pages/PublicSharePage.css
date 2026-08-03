@@ -172,6 +172,29 @@
 
 .psp-download-btn { flex-shrink: 0; }
 
+/* Thanh file của share file: tên file + nút Tải xuống — đồng bộ với overlay
+   file view của Share Folder (sf-overlay-bar). */
+.psp-file-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 1.5rem;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.psp-file-bar-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
 /* Editor / file body */
 
 .psp-editor-wrap {

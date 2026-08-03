@@ -625,21 +625,15 @@ def share_download(
     if disposition != 'inline' and 'download' not in _parse_permissions(share):
         raise HTTPException(403, "Link chia sẻ này không cho phép tải xuống")
 
+    payload = _verify_doc_token(token) if token else None
+
     # PUBLIC -> anyone. ALL/DEPT -> valid session OR valid signed download token
     # (the signed token lets OnlyOffice Document Server fetch server-to-server).
     if share['share_type'] != 'PUBLIC':
         authorized = False
-        if token:
-            payload = _verify_doc_token(token)
-            if payload and payload.get('share_token') == share_token:
-                exp = payload.get('exp')
-                authorized = (exp is None) or (int(exp) >= int(_time_now()))
-                # For folder shares the signed token pins the exact file.
-                if authorized and share.get('item_type', 'file') == 'folder':
-                    if payload.get('file_path'):
-                        file_path = file_path or payload['file_path']
-                        file_id = file_id or payload.get('file_id', '')
-                        file_name = file_name or payload.get('file_name', '')
+        if payload and payload.get('share_token') == share_token:
+            exp = payload.get('exp')
+            authorized = (exp is None) or (int(exp) >= int(_time_now()))
         if not authorized:
             user = _require_user(user_code, token, user_role)
             authorized = True
@@ -656,6 +650,13 @@ def share_download(
         raise HTTPException(404, "Storage config không tồn tại")
 
     if share.get('item_type', 'file') == 'folder':
+        # The child file is pinned either by explicit query params
+        # (file_path/file_id/file_name from document.url) or by the signed
+        # download token — works identically for PUBLIC/ALL/DEPT.
+        if not file_path and payload and payload.get('file_path'):
+            file_path = payload['file_path']
+            file_id = file_id or payload.get('file_id', '')
+            file_name = file_name or payload.get('file_name', '')
         abs_path, resolved_id, resolved_name = _resolve_folder_target(share, cfg, file_path, file_id)
         filename = file_name or resolved_name
     else:
@@ -736,7 +737,20 @@ def share_onlyoffice_config(
         "exp": int(_time_now()) + _TEMP_TOKEN_EXPIRE,
     })
 
-    document_url = f"{base_url}/api/shares/{share_token}/download?token={download_token}"
+    # The Document Server fetches the file via `document.url`, which must be an
+    # ABSOLUTE URL it can reach. For folder shares the child file is identified
+    # by the parent-folder token (in the URL path) + the explicit child
+    # file_path/file_id/file_name query params below. The signed token stays
+    # for internal authorization and as a fallback for cached URLs.
+    if share.get('item_type', 'file') == 'folder':
+        doc_query = f"?token={download_token}"
+        doc_query += f"&file_path={quote(download_file_path)}"
+        if download_file_id:
+            doc_query += f"&file_id={quote(download_file_id)}"
+        doc_query += f"&file_name={quote(filename)}"
+        document_url = f"{base_url}/api/shares/{share_token}/download{doc_query}"
+    else:
+        document_url = f"{base_url}/api/shares/{share_token}/download?token={download_token}"
     callback_url = f"{base_url}/api/shares/{share_token}/callback"
 
     doc_service = _ONLYOFFICE_PUBLIC_URL.rstrip('/')

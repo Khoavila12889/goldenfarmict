@@ -200,6 +200,17 @@ export default function PublicSharePage() {
       )}
 
       <main className={`psp-main${isOffice ? ' psp-main-editor' : ''}`}>
+        {info && info.item_type !== 'folder' && (
+          <div className="psp-file-bar">
+            <span className="psp-file-bar-name" title={info.file_name}>{info.file_name}</span>
+            {canDownload && (
+              <a className="psp-btn psp-btn-primary" href={downloadAttachmentUrl} download>
+                <Download size={15} /> Tải xuống
+              </a>
+            )}
+          </div>
+        )}
+
         {loading && (
           <div className="psp-state">
             <Loader2 size={32} className="psp-spin" />
