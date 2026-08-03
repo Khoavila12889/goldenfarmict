@@ -696,10 +696,6 @@ export default function Documents() {
                       {!e.is_dir && e.modified ? ` · ${formatDate(e.modified)}` : ''}
                     </div>
 
-                    {isImg && (
-                      <span className="doc-card-img-badge" title="Ảnh">📷</span>
-                    )}
-
                     {!e.is_dir && canPreviewFile(e.name) && (
                       <button className="doc-card-preview"
                         onClick={(ev) => { ev.stopPropagation(); handlePreviewFile(e) }}

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react'
 import QRCode from 'react-qr-code'
 import { X, Loader2, Copy, Check, Link2, Users, Building2, Globe, Trash2, AlertCircle, Eye, Download, Pencil } from 'lucide-react'
 import { getStorageDepartments, getDocumentShares, createDocumentShare, deleteDocumentShare, getShareDownloadUrl } from '../services/api'
+import { formatDate } from '../utils/date'
 import './ShareDocument.css'
 
 const SHARE_TYPES = [
@@ -31,6 +32,15 @@ export default function ShareDocument({ file, isOpen, onClose }) {
 
   const userCode = sessionStorage.getItem('user_code') || ''
   const userRole = sessionStorage.getItem('user_role') || 'user'
+
+  const formatSize = useCallback((bytes) => {
+    if (!bytes || bytes === 0) return ''
+    const units = ['B', 'KB', 'MB', 'GB']
+    let i = 0
+    let size = bytes
+    while (size >= 1024 && i < units.length - 1) { size /= 1024; i++ }
+    return `${size.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+  }, [])
 
   const reset = useCallback(() => {
     setShareType('ALL')
@@ -174,6 +184,9 @@ export default function ShareDocument({ file, isOpen, onClose }) {
             <div>
               <h3>{file.itemType === 'folder' ? 'Chia sẻ thư mục' : 'Chia sẻ tài liệu'}</h3>
               <p className="shd-file-name">{file.fileName || file.entry?.name}</p>
+              <p className="shd-file-meta">
+                {file.fileSize ? formatSize(file.fileSize) : ''}{file.fileSize && file.entry?.modified ? ' · ' : ''}{file.entry?.modified ? formatDate(file.entry.modified) : ''}
+              </p>
             </div>
           </div>
           <button className="shd-close" onClick={onClose}><X size={18} /></button>
