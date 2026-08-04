@@ -4,7 +4,7 @@ import {
   Server, Wifi, Cloud, RefreshCw, ChevronRight, Home, Shield,
   MoreVertical, FileText, Archive, Image, Eye,
   FileSpreadsheet, FileCode, Music, Video, FileCog,
-  Download, LayoutGrid, List, Search, X, Upload, Share2, UploadCloud
+  Download, LayoutGrid, List, Search, X, Upload, Share2, UploadCloud, FolderPlus
 } from 'lucide-react'
 import '../styles/shared.css'
 import './Documents.css'
@@ -179,6 +179,10 @@ export default function Documents() {
   const [uploadError, setUploadError] = useState('')
   const [canUploadCurrent, setCanUploadCurrent] = useState(false)
 
+  // Create folder state
+  const [showCreateFolder, setShowCreateFolder] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+
   // ── Lightbox state ──────────────────────────────────────────────
   const [showLightbox, setShowLightbox] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState(0)
@@ -248,7 +252,12 @@ export default function Documents() {
     setBrowseError('')
     setSearchQuery('')
     browseStorage(configId, folderId, userCode, userRole)
-      .then(r => { setEntries(r.data?.data || []) })
+      .then(r => { 
+        setEntries(r.data?.data || [])
+        // Check upload permission from response headers or data
+        const canUpload = r.data?.can_upload ?? (isAdmin || false)
+        setCanUploadCurrent(canUpload)
+      })
       .catch(err => {
         setEntries([])
         const msg = err.response?.data?.detail || err.message || 'Không thể kết nối storage'
@@ -491,6 +500,81 @@ export default function Documents() {
     e.target.value = ''
   }
 
+  async function handleCreateFolder() {
+    if (!newFolderName.trim() || !activeConfig) return
+    
+    const currentPath = breadcrumbs.at(-1).id
+    setUploading(true)
+    setUploadError('')
+    
+    try {
+      const response = await fetch(
+        `/api/documents/create-folder?config_id=${activeConfig.id}&parent_path=${encodeURIComponent(currentPath)}&user_code=${userCode}&user_role=${userRole}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + sessionStorage.getItem('token')
+          },
+          body: JSON.stringify({ folder_name: newFolderName.trim() })
+        }
+      )
+      
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}))
+        throw new Error(errData.detail || `HTTP ${response.status}`)
+      }
+      
+      setShowCreateFolder(false)
+      setNewFolderName('')
+      browseFolder(activeConfig.id, currentPath)
+    } catch (err) {
+      setUploadError(err.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  async function handleDeleteEntry(entry) {
+    if (!activeConfig || !confirm(`Xóa ${entry.is_dir ? 'thư mục' : 'file'} "${entry.name}"?`)) return
+    
+    const currentPath = breadcrumbs.at(-1).id
+    const fullPath = entry.is_dir 
+      ? (currentPath === '/' ? entry.name : `${currentPath}/${entry.name}`)
+      : (currentPath === '/' ? entry.name : `${currentPath}/${entry.name}`)
+    
+    setUploading(true)
+    setUploadError('')
+    
+    try {
+      let file_id = ''
+      if (activeConfig.type === 'gdrive' && !entry.is_dir) {
+        file_id = entry.id || ''
+      }
+      
+      const response = await fetch(
+        `/api/documents/delete?config_id=${activeConfig.id}&item_path=${encodeURIComponent(fullPath)}&is_dir=${entry.is_dir}&file_id=${encodeURIComponent(file_id)}&user_code=${userCode}&user_role=${userRole}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': 'Bearer ' + sessionStorage.getItem('token')
+          }
+        }
+      )
+      
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}))
+        throw new Error(errData.detail || `HTTP ${response.status}`)
+      }
+      
+      browseFolder(activeConfig.id, currentPath)
+    } catch (err) {
+      setUploadError(err.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
   function openConfigForm(cfg) {
     setTestMsg('')
     setTestOk(false)
@@ -673,9 +757,14 @@ export default function Documents() {
                 )}
               </div>
               {(isAdmin || canUploadCurrent) && (
-                <button className="doc-btn doc-btn-primary" onClick={() => setShowUpload(true)} title="Upload file">
-                  <UploadCloud size={15} /> <span>Upload</span>
-                </button>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button className="doc-btn doc-btn-primary" onClick={() => setShowUpload(true)} title="Upload file">
+                    <UploadCloud size={15} /> <span>Upload</span>
+                  </button>
+                  <button className="doc-btn doc-btn-secondary" onClick={() => setShowCreateFolder(true)} title="Tạo thư mục">
+                    <FolderPlus size={15} /> <span>Thư mục</span>
+                  </button>
+                </div>
               )}
               {isAdmin && (
                 <button className="doc-btn doc-btn-ghost" onClick={() => loadPerms(activeConfig.id)} title="Phân quyền">

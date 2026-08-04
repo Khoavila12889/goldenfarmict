@@ -226,7 +226,15 @@ def browse(config_id: int, path: str = Query('/'), user_code: str = Query(''), u
         else:
             filtered.append(e)
 
-    return {"data": filtered, "path": path, "config": {"id": cfg['id'], "name": cfg['name'], "type": cfg['type']}}
+    # Check upload permission for current folder
+    can_upload = _check_can_upload(config_id, path, user_code, user_role)
+
+    return {
+        "data": filtered, 
+        "path": path, 
+        "config": {"id": cfg['id'], "name": cfg['name'], "type": cfg['type']},
+        "can_upload": can_upload
+    }
 
 def _is_hidden_system_name(name: str) -> bool:
     """True for NAS/system entries that must be hidden from listings.
@@ -1737,3 +1745,326 @@ async def _upload_gdrive(cfg, folder_path: str, filename: str, content: bytes, m
         "file_id": result.get('id'),
         "gdrive_name": result.get('name')
     }
+
+
+# ═══════════════════════════════════════════════════════════════
+# CREATE FOLDER WITH PERMISSION CHECK
+# ═══════════════════════════════════════════════════════════════
+
+class CreateFolderRequest(BaseModel):
+    folder_name: str
+
+
+@router.post("/create-folder")
+async def create_folder(
+    config_id: int = Query(...),
+    parent_path: str = Query('/'),
+    user_code: str = Query(''),
+    user_role: str = Query('user'),
+    body: CreateFolderRequest = Body(...)
+):
+    """Create a new folder in storage.
+
+    Permission check: user must have can_upload=True on the parent folder.
+    """
+    import logging
+    logging.info(f"[CREATE_FOLDER] config_id={config_id}, parent={parent_path}, name={body.folder_name}, user={user_code}")
+
+    # Check storage exists
+    active_sql = "" if user_role in ('admin', 'head') else "AND is_active = TRUE"
+    cfg = fetchone(f"SELECT * FROM storage_config WHERE id=:id {active_sql}", {"id": config_id})
+    if not cfg:
+        raise HTTPException(404, "Storage not found or inactive")
+
+    # Check upload permission (same as upload)
+    if not _check_can_upload(config_id, parent_path, user_code, user_role):
+        raise HTTPException(403, "Bạn không có quyền tạo thư mục ở đây")
+
+    # Validate folder name
+    folder_name = body.folder_name.strip()
+    if not folder_name:
+        raise HTTPException(400, "Tên thư mục không được để trống")
+    if '..' in folder_name or '/' in folder_name or '\\' in folder_name:
+        raise HTTPException(400, "Tên thư mục không hợp lệ")
+
+    try:
+        if cfg['type'] == 'ftp':
+            _create_folder_ftp(cfg, parent_path, folder_name)
+        elif cfg['type'] == 'smb':
+            _create_folder_smb(cfg, parent_path, folder_name)
+        elif cfg['type'] == 'gdrive':
+            return await _create_folder_gdrive(cfg, parent_path, folder_name)
+        else:
+            raise HTTPException(400, f"Unsupported storage type: {cfg['type']}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"[CREATE_FOLDER] Error: {e}")
+        raise HTTPException(502, f"Create folder error: {str(e)}")
+
+    return {"success": True, "folder_name": folder_name}
+
+
+def _create_folder_ftp(cfg, parent_path: str, folder_name: str):
+    """Create folder on FTP server."""
+    ftp = ftplib.FTP()
+    ftp.connect(cfg['host'], cfg['port'] or 21, timeout=30)
+    ftp.login(cfg['username'] or 'anonymous', cfg['password'] or '')
+
+    base = cfg['remote_path'] or '/'
+    if parent_path == '/':
+        full_path = os.path.join(base, folder_name).replace('\\', '/')
+    else:
+        full_path = os.path.join(base, parent_path.lstrip('/'), folder_name).replace('\\', '/')
+
+    try:
+        ftp.mkd(full_path)
+    except ftplib.error_perm as e:
+        ftp.quit()
+        if '550' in str(e) or 'exists' in str(e).lower():
+            raise HTTPException(409, f"Thư mục '{folder_name}' đã tồn tại")
+        raise HTTPException(502, f"FTP error: {str(e)}")
+
+    ftp.quit()
+
+
+def _create_folder_smb(cfg, parent_path: str, folder_name: str):
+    """Create folder on SMB share."""
+    try:
+        from smb.SMBConnection import SMBConnection
+    except ImportError:
+        raise HTTPException(502, "SMB library not installed (pip install pysmb)")
+
+    conn = SMBConnection(cfg['username'], cfg['password'], 'goldenfarm', cfg['host'], domain=cfg.get('domain', ''))
+    connected = conn.connect(cfg['host'], cfg['port'] or 445)
+    if not connected:
+        raise HTTPException(502, "Cannot connect to SMB server")
+
+    share = cfg.get('remote_path', '').strip('/')
+    if not share:
+        conn.close()
+        raise HTTPException(400, "Remote Path / Share name is required for SMB")
+
+    # Build SMB path
+    if parent_path == '/':
+        smb_path = folder_name
+    else:
+        smb_path = parent_path.lstrip('/').replace('/', '\\') + '\\' + folder_name
+
+    try:
+        conn.createDirectory(share, smb_path)
+    except Exception as e:
+        conn.close()
+        if 'STATUS_OBJECT_NAME_COLLISION' in str(e) or 'exists' in str(e).lower():
+            raise HTTPException(409, f"Thư mục '{folder_name}' đã tồn tại")
+        raise HTTPException(502, f"SMB error: {str(e)}")
+
+    conn.close()
+
+
+async def _create_folder_gdrive(cfg, parent_path: str, folder_name: str):
+    """Create folder in Google Drive."""
+    if not _GOOGLE_AVAILABLE:
+        raise HTTPException(502, "Google libraries not installed")
+
+    try:
+        creds_dict = json.loads(cfg['password'])
+        creds = service_account.Credentials.from_service_account_info(creds_dict)
+        service = build('drive', 'v3', credentials=creds)
+    except Exception as e:
+        raise HTTPException(502, f"Google Drive auth error: {str(e)}")
+
+    # parent_path for GDrive is the Google Folder ID
+    parent_id = parent_path.strip('/') if parent_path and parent_path != '/' else cfg['remote_path'] or 'root'
+
+    file_metadata = {
+        'name': folder_name,
+        'mimeType': 'application/vnd.google-apps.folder',
+        'parents': [parent_id]
+    }
+
+    try:
+        result = service.files().create(
+            body=file_metadata,
+            fields='id, name'
+        ).execute()
+    except Exception as e:
+        if 'alreadyExists' in str(e) or 'duplicate' in str(e).lower():
+            raise HTTPException(409, f"Thư mục '{folder_name}' đã tồn tại")
+        raise HTTPException(502, f"Google Drive error: {str(e)}")
+
+    return {
+        "success": True,
+        "folder_name": folder_name,
+        "folder_id": result.get('id')
+    }
+
+
+# ═══════════════════════════════════════════════════════════════
+# DELETE FILE/FOLDER WITH PERMISSION CHECK
+# ═══════════════════════════════════════════════════════════════
+
+@router.delete("/delete")
+async def delete_item(
+    config_id: int = Query(...),
+    item_path: str = Query(...),
+    is_dir: bool = Query(False),
+    file_id: str = Query(''),
+    user_code: str = Query(''),
+    user_role: str = Query('user')
+):
+    """Delete a file or folder from storage.
+
+    Permission check: user must have can_delete=True on the parent folder.
+    """
+    import logging
+    logging.info(f"[DELETE] config_id={config_id}, path={item_path}, is_dir={is_dir}, user={user_code}")
+
+    # Check storage exists
+    active_sql = "" if user_role in ('admin', 'head') else "AND is_active = TRUE"
+    cfg = fetchone(f"SELECT * FROM storage_config WHERE id=:id {active_sql}", {"id": config_id})
+    if not cfg:
+        raise HTTPException(404, "Storage not found or inactive")
+
+    # Check delete permission
+    parent_path = os.path.dirname(item_path).replace('\\', '/') or '/'
+    if not _check_can_delete(config_id, parent_path, user_code, user_role):
+        raise HTTPException(403, "Bạn không có quyền xóa item này")
+
+    try:
+        if cfg['type'] == 'ftp':
+            _delete_ftp(cfg, item_path, is_dir)
+        elif cfg['type'] == 'smb':
+            _delete_smb(cfg, item_path, is_dir)
+        elif cfg['type'] == 'gdrive':
+            _delete_gdrive(file_id or item_path)
+        else:
+            raise HTTPException(400, f"Unsupported storage type: {cfg['type']}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"[DELETE] Error: {e}")
+        raise HTTPException(502, f"Delete error: {str(e)}")
+
+    # Publish SSE event
+    from ..core.events import publish_sync
+    publish_sync("document_updated", {
+        "config_id": config_id,
+        "item_path": item_path,
+        "action": "delete",
+        "ts": datetime.now().isoformat(),
+    })
+
+    return {"success": True}
+
+
+def _check_can_delete(storage_id, folder_path, user_code, user_role):
+    """Check if user has can_delete permission on the folder."""
+    folder_path = folder_path.replace('\\', '/').rstrip('/') or '/'
+    if user_role in ('admin', 'head'):
+        return True
+    row = fetchone("SELECT COUNT(*) AS cnt FROM storage_permissions WHERE storage_id=:id", {"id": storage_id})
+    if row["cnt"] == 0:
+        return True
+    user_dept = ''
+    emp = fetchone("SELECT department FROM employees WHERE employee_code=:code", {"code": user_code})
+    if emp:
+        user_dept = emp['department'] or ''
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    row = fetchone("""
+        SELECT can_delete FROM storage_permissions
+        WHERE storage_id=:sid
+          AND (
+            target_type='EVERYONE'
+            OR (target_type='DEPARTMENT' AND department != '' AND department=:dept)
+            OR (role=:role)
+            OR (employee_code=:code)
+            OR (department='' AND role='' AND employee_code='')
+          )
+          AND (:fp = folder_path OR LOWER(:fp2) LIKE LOWER(folder_path || '/%') OR folder_path = '/')
+          AND (expires_at IS NULL OR expires_at > :now)
+        ORDER BY
+          CASE target_type WHEN 'EVERYONE' THEN 0 ELSE 1 END,
+          length(folder_path) DESC
+        LIMIT 1
+    """, {
+        "sid": storage_id, "dept": user_dept, "role": user_role, "code": user_code,
+        "fp": folder_path, "fp2": folder_path, "now": now_str
+    })
+    if not row:
+        return False
+    return bool(row.get('can_delete', 0))
+
+
+def _delete_ftp(cfg, item_path: str, is_dir: bool):
+    """Delete file or folder on FTP server."""
+    ftp = ftplib.FTP()
+    ftp.connect(cfg['host'], cfg['port'] or 21, timeout=30)
+    ftp.login(cfg['username'] or 'anonymous', cfg['password'] or '')
+
+    base = cfg['remote_path'] or '/'
+    full_path = os.path.join(base, item_path.lstrip('/')).replace('\\', '/')
+
+    try:
+        if is_dir:
+            ftp.rmd(full_path)
+        else:
+            ftp.delete(full_path)
+    except ftplib.error_perm as e:
+        ftp.quit()
+        if '550' in str(e):
+            raise HTTPException(404, "Item không tồn tại hoặc thư mục không rỗng")
+        raise HTTPException(502, f"FTP error: {str(e)}")
+
+    ftp.quit()
+
+
+def _delete_smb(cfg, item_path: str, is_dir: bool):
+    """Delete file or folder on SMB share."""
+    try:
+        from smb.SMBConnection import SMBConnection
+    except ImportError:
+        raise HTTPException(502, "SMB library not installed")
+
+    conn = SMBConnection(cfg['username'], cfg['password'], 'goldenfarm', cfg['host'], domain=cfg.get('domain', ''))
+    connected = conn.connect(cfg['host'], cfg['port'] or 445)
+    if not connected:
+        raise HTTPException(502, "Cannot connect to SMB server")
+
+    share = cfg.get('remote_path', '').strip('/')
+    if not share:
+        conn.close()
+        raise HTTPException(400, "Remote Path / Share name is required for SMB")
+
+    smb_path = item_path.lstrip('/').replace('/', '\\')
+
+    try:
+        if is_dir:
+            conn.deleteDirectory(share, smb_path)
+        else:
+            conn.deleteFiles(share, smb_path)
+    except Exception as e:
+        conn.close()
+        if 'STATUS_OBJECT_NAME_NOT_FOUND' in str(e):
+            raise HTTPException(404, "Item không tồn tại")
+        if 'STATUS_DIRECTORY_NOT_EMPTY' in str(e):
+            raise HTTPException(400, "Thư mục không rỗng. Vui lòng xóa nội dung bên trong trước.")
+        raise HTTPException(502, f"SMB error: {str(e)}")
+
+    conn.close()
+
+
+def _delete_gdrive(cfg, file_id: str):
+    """Delete file or folder in Google Drive."""
+    if not _GOOGLE_AVAILABLE:
+        raise HTTPException(502, "Google libraries not installed")
+
+    try:
+        creds_dict = json.loads(cfg['password'])
+        creds = service_account.Credentials.from_service_account_info(creds_dict)
+        service = build('drive', 'v3', credentials=creds)
+        service.files().delete(fileId=file_id).execute()
+    except Exception as e:
+        if 'notFound' in str(e):
+            raise HTTPException(404, "Item không tồn tại")
+        raise HTTPException(502, f"Google Drive error: {str(e)}")
