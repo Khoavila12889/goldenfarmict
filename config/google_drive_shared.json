@@ -1,0 +1,10 @@
+{
+  "name": "Google Drive Shared - GoldenFarm ICT",
+  "type": "gdrive",
+  "host": "",
+  "port": 0,
+  "username": "ict-service@goldenfarm.iam.gserviceaccount.com",
+  "password": "",
+  "remote_path": "FOLDER_ID_SHARED_DRIVE",
+  "domain": ""
+}
