@@ -635,17 +635,20 @@ def create_permission(
         tt = 'DEPARTMENT'
     else:
         tt = ''  # individual/role override
-    can_read = 1 if perm in ('read', 'write') else 0
-    can_write = 1 if perm == 'write' else 0
-    can_edit = 1 if perm == 'write' else 0
-    can_delete = 1 if perm == 'write' else 0
-    can_upload = 1 if body.get('can_upload', perm == 'write') else 0
+    
+    # Use bool instead of int for PostgreSQL boolean columns
+    can_read = True if perm in ('read', 'write') else False
+    can_write = True if perm == 'write' else False
+    can_edit = True if perm == 'write' else False
+    can_delete = True if perm == 'write' else False
+    can_upload = True if body.get('can_upload', perm == 'write') else False
+    
     new_id = insert("""
         INSERT INTO storage_permissions
             (storage_id, folder_path, role, employee_code, department, permission,
              target_type, can_read, can_write, can_edit, can_delete, allow_download, can_reshare, can_upload)
         VALUES (:sid, :fp, :role, :ec, :dept, :perm,
-                :tt, :cr, :cw, :ce, :cd, 1, 0, :cu) RETURNING id
+                :tt, :cr, :cw, :ce, :cd, TRUE, FALSE, :cu) RETURNING id
     """, {
         "sid": body.get('storage_id'),
         "fp": body.get('folder_path', '/'),
@@ -733,10 +736,10 @@ def create_share_permission(
                     updated_at=:now
                 WHERE id=:id
             """, {
-                "cr": int(perm_data['can_read']), "cw": int(perm_data['can_write']), 
-                "ce": int(perm_data['can_edit']), "cd": int(perm_data['can_delete']), 
-                "ad": int(perm_data['allow_download']), "crs": int(perm_data['can_reshare']),
-                "cu": int(perm_data['can_upload']), "ea": perm_data['expires_at'], 
+                "cr": bool(perm_data['can_read']), "cw": bool(perm_data['can_write']), 
+                "ce": bool(perm_data['can_edit']), "cd": bool(perm_data['can_delete']), 
+                "ad": bool(perm_data['allow_download']), "crs": bool(perm_data['can_reshare']),
+                "cu": bool(perm_data['can_upload']), "ea": perm_data['expires_at'], 
                 "now": now_str, "id": existing['id']
             })
         else:
@@ -755,10 +758,10 @@ def create_share_permission(
                 "sid": storage_id, "fp": folder_path, "tt": target_type,
                 "dept": department if target_type == 'DEPARTMENT' else '',
                 "ec": employee_code if target_type in ('USER', 'INDIVIDUAL') else '',
-                "cr": int(perm_data['can_read']), "cw": int(perm_data['can_write']), 
-                "ce": int(perm_data['can_edit']), "cd": int(perm_data['can_delete']), 
-                "ad": int(perm_data['allow_download']), "crs": int(perm_data['can_reshare']),
-                "cu": int(perm_data['can_upload']), "ea": perm_data['expires_at'],
+                "cr": bool(perm_data['can_read']), "cw": bool(perm_data['can_write']), 
+                "ce": bool(perm_data['can_edit']), "cd": bool(perm_data['can_delete']), 
+                "ad": bool(perm_data['allow_download']), "crs": bool(perm_data['can_reshare']),
+                "cu": bool(perm_data['can_upload']), "ea": perm_data['expires_at'],
                 "now": now_str
             })
         
@@ -799,9 +802,10 @@ def update_permission(
         if not updates:
             raise HTTPException(400, "No fields to update")
         
+        # Convert to bool for PostgreSQL boolean columns
         for k in ('can_read','can_write','can_edit','can_delete','allow_download','can_reshare','can_upload'):
             if k in updates:
-                updates[k] = 1 if updates[k] else 0
+                updates[k] = bool(updates[k])
         
         if 'expires_at' in updates and not updates['expires_at']:
             updates['expires_at'] = None
