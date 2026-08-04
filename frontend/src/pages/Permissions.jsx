@@ -711,12 +711,13 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
     if (everyone) {
       setEveryoneExists(true)
       setEveryonePerms({
-        can_read: everyone.can_read ?? true,
-        can_write: everyone.can_write ?? false,
-        can_edit: everyone.can_edit ?? false,
-        can_delete: everyone.can_delete ?? false,
-        allow_download: everyone.allow_download ?? true,
-        can_reshare: everyone.can_reshare ?? false,
+        can_read: Boolean(everyone.can_read),
+        can_write: Boolean(everyone.can_write),
+        can_edit: Boolean(everyone.can_edit),
+        can_delete: Boolean(everyone.can_delete),
+        allow_download: Boolean(everyone.allow_download),
+        can_reshare: Boolean(everyone.can_reshare),
+        can_upload: Boolean(everyone.can_upload),
       })
     } else {
       setEveryoneExists(false)
@@ -744,7 +745,13 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
         storage_id: selectedStorage.id,
         folder_path: '/',
         target_type: 'EVERYONE',
-        ...everyonePerms,
+        can_read: Boolean(everyonePerms.can_read),
+        can_write: Boolean(everyonePerms.can_write),
+        can_edit: Boolean(everyonePerms.can_edit),
+        can_delete: Boolean(everyonePerms.can_delete),
+        allow_download: Boolean(everyonePerms.allow_download),
+        can_reshare: Boolean(everyonePerms.can_reshare),
+        can_upload: Boolean(everyonePerms.can_upload),
       }
       const res = await fetch(`/api/documents/permissions/share?${apiParams()}`, {
         method: 'POST',
@@ -753,7 +760,7 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
       })
       if (res.ok) {
         setSaveMsg({ type: 'success', text: 'Đã cập nhật quyền cho Tất cả nhân viên' })
-        loadPermissions(selectedStorage.id)
+        await loadPermissions(selectedStorage.id)
       } else {
         const d = await res.json().catch(() => ({}))
         setSaveMsg({ type: 'error', text: d.detail || d.message || 'Lỗi máy chủ' })

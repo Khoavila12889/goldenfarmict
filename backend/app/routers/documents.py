@@ -700,7 +700,9 @@ def create_share_permission(
         existing = fetchone("""
             SELECT id FROM storage_permissions
             WHERE storage_id=:sid AND folder_path=:fp AND target_type='EVERYONE'
-               AND role='' AND employee_code='' AND department=''
+               AND (role IS NULL OR role = '') 
+               AND (employee_code IS NULL OR employee_code = '') 
+               AND (department IS NULL OR department = '')
         """, {"sid": storage_id, "fp": folder_path})
     else:
         if not department:
@@ -719,9 +721,9 @@ def create_share_permission(
                 updated_at=CURRENT_TIMESTAMP::text
             WHERE id=:id
         """, {
-            "cr": perm_data['can_read'], "cw": perm_data['can_write'], "ce": perm_data['can_edit'],
-            "cd": perm_data['can_delete'], "ad": perm_data['allow_download'], "crs": perm_data['can_reshare'],
-            "cu": perm_data['can_upload'], "ea": perm_data['expires_at'], "id": existing['id']
+            "cr": int(perm_data['can_read']), "cw": int(perm_data['can_write']), "ce": int(perm_data['can_edit']),
+            "cd": int(perm_data['can_delete']), "ad": int(perm_data['allow_download']), "crs": int(perm_data['can_reshare']),
+            "cu": int(perm_data['can_upload']), "ea": perm_data['expires_at'], "id": existing['id']
         })
     else:
         execute("""
@@ -738,9 +740,9 @@ def create_share_permission(
             "sid": storage_id, "fp": folder_path, "tt": target_type,
             "dept": department if target_type == 'DEPARTMENT' else '',
             "ec": employee_code if target_type in ('USER', 'INDIVIDUAL') else '',
-            "cr": perm_data['can_read'], "cw": perm_data['can_write'], "ce": perm_data['can_edit'],
-            "cd": perm_data['can_delete'], "ad": perm_data['allow_download'], "crs": perm_data['can_reshare'],
-            "cu": perm_data['can_upload'], "ea": perm_data['expires_at'],
+            "cr": int(perm_data['can_read']), "cw": int(perm_data['can_write']), "ce": int(perm_data['can_edit']),
+            "cd": int(perm_data['can_delete']), "ad": int(perm_data['allow_download']), "crs": int(perm_data['can_reshare']),
+            "cu": int(perm_data['can_upload']), "ea": perm_data['expires_at'],
         })
     if target_type in ('USER', 'INDIVIDUAL'):
         target_label = f"Nhân viên {employee_code}"
@@ -2236,7 +2238,7 @@ async def delete_item(
         elif cfg['type'] == 'smb':
             _delete_smb(cfg, item_path, is_dir)
         elif cfg['type'] == 'gdrive':
-            _delete_gdrive(file_id or item_path)
+            _delete_gdrive(cfg, file_id or item_path)
         else:
             raise HTTPException(400, f"Unsupported storage type: {cfg['type']}")
     except HTTPException:
