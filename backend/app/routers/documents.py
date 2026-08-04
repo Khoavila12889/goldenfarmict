@@ -789,6 +789,7 @@ def _check_folder_permission(storage_id, folder_path, user_code, user_role):
     now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
     # Fixed SQL: Check all permission types correctly
+    # Note: expires_at stored as TEXT but may be cast to timestamp in PostgreSQL
     row = fetchone("""
         SELECT can_read, allow_download, expires_at FROM storage_permissions
         WHERE storage_id=:sid
@@ -799,7 +800,7 @@ def _check_folder_permission(storage_id, folder_path, user_code, user_role):
             OR (target_type='' AND employee_code=:code AND employee_code != '')
           )
           AND (:fp = folder_path OR LOWER(:fp2) LIKE LOWER(folder_path || '/%') OR folder_path = '/')
-          AND (expires_at IS NULL OR expires_at = '' OR expires_at > :now)
+          AND (expires_at IS NULL OR CAST(expires_at AS TEXT) = '' OR expires_at::timestamp > :now::timestamp)
         ORDER BY
           CASE
             WHEN employee_code != '' THEN 3
@@ -1763,6 +1764,7 @@ def _check_can_upload(storage_id, folder_path, user_code, user_role):
     now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
     # Fixed SQL: Check all permission types correctly
+    # Note: expires_at stored as TEXT but may be cast to timestamp in PostgreSQL
     row = fetchone("""
         SELECT can_upload FROM storage_permissions
         WHERE storage_id=:sid
@@ -1773,7 +1775,7 @@ def _check_can_upload(storage_id, folder_path, user_code, user_role):
             OR (target_type='' AND employee_code=:code AND employee_code != '')
           )
           AND (:fp = folder_path OR LOWER(:fp2) LIKE LOWER(folder_path || '/%') OR folder_path = '/')
-          AND (expires_at IS NULL OR expires_at = '' OR expires_at > :now)
+          AND (expires_at IS NULL OR CAST(expires_at AS TEXT) = '' OR expires_at::timestamp > :now::timestamp)
         ORDER BY
           CASE
             WHEN employee_code != '' THEN 3
