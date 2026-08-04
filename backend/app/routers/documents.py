@@ -320,6 +320,178 @@ def _parse_ftp_list(lines):
         entries.append({"name": name, "is_dir": is_dir, "size": size, "modified": modified})
     return entries
 
+
+@router.get("/folders")
+def list_folders(
+    config_id: int = Query(...),
+    user_code: str = Query(''),
+    user_role: str = Query('user')
+):
+    """List all folders in a storage for permission selection.
+    
+    Returns a flat list of folders with their full paths for admin to select
+    when creating granular permissions.
+    """
+    active_sql = "" if user_role in ('admin', 'head') else "AND is_active = TRUE"
+    cfg = fetchone(f"SELECT * FROM storage_config WHERE id=:id {active_sql}", {"id": config_id})
+    if not cfg:
+        raise HTTPException(404, "Storage not found or inactive")
+
+    folders = []
+    try:
+        if cfg['type'] == 'ftp':
+            folders = _list_folders_ftp(cfg)
+        elif cfg['type'] == 'smb':
+            folders = _list_folders_smb(cfg)
+        elif cfg['type'] == 'gdrive':
+            folders = _list_folders_gdrive(cfg)
+    except Exception as ex:
+        raise HTTPException(502, f"Storage error: {str(ex)}")
+
+    return {"data": folders, "config": {"id": cfg['id'], "name": cfg['name']}}
+
+
+def _list_folders_ftp(cfg):
+    """Recursively list all folders in FTP server."""
+    ftp = ftplib.FTP()
+    ftp.connect(cfg['host'], cfg['port'] or 21, timeout=15)
+    ftp.login(cfg['username'] or 'anonymous', cfg['password'] or '')
+
+    base = cfg['remote_path'] or '/'
+    folders = []
+    
+    def list_recursive(current_path):
+        try:
+            ftp.cwd(current_path)
+            items = []
+            ftp.retrlines('LIST', items.append)
+            
+            for item in items:
+                parts = item.split()
+                if len(parts) < 9:
+                    continue
+                name = ' '.join(parts[8:])
+                
+                if name in ('.', '..') or _is_hidden_system_name(name):
+                    continue
+                    
+                perms = parts[0]
+                is_dir = perms.startswith('d')
+                
+                if is_dir:
+                    sub_path = os.path.join(current_path, name).replace('\\', '/')
+                    folders.append({
+                        "path": sub_path,
+                        "name": name,
+                        "full_path": sub_path.replace(base + '/', '', 1) or '/'
+                    })
+                    try:
+                        list_recursive(sub_path)
+                    except:
+                        pass
+        except:
+            pass
+    
+    try:
+        list_recursive(base)
+    except:
+        pass
+    
+    ftp.quit()
+    return folders
+
+
+def _list_folders_smb(cfg):
+    """Recursively list all folders in SMB share."""
+    try:
+        from smb.SMBConnection import SMBConnection
+    except ImportError:
+        raise HTTPException(502, "SMB library not installed (pip install pysmb)")
+    
+    conn = SMBConnection(cfg['username'], cfg['password'], 'goldenfarm', cfg['host'], domain=cfg.get('domain', ''))
+    connected = conn.connect(cfg['host'], cfg['port'] or 445)
+    if not connected:
+        raise HTTPException(502, "Cannot connect to SMB server")
+
+    share = cfg.get('remote_path', '').strip('/')
+    if not share:
+        conn.close()
+        raise HTTPException(400, "Remote Path / Share name is required for SMB")
+
+    folders = []
+    
+    def list_recursive(current_path):
+        try:
+            items = conn.listPath(share, current_path if current_path else '\\')
+            for item in items:
+                if item.filename in ('.', '..') or _is_hidden_system_name(item.filename):
+                    continue
+                    
+                if item.isDirectory:
+                    sub_path = os.path.join(current_path, item.filename).replace('\\', '/')
+                    folders.append({
+                        "path": sub_path,
+                        "name": item.filename,
+                        "full_path": sub_path.replace(share + '\\', '', 1) if share else sub_path.replace('\\', '/')
+                    })
+                    try:
+                        list_recursive(sub_path)
+                    except:
+                        pass
+        except:
+            pass
+    
+    try:
+        list_recursive('\\')
+    except:
+        pass
+    
+    conn.close()
+    return folders
+
+
+def _list_folders_gdrive(cfg):
+    """Recursively list all folders in Google Drive."""
+    if not _GOOGLE_AVAILABLE:
+        raise HTTPException(502, "Google libraries not installed")
+    
+    try:
+        creds = _build_gdrive_creds(cfg)
+        service = build('drive', 'v3', credentials=creds)
+    except json.JSONDecodeError:
+        raise HTTPException(502, "Service Account JSON không hợp lệ")
+    except Exception as e:
+        raise HTTPException(502, f"Google Drive auth error: {str(e)}")
+
+    folders = []
+    root_id = cfg['remote_path'] if cfg['remote_path'] else 'root'
+    
+    def list_recursive(parent_id, current_path=''):
+        try:
+            results = service.files().list(
+                q=f"'{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+                fields="files(id, name)",
+                pageSize=1000
+            ).execute()
+            
+            for f in results.get('files', []):
+                folder_path = os.path.join(current_path, f['name']).replace('\\', '/')
+                folders.append({
+                    "path": f['id'],
+                    "name": f['name'],
+                    "full_path": folder_path
+                })
+                list_recursive(f['id'], folder_path)
+        except:
+            pass
+    
+    try:
+        list_recursive(root_id)
+    except:
+        pass
+    
+    return folders
+
 def _browse_smb(cfg, path):
     try:
         from smb.SMBConnection import SMBConnection

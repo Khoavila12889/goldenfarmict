@@ -162,6 +162,8 @@ export default function Documents() {
   const [showPerms, setShowPerms] = useState(false)
   const [departments, setDepartments] = useState([])
   const [permForm, setPermForm] = useState({ folder_path: '/', role: '', employee_code: '', department: '', permission: 'read', can_upload: false })
+  const [foldersList, setFoldersList] = useState([])
+  const [loadingFolders, setLoadingFolders] = useState(false)
 
   const [viewerFile, setViewerFile] = useState(null)
   const [viewerOpen, setViewerOpen] = useState(false)
@@ -630,8 +632,19 @@ export default function Documents() {
   }
 
   function loadPerms(storageId) {
-    getStoragePermissions(storageId).then(r => setPerms(r.data?.data || [])).catch(() => {})
-    setShowPerms(true)
+    setLoadingFolders(true)
+    Promise.all([
+      fetch(`/api/documents/folders?config_id=${storageId}&user_code=${userCode}&user_role=${userRole}`).then(r => r.json()),
+      getStoragePermissions(storageId)
+    ]).then(([foldersRes, permsRes]) => {
+      setFoldersList(foldersRes.data?.data || [])
+      setPerms(permsRes.data?.data || [])
+      setShowPerms(true)
+    }).catch(() => {
+      setFoldersList([])
+      setPerms([])
+      setShowPerms(true)
+    }).finally(() => setLoadingFolders(false))
   }
 
   function exportConfigToFile() {
@@ -1091,7 +1104,14 @@ export default function Documents() {
             <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1rem' }}>Cấu hình ai có quyền truy cập thư mục nào.</p>
 
             <div className="perm-form-row">
-              <input className="salary-pwd-input" value={permForm.folder_path} onChange={e => setPermForm({ ...permForm, folder_path: e.target.value })} placeholder="/thumuc" />
+              <select className="salary-pwd-input" value={permForm.folder_path} onChange={e => setPermForm({ ...permForm, folder_path: e.target.value })}>
+                <option value="/">Root (/)</option>
+                {foldersList.map(f => (
+                  <option key={f.path || f.full_path} value={f.full_path || f.path}>
+                    {f.full_path || f.path} {f.name && f.name !== f.full_path ? `(${f.name})` : ''}
+                  </option>
+                ))}
+              </select>
               <select className="salary-pwd-input" value={permForm.role} onChange={e => setPermForm({ ...permForm, role: e.target.value })}>
                 <option value="">-- Role --</option>
                 <option value="admin">Admin</option>
