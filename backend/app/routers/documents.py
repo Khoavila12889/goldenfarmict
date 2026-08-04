@@ -763,6 +763,19 @@ def delete_permission(
 # ─── Permission Check Helper ────────────────────────────────────
 
 def _check_folder_permission(storage_id, folder_path, user_code, user_role):
+    """Check if user has permission to access the folder.
+    
+    Permission check order (most general to most specific):
+    1. EVERYONE permission
+    2. DEPARTMENT permission (match user's department)
+    3. ROLE permission (match user's role)
+    4. EMPLOYEE permission (match specific employee_code)
+    
+    Folder path matching:
+    - Exact match: folder_path = '/path'
+    - Parent match: current path starts with folder_path
+    - Root permission: folder_path = '/' grants access to all
+    """
     folder_path = folder_path.replace('\\', '/').rstrip('/') or '/'
     if user_role in ('admin', 'head'):
         return True
@@ -774,20 +787,27 @@ def _check_folder_permission(storage_id, folder_path, user_code, user_role):
     if emp:
         user_dept = emp['department'] or ''
     now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
+    # Fixed SQL: Check all permission types correctly
     row = fetchone("""
         SELECT can_read, allow_download, expires_at FROM storage_permissions
         WHERE storage_id=:sid
           AND (
             target_type='EVERYONE'
-            OR (target_type='DEPARTMENT' AND department != '' AND department=:dept)
-            OR (role=:role)
-            OR (employee_code=:code)
-            OR (department='' AND role='' AND employee_code='')
+            OR (target_type='DEPARTMENT' AND department=:dept AND :dept != '')
+            OR (target_type='' AND role=:role AND role != '')
+            OR (target_type='' AND employee_code=:code AND employee_code != '')
           )
           AND (:fp = folder_path OR LOWER(:fp2) LIKE LOWER(folder_path || '/%') OR folder_path = '/')
-          AND (expires_at IS NULL OR expires_at > :now)
+          AND (expires_at IS NULL OR expires_at = '' OR expires_at > :now)
         ORDER BY
-          CASE target_type WHEN 'EVERYONE' THEN 0 ELSE 1 END,
+          CASE
+            WHEN employee_code != '' THEN 3
+            WHEN role != '' THEN 2
+            WHEN target_type='DEPARTMENT' THEN 1
+            WHEN target_type='EVERYONE' THEN 0
+            ELSE 4
+          END DESC,
           length(folder_path) DESC
         LIMIT 1
     """, {
@@ -1722,6 +1742,12 @@ def _check_can_upload(storage_id, folder_path, user_code, user_role):
     
     Security: Default to NO upload permission unless explicitly granted by admin.
     Only admin can grant can_upload permission to other users.
+    
+    Permission check order (most specific wins):
+    1. EMPLOYEE permission (specific employee_code)
+    2. ROLE permission (user's role)
+    3. DEPARTMENT permission (user's department)
+    4. EVERYONE permission
     """
     folder_path = folder_path.replace('\\', '/').rstrip('/') or '/'
     if user_role in ('admin', 'head'):
@@ -1735,20 +1761,27 @@ def _check_can_upload(storage_id, folder_path, user_code, user_role):
     if emp:
         user_dept = emp['department'] or ''
     now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
+    # Fixed SQL: Check all permission types correctly
     row = fetchone("""
         SELECT can_upload FROM storage_permissions
         WHERE storage_id=:sid
           AND (
             target_type='EVERYONE'
-            OR (target_type='DEPARTMENT' AND department != '' AND department=:dept)
-            OR (role=:role)
-            OR (employee_code=:code)
-            OR (department='' AND role='' AND employee_code='')
+            OR (target_type='DEPARTMENT' AND department=:dept AND :dept != '')
+            OR (target_type='' AND role=:role AND role != '')
+            OR (target_type='' AND employee_code=:code AND employee_code != '')
           )
           AND (:fp = folder_path OR LOWER(:fp2) LIKE LOWER(folder_path || '/%') OR folder_path = '/')
-          AND (expires_at IS NULL OR expires_at > :now)
+          AND (expires_at IS NULL OR expires_at = '' OR expires_at > :now)
         ORDER BY
-          CASE target_type WHEN 'EVERYONE' THEN 0 ELSE 1 END,
+          CASE
+            WHEN employee_code != '' THEN 3
+            WHEN role != '' THEN 2
+            WHEN target_type='DEPARTMENT' THEN 1
+            WHEN target_type='EVERYONE' THEN 0
+            ELSE 4
+          END DESC,
           length(folder_path) DESC
         LIMIT 1
     """, {

@@ -303,6 +303,7 @@ class StoragePermission(Base):
     can_delete = Column(Integer, default=0)
     allow_download = Column(Integer, default=1)
     can_reshare = Column(Integer, default=0)
+    can_upload = Column(Integer, default=0)
     expires_at = Column(String, default='')
     created_at = Column(String, default='')
     updated_at = Column(String, default='')
