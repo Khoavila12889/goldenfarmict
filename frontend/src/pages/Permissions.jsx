@@ -917,9 +917,20 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
                         fontSize: '0.8rem',
                       }} onClick={() => setExpandedPerm(isExpanded ? null : p.id)}>
                         <Building size={13} style={{ color: 'var(--bk-primary)', flexShrink: 0 }} />
-                        <span style={{ fontWeight: 600, flex: 1 }}>
-                          {p.department_name || p.department}
-                        </span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ flex: 1 }}>{p.department_name || p.department}</span>
+                            {p.folder_path && (
+                              <span style={{
+                                fontSize: '0.68rem', padding: '0.1rem 0.35rem', borderRadius: '99px',
+                                background: 'var(--bk-surface)', color: 'var(--bk-text-secondary)',
+                                whiteSpace: 'nowrap'
+                              }}>
+                                {p.folder_path}
+                              </span>
+                            )}
+                          </div>
+                        </div>
                         <div style={{ display: 'flex', gap: '0.2rem' }}>
                           {Object.entries(PERM_LABELS).map(([k, v]) =>
                             p[k] ? <span key={k} style={{
