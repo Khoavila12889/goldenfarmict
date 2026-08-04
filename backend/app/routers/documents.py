@@ -718,12 +718,12 @@ def create_share_permission(
         execute("""
             UPDATE storage_permissions SET
                 can_read=:cr, can_write=:cw, can_edit=:ce, can_delete=:cd,
-                allow_download=:ad, can_reshare=:cr2, can_upload=:cu, expires_at=:ea,
-                updated_at=CURRENT_TIMESTAMP
+                allow_download=:ad, can_reshare=:crs, can_upload=:cu, expires_at=:ea,
+                updated_at=CURRENT_TIMESTAMP::text
             WHERE id=:id
         """, {
             "cr": perm_data['can_read'], "cw": perm_data['can_write'], "ce": perm_data['can_edit'],
-            "cd": perm_data['can_delete'], "ad": perm_data['allow_download'], "cr2": perm_data['can_reshare'],
+            "cd": perm_data['can_delete'], "ad": perm_data['allow_download'], "crs": perm_data['can_reshare'],
             "cu": perm_data['can_upload'], "ea": perm_data['expires_at'], "id": existing['id']
         })
     else:
@@ -735,14 +735,14 @@ def create_share_permission(
                  role, permission)
             VALUES (:sid, :fp, :tt, :dept, :ec,
                     :cr, :cw, :ce, :cd,
-                    :ad, :cr2, :cu, :ea,
+                    :ad, :crs, :cu, :ea,
                     '', 'custom')
         """, {
             "sid": storage_id, "fp": folder_path, "tt": target_type,
             "dept": department if target_type == 'DEPARTMENT' else '',
             "ec": employee_code if target_type in ('USER', 'INDIVIDUAL') else '',
             "cr": perm_data['can_read'], "cw": perm_data['can_write'], "ce": perm_data['can_edit'],
-            "cd": perm_data['can_delete'], "ad": perm_data['allow_download'], "cr2": perm_data['can_reshare'],
+            "cd": perm_data['can_delete'], "ad": perm_data['allow_download'], "crs": perm_data['can_reshare'],
             "cu": perm_data['can_upload'], "ea": perm_data['expires_at'],
         })
     if target_type in ('USER', 'INDIVIDUAL'):
