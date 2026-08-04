@@ -1146,3 +1146,118 @@
   .doc-card.doc-card-image .doc-card-icon { height: 75px; }
   .doc-card.doc-card-image .doc-card-name { font-size: 0.75rem; }
 }
+/ *    % % %  D o c u m e n t   V i e w e r   ( S i d e b a r   s t y l e )    % % % % % % % % % % % % % % % % % % % % % % % % % % %  * / 
+ 
+ 
+/* ─── Document Viewer (Sidebar style) ─────────────────────────── */
+
+.doc-container {
+  padding: 1rem;
+  background: var(--bk-bg, #f8fafc);
+  min-height: 100vh;
+}
+
+/* Breadcrumb */
+.doc-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.breadcrumb-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #475569;
+  padding: 0;
+}
+
+.breadcrumb-btn:hover {
+  color: #0f172a;
+}
+
+.breadcrumb-separator {
+  color: #94a3b8;
+}
+
+.breadcrumb-current {
+  color: #0f172a;
+}
+
+/* Grid Layout */
+.doc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 1.25rem;
+}
+
+/* Card */
+.doc-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem 0.5rem;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.doc-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+  transform: translateY(-2px);
+}
+
+.doc-card:active {
+  transform: translateY(0);
+}
+
+.doc-icon {
+  margin-bottom: 0.75rem;
+}
+
+.doc-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #1e293b;
+  width: 100%;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 0.5rem;
+}
+
+/* Responsive Mobile */
+@media (max-width: 600px) {
+  .doc-container {
+    padding: 0.75rem;
+  }
+  
+  .doc-grid {
+    grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
+    gap: 0.75rem;
+  }
+  
+  .doc-card {
+    padding: 1rem 0.25rem;
+    border-radius: 10px;
+  }
+  
+  .doc-name {
+    font-size: 0.75rem;
+  }
+}
