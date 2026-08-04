@@ -203,41 +203,42 @@ def test_connection(config_id: int):
 
 @router.get("/browse/{config_id}")
 def browse(config_id: int, path: str = Query('/'), user_code: str = Query(''), user_role: str = Query('user')):
-    active_sql = "" if user_role in ('admin', 'head') else "AND is_active = TRUE"
-    cfg = fetchone(f"SELECT * FROM storage_config WHERE id=:id {active_sql}", {"id": config_id})
-    if not cfg:
-        raise HTTPException(404, "Storage not found or inactive")
-
-    allowed = _check_folder_permission(config_id, path, user_code, user_role)
-    if not allowed:
-        # Fallback: check if user has ANY permission on this storage
-        # (for root path access when no specific folder permission exists)
-        if path in ('/', ''):
-            # Get user's department for department-level permission check
-            user_dept = ''
-            emp = fetchone("SELECT department FROM employees WHERE employee_code=:code", {"code": user_code})
-            if emp:
-                user_dept = emp.get('department', '')
-            
-            any_perm = fetchone("""
-                SELECT 1 AS ok FROM storage_permissions sp
-                WHERE sp.storage_id=:sid
-                  AND (
-                    sp.target_type='EVERYONE'
-                    OR (sp.target_type='DEPARTMENT' AND sp.department=:dept AND :dept != '')
-                    OR (sp.target_type='' AND sp.role=:role AND sp.role != '')
-                    OR (sp.target_type='' AND sp.employee_code=:code AND sp.employee_code != '')
-                  )
-                  AND sp.can_read = 1
-                LIMIT 1
-            """, {"sid": config_id, "role": user_role, "code": user_code, "dept": user_dept})
-            if not any_perm:
-                raise HTTPException(403, "No permission to access this storage")
-        else:
-            raise HTTPException(403, "No permission to access this folder")
-
-    entries = []
     try:
+        active_sql = "" if user_role in ('admin', 'head') else "AND is_active = TRUE"
+        cfg = fetchone(f"SELECT * FROM storage_config WHERE id=:id {active_sql}", {"id": config_id})
+        if not cfg:
+            raise HTTPException(404, "Storage not found or inactive")
+
+        allowed = _check_folder_permission(config_id, path, user_code, user_role)
+        if not allowed:
+            # Fallback: check if user has ANY permission on this storage
+            # (for root path access when no specific folder permission exists)
+            if path in ('/', ''):
+                user_dept = ''
+                if user_code:
+                    emp = fetchone("SELECT department FROM employees WHERE employee_code=:code", {"code": user_code})
+                    if emp and emp.get('department'):
+                        user_dept = emp['department']
+                
+                any_perm = fetchone("""
+                    SELECT 1 AS ok FROM storage_permissions sp
+                    WHERE sp.storage_id=:sid
+                      AND (
+                        sp.target_type='EVERYONE'
+                        OR (sp.target_type='DEPARTMENT' AND sp.department=:dept AND :dept != '')
+                        OR (sp.target_type='' AND sp.role=:role AND sp.role != '')
+                        OR (sp.target_type='' AND sp.employee_code=:code AND sp.employee_code != '')
+                      )
+                      AND sp.can_read = 1
+                    LIMIT 1
+                """, {"sid": config_id, "role": user_role or '', "code": user_code or '', "dept": user_dept})
+                
+                if not any_perm:
+                    raise HTTPException(403, "No permission to access this storage")
+            else:
+                raise HTTPException(403, "No permission to access this folder")
+
+        entries = []
         if cfg['type'] == 'ftp':
             entries = _browse_ftp(cfg, path)
         elif cfg['type'] == 'smb':
@@ -246,6 +247,34 @@ def browse(config_id: int, path: str = Query('/'), user_code: str = Query(''), u
             entries = _browse_gdrive(cfg, path)
         else:
             raise HTTPException(400, f"Unsupported storage type: {cfg['type']}")
+
+        filtered = []
+        for e in entries:
+            try:
+                if e.get('is_dir'):
+                    # For Google Drive, sub_path is folder ID, not path
+                    sub_path = e.get('id', '') if cfg['type'] == 'gdrive' else os.path.join(path, e['name']).replace('\\', '/')
+                    if _check_folder_permission(config_id, sub_path, user_code, user_role):
+                        filtered.append(e)
+                else:
+                    filtered.append(e)
+            except Exception as ex:
+                print(f"[WARN] Skip entry {e.get('name', 'unknown')} due to error: {str(ex)}")
+                continue
+
+        # Check upload permission for current folder
+        try:
+            can_upload = _check_can_upload(config_id, path, user_code, user_role)
+        except Exception as ex:
+            print(f"[WARN] Failed to check upload permission: {str(ex)}")
+            can_upload = False
+
+        return {
+            "data": filtered, 
+            "path": path, 
+            "config": {"id": cfg['id'], "name": cfg['name'], "type": cfg['type']},
+            "can_upload": can_upload
+        }
     except HTTPException:
         raise
     except Exception as ex:
@@ -253,38 +282,6 @@ def browse(config_id: int, path: str = Query('/'), user_code: str = Query(''), u
         print(f"[ERROR] Storage browse failed: {str(ex)}")
         print(traceback.format_exc())
         raise HTTPException(502, f"Storage error: {str(ex)}")
-
-    filtered = []
-    for e in entries:
-        try:
-            if e['is_dir']:
-                # For Google Drive, sub_path is folder ID, not path
-                if cfg['type'] == 'gdrive':
-                    sub_path = e.get('id', '')
-                else:
-                    sub_path = os.path.join(path, e['name']).replace('\\', '/')
-                
-                if _check_folder_permission(config_id, sub_path, user_code, user_role):
-                    filtered.append(e)
-            else:
-                filtered.append(e)
-        except Exception as ex:
-            print(f"[WARN] Skip entry {e.get('name', 'unknown')} due to error: {str(ex)}")
-            continue
-
-    # Check upload permission for current folder
-    try:
-        can_upload = _check_can_upload(config_id, path, user_code, user_role)
-    except Exception as ex:
-        print(f"[WARN] Failed to check upload permission: {str(ex)}")
-        can_upload = False
-
-    return {
-        "data": filtered, 
-        "path": path, 
-        "config": {"id": cfg['id'], "name": cfg['name'], "type": cfg['type']},
-        "can_upload": can_upload
-    }
 
 def _is_hidden_system_name(name: str) -> bool:
     """True for NAS/system entries that must be hidden from listings.
@@ -809,47 +806,64 @@ def _check_folder_permission(storage_id, folder_path, user_code, user_role):
     - Root permission: folder_path = '/' grants access to all
     """
     folder_path = folder_path.replace('\\', '/').rstrip('/') or '/'
+    
+    # 1. Admin & Head luôn có quyền
     if user_role in ('admin', 'head'):
         return True
+        
+    # 2. Nếu storage chưa thiết lập bất kỳ permission nào -> Mặc định mở
     row = fetchone("SELECT COUNT(*) AS cnt FROM storage_permissions WHERE storage_id=:id", {"id": storage_id})
-    if row["cnt"] == 0:
+    if not row or row["cnt"] == 0:
         return True
+    
     user_dept = ''
-    emp = fetchone("SELECT department FROM employees WHERE employee_code=:code", {"code": user_code})
-    if emp:
-        user_dept = emp['department'] or ''
+    if user_code:
+        emp = fetchone("SELECT department FROM employees WHERE employee_code=:code", {"code": user_code})
+        if emp and emp.get('department'):
+            user_dept = emp['department']
+    
     now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
-    # Fixed SQL: Check all permission types correctly
-    # Note: expires_at stored as TEXT but may be cast to timestamp in PostgreSQL
+    # An toàn hơn khi so sánh expires_at dưới dạng TEXT thay vì ép kiểu timestamp ép buộc
     row = fetchone("""
-        SELECT can_read, allow_download, expires_at FROM storage_permissions
-        WHERE storage_id=:sid
+        SELECT can_read FROM storage_permissions
+        WHERE storage_id = :sid
           AND (
-            target_type='EVERYONE'
-            OR (target_type='DEPARTMENT' AND department=:dept AND :dept != '')
-            OR (target_type='' AND role=:role AND role != '')
-            OR (target_type='' AND employee_code=:code AND employee_code != '')
+            target_type = 'EVERYONE'
+            OR (target_type = 'DEPARTMENT' AND department = :dept AND :dept != '')
+            OR (target_type = '' AND role = :role AND :role != '')
+            OR (target_type = '' AND employee_code = :code AND :code != '')
+            OR (target_type = '' AND department = '' AND role = '' AND employee_code = '')
           )
           AND (:fp = folder_path OR LOWER(:fp2) LIKE LOWER(folder_path || '/%') OR folder_path = '/')
-          AND (expires_at IS NULL OR CAST(expires_at AS TEXT) = '' OR expires_at::timestamp > :now::timestamp)
+          AND (
+            expires_at IS NULL 
+            OR expires_at = '' 
+            OR expires_at > :now
+          )
         ORDER BY
           CASE
             WHEN employee_code != '' THEN 3
             WHEN role != '' THEN 2
-            WHEN target_type='DEPARTMENT' THEN 1
-            WHEN target_type='EVERYONE' THEN 0
+            WHEN target_type = 'DEPARTMENT' THEN 1
+            WHEN target_type = 'EVERYONE' THEN 0
             ELSE 4
           END DESC,
           length(folder_path) DESC
         LIMIT 1
     """, {
-        "sid": storage_id, "dept": user_dept, "role": user_role, "code": user_code,
-        "fp": folder_path, "fp2": folder_path, "now": now_str
+        "sid": storage_id, 
+        "dept": user_dept, 
+        "role": user_role or '', 
+        "code": user_code or '',
+        "fp": folder_path, 
+        "fp2": folder_path, 
+        "now": now_str
     })
+    
     if not row:
         return False
-    return bool(row['can_read'])
+    return bool(row.get('can_read', 0))
 
 
 def _check_share_access(config_id, file_path, user_code, user_role):
