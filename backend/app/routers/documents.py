@@ -1530,14 +1530,18 @@ from fastapi import UploadFile, File
 
 
 def _check_can_upload(storage_id, folder_path, user_code, user_role):
-    """Check if user has can_upload permission on the folder."""
+    """Check if user has can_upload permission on the folder.
+    
+    Security: Default to NO upload permission unless explicitly granted by admin.
+    Only admin can grant can_upload permission to other users.
+    """
     folder_path = folder_path.replace('\\', '/').rstrip('/') or '/'
     if user_role in ('admin', 'head'):
         return True
     row = fetchone("SELECT COUNT(*) AS cnt FROM storage_permissions WHERE storage_id=:id", {"id": storage_id})
     if row["cnt"] == 0:
-        # No permissions defined = allow upload for authenticated users
-        return True
+        # No permissions defined = NO upload allowed (security by default)
+        return False
     user_dept = ''
     emp = fetchone("SELECT department FROM employees WHERE employee_code=:code", {"code": user_code})
     if emp:
