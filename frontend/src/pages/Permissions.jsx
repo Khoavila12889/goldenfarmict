@@ -875,26 +875,42 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
             Chưa có cấu hình lưu trữ
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-            {storages.map(s => (
-              <div key={s.id} onClick={() => selectStorage(s)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '0.5rem',
-                  padding: '0.55rem 0.65rem', borderRadius: 'var(--bk-radius-sm)', cursor: 'pointer',
-                  background: selectedStorage?.id === s.id ? 'var(--bk-primary)' : 'var(--bk-surface-hover)',
-                  color: selectedStorage?.id === s.id ? '#fff' : 'var(--bk-text)',
-                }}>
-                <Building size={16} style={{ flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: '0.82rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {s.name}
-                  </div>
-                  <div style={{ fontSize: '0.72rem', opacity: 0.7 }}>{s.type?.toUpperCase()} · {s.host || '—'}</div>
-                </div>
+          // Filter storages: only show those with permission or admin
+          (() => {
+            const accessibleStorages = storages.filter(s => {
+              // Admin/head luôn thấy tất cả
+              if (role === 'admin' || role === 'head') return true;
+              // Nếu có permission cụ thể cho storage này
+              return permissions.some(p => p.storage_id === s.id && p.can_read);
+            });
+            
+            return accessibleStorages.length === 0 ? (
+              <div style={{ padding: '1rem 0', textAlign: 'center', fontSize: '0.82rem', color: '#dc2626' }}>
+                Bạn chưa được cấp quyền truy cập tài liệu nào.
               </div>
-            ))}
-          </div>
-        )}
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                {accessibleStorages.map(s => (
+                  <div key={s.id} onClick={() => selectStorage(s)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '0.5rem',
+                      padding: '0.55rem 0.65rem', borderRadius: 'var(--bk-radius-sm)', cursor: 'pointer',
+                      background: selectedStorage?.id === s.id ? 'var(--bk-primary)' : 'var(--bk-surface-hover)',
+                      color: selectedStorage?.id === s.id ? '#fff' : 'var(--bk-text)',
+                    }}
+                  >
+                    <Building size={16} style={{ flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.82rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {s.name}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', opacity: 0.7 }}>{s.type?.toUpperCase()} · {s.host || '—'}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()
       </div>
 
       <div className="bk-card" style={{ padding: '1.25rem', flex: '1 1 500px', minWidth: 320 }}>
