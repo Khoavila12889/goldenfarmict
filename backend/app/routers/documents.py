@@ -210,17 +210,29 @@ def browse(config_id: int, path: str = Query('/'), user_code: str = Query(''), u
 
     allowed = _check_folder_permission(config_id, path, user_code, user_role)
     if not allowed:
+        # Fallback: check if user has ANY permission on this storage
+        # (for root path access when no specific folder permission exists)
         if path in ('/', ''):
+            # Get user's department for department-level permission check
+            user_dept = ''
+            emp = fetchone("SELECT department FROM employees WHERE employee_code=:code", {"code": user_code})
+            if emp:
+                user_dept = emp.get('department', '')
+            
             any_perm = fetchone("""
                 SELECT 1 AS ok FROM storage_permissions sp
                 WHERE sp.storage_id=:sid
-                  AND (sp.role=:role OR sp.employee_code=:code
-                       OR sp.department IN (SELECT COALESCE(department,'') FROM employees WHERE employee_code=:code)
-                       OR (sp.department='' AND sp.role='' AND sp.employee_code=''))
+                  AND (
+                    sp.target_type='EVERYONE'
+                    OR (sp.target_type='DEPARTMENT' AND sp.department=:dept AND :dept != '')
+                    OR (sp.target_type='' AND sp.role=:role AND sp.role != '')
+                    OR (sp.target_type='' AND sp.employee_code=:code AND sp.employee_code != '')
+                  )
+                  AND sp.can_read = 1
                 LIMIT 1
-            """, {"sid": config_id, "role": user_role, "code": user_code})
+            """, {"sid": config_id, "role": user_role, "code": user_code, "dept": user_dept})
             if not any_perm:
-                raise HTTPException(403, "No permission to access this folder")
+                raise HTTPException(403, "No permission to access this storage")
         else:
             raise HTTPException(403, "No permission to access this folder")
 
@@ -232,20 +244,40 @@ def browse(config_id: int, path: str = Query('/'), user_code: str = Query(''), u
             entries = _browse_smb(cfg, path)
         elif cfg['type'] == 'gdrive':
             entries = _browse_gdrive(cfg, path)
+        else:
+            raise HTTPException(400, f"Unsupported storage type: {cfg['type']}")
+    except HTTPException:
+        raise
     except Exception as ex:
+        import traceback
+        print(f"[ERROR] Storage browse failed: {str(ex)}")
+        print(traceback.format_exc())
         raise HTTPException(502, f"Storage error: {str(ex)}")
 
     filtered = []
     for e in entries:
-        if e['is_dir']:
-            sub_path = os.path.join(path, e['name']).replace('\\', '/')
-            if _check_folder_permission(config_id, sub_path, user_code, user_role):
+        try:
+            if e['is_dir']:
+                # For Google Drive, sub_path is folder ID, not path
+                if cfg['type'] == 'gdrive':
+                    sub_path = e.get('id', '')
+                else:
+                    sub_path = os.path.join(path, e['name']).replace('\\', '/')
+                
+                if _check_folder_permission(config_id, sub_path, user_code, user_role):
+                    filtered.append(e)
+            else:
                 filtered.append(e)
-        else:
-            filtered.append(e)
+        except Exception as ex:
+            print(f"[WARN] Skip entry {e.get('name', 'unknown')} due to error: {str(ex)}")
+            continue
 
     # Check upload permission for current folder
-    can_upload = _check_can_upload(config_id, path, user_code, user_role)
+    try:
+        can_upload = _check_can_upload(config_id, path, user_code, user_role)
+    except Exception as ex:
+        print(f"[WARN] Failed to check upload permission: {str(ex)}")
+        can_upload = False
 
     return {
         "data": filtered, 
