@@ -457,7 +457,14 @@ export default function Documents() {
         
         if (!response.ok) {
           const errData = await response.json().catch(() => ({}))
-          throw new Error(errData.detail || `HTTP ${response.status}`)
+          // Handle Google Drive specific errors
+          let errorMsg = errData.detail || `HTTP ${response.status}`
+          if (activeConfig.type === 'gdrive') {
+            if (errorMsg.includes('quota') || errorMsg.includes('dung lượng')) {
+              errorMsg = "Google Drive không đủ dung lượng. Vui lòng dùng Shared Drive hoặc liên hệ admin."
+            }
+          }
+          throw new Error(errorMsg)
         }
         
         uploadedCount++

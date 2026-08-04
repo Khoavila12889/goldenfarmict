@@ -1699,18 +1699,32 @@ def _upload_smb(cfg, folder_path: str, filename: str, content: bytes):
 
 
 async def _upload_gdrive(cfg, folder_path: str, filename: str, content: bytes, mime_type: str = None):
-    """Upload file to Google Drive."""
+    """Upload file to Google Drive (supports Shared Drives).
+    
+    Google Service Accounts don't have personal storage quota.
+    Must use Shared Drives (Team Drives) or OAuth delegation.
+    """
     if not _GOOGLE_AVAILABLE:
         raise HTTPException(502, "Google libraries not installed")
 
     try:
         creds_dict = json.loads(cfg['password'])
         creds = service_account.Credentials.from_service_account_info(creds_dict)
+        
+        # Add Drive scope for Shared Drive support
+        from google.auth.transport.requests import Request
+        creds = creds.with_scopes([
+            'https://www.googleapis.com/auth/drive',
+            'https://www.googleapis.com/auth/drive.file',
+        ])
         service = build('drive', 'v3', credentials=creds)
+    except json.JSONDecodeError:
+        raise HTTPException(502, "Service Account JSON không hợp lệ")
     except Exception as e:
         raise HTTPException(502, f"Google Drive auth error: {str(e)}")
 
     # folder_path for GDrive is the Google Folder ID
+    # For Shared Drive, use 'drive' parameter in file creation
     parent_id = folder_path.strip('/') if folder_path and folder_path != '/' else cfg['remote_path'] or 'root'
 
     # Determine MIME type
@@ -1730,20 +1744,29 @@ async def _upload_gdrive(cfg, folder_path: str, filename: str, content: bytes, m
     }
 
     try:
+        # Try to upload - if it's a Shared Drive, we need to specify the drive
         result = service.files().create(
             body=file_metadata,
             media_body=media,
-            fields='id, name, size'
+            fields='id, name, size, parents, driveId',
+            supportsAllDrives=True  # Support Shared Drives
         ).execute()
     except Exception as e:
-        raise HTTPException(502, f"Google Drive upload failed: {str(e)}")
+        error_str = str(e)
+        # Check for specific error patterns
+        if 'storage quota' in error_str.lower() or 'quota' in error_str.lower():
+            raise HTTPException(503, "Google Drive Service Account không có đủ dung lượng lưu trữ. Vui lòng sử dụng Shared Drive hoặc OAuth delegation.")
+        if 'notFound' in error_str:
+            raise HTTPException(404, "Thư mục gốc không tồn tại. Vui lòng kiểm tra Folder ID.")
+        raise HTTPException(502, f"Google Drive upload failed: {error_str}")
 
     return {
         "success": True,
         "filename": filename,
         "size": len(content),
         "file_id": result.get('id'),
-        "gdrive_name": result.get('name')
+        "gdrive_name": result.get('name'),
+        "drive_id": result.get('driveId')  # For Shared Drive
     }
 
 
