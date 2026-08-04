@@ -645,6 +645,7 @@ def create_share_permission(
     folder_path = body.get('folder_path', '/')
     target_type = body.get('target_type', 'DEPARTMENT')
     department = body.get('department', '')
+    employee_code = body.get('employee_code', '')
     perm_data = {
         'can_read': bool(body.get('can_read', True)),
         'can_write': bool(body.get('can_write', False)),
@@ -652,12 +653,21 @@ def create_share_permission(
         'can_delete': bool(body.get('can_delete', False)),
         'allow_download': bool(body.get('allow_download', True)),
         'can_reshare': bool(body.get('can_reshare', False)),
+        'can_upload': bool(body.get('can_upload', False)),
         'expires_at': body.get('expires_at', '') or None,
     }
     if not storage_id:
         raise HTTPException(400, "Missing storage_id")
 
-    if target_type == 'EVERYONE':
+    if target_type in ('USER', 'INDIVIDUAL'):
+        if not employee_code:
+            raise HTTPException(400, "Missing employee_code for USER target")
+        existing = fetchone("""
+            SELECT id FROM storage_permissions
+            WHERE storage_id=:sid AND folder_path=:fp AND target_type=:tt
+               AND employee_code=:ec AND role='' AND department=''
+        """, {"sid": storage_id, "fp": folder_path, "tt": target_type, "ec": employee_code})
+    elif target_type == 'EVERYONE':
         existing = fetchone("""
             SELECT id FROM storage_permissions
             WHERE storage_id=:sid AND folder_path=:fp AND target_type='EVERYONE'
@@ -676,33 +686,39 @@ def create_share_permission(
         execute("""
             UPDATE storage_permissions SET
                 can_read=:cr, can_write=:cw, can_edit=:ce, can_delete=:cd,
-                allow_download=:ad, can_reshare=:cr2, expires_at=:ea,
+                allow_download=:ad, can_reshare=:cr2, can_upload=:cu, expires_at=:ea,
                 updated_at=CURRENT_TIMESTAMP
             WHERE id=:id
         """, {
             "cr": perm_data['can_read'], "cw": perm_data['can_write'], "ce": perm_data['can_edit'],
             "cd": perm_data['can_delete'], "ad": perm_data['allow_download'], "cr2": perm_data['can_reshare'],
-            "ea": perm_data['expires_at'], "id": existing['id']
+            "cu": perm_data['can_upload'], "ea": perm_data['expires_at'], "id": existing['id']
         })
     else:
         execute("""
             INSERT INTO storage_permissions
-                (storage_id, folder_path, target_type, department,
+                (storage_id, folder_path, target_type, department, employee_code,
                  can_read, can_write, can_edit, can_delete,
-                 allow_download, can_reshare, expires_at,
-                 role, employee_code, permission)
-            VALUES (:sid, :fp, :tt, :dept,
+                 allow_download, can_reshare, can_upload, expires_at,
+                 role, permission)
+            VALUES (:sid, :fp, :tt, :dept, :ec,
                     :cr, :cw, :ce, :cd,
-                    :ad, :cr2, :ea,
-                    '', '', 'custom')
+                    :ad, :cr2, :cu, :ea,
+                    '', 'custom')
         """, {
             "sid": storage_id, "fp": folder_path, "tt": target_type,
             "dept": department if target_type == 'DEPARTMENT' else '',
+            "ec": employee_code if target_type in ('USER', 'INDIVIDUAL') else '',
             "cr": perm_data['can_read'], "cw": perm_data['can_write'], "ce": perm_data['can_edit'],
             "cd": perm_data['can_delete'], "ad": perm_data['allow_download'], "cr2": perm_data['can_reshare'],
-            "ea": perm_data['expires_at'],
+            "cu": perm_data['can_upload'], "ea": perm_data['expires_at'],
         })
-    target_label = department if target_type == 'DEPARTMENT' else 'Tất cả phòng ban'
+    if target_type in ('USER', 'INDIVIDUAL'):
+        target_label = f"Nhân viên {employee_code}"
+    elif target_type == 'EVERYONE':
+        target_label = 'Tất cả phòng ban'
+    else:
+        target_label = department
     return {"success": True, "message": f"Đã cập nhật quyền cho {target_label}"}
 
 @router.put("/permissions/{perm_id}")
@@ -718,11 +734,11 @@ def update_permission(
     existing = fetchone("SELECT id FROM storage_permissions WHERE id=:id", {"id": perm_id})
     if not existing:
         raise HTTPException(404, "Permission not found")
-    fields = ['can_read','can_write','can_edit','can_delete','allow_download','can_reshare','expires_at','folder_path']
+    fields = ['can_read','can_write','can_edit','can_delete','allow_download','can_reshare','can_upload','expires_at','folder_path']
     updates = {k: body[k] for k in fields if k in body}
     if not updates:
         raise HTTPException(400, "No fields to update")
-    for k in ('can_read','can_write','can_edit','can_delete','allow_download','can_reshare'):
+    for k in ('can_read','can_write','can_edit','can_delete','allow_download','can_reshare','can_upload'):
         if k in updates:
             updates[k] = 1 if updates[k] else 0
     if 'expires_at' in updates and not updates['expires_at']:

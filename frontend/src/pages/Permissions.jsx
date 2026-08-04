@@ -657,6 +657,11 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
   const [saving, setSaving] = useState(false)
   const [expandedPerm, setExpandedPerm] = useState(null)
 
+  const [users, setUsers] = useState([])
+  const [userSearch, setUserSearch] = useState('')
+  const [selectedEmployee, setSelectedEmployee] = useState('')
+  const [userPerms, setUserPerms] = useState({ can_read: true, can_upload: true, allow_download: true })
+
   const userCode = sessionStorage.getItem('user_code') || ''
   const token = sessionStorage.getItem('token') || ''
   const role = sessionStorage.getItem('user_role') || ''
@@ -670,9 +675,11 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
     Promise.all([
       fetch(`/api/documents/config?user_code=${userCode}&user_role=${role}`).then(r => r.json()),
       fetch('/api/documents/departments').then(r => r.json()),
-    ]).then(([sRes, dRes]) => {
+      fetch(`/api/auth/users?${apiParams()}`).then(r => r.json()),
+    ]).then(([sRes, dRes, uRes]) => {
       if (sRes.data) setStorages(sRes.data)
       if (dRes.data) setDepartments(dRes.data)
+      if (uRes.data) setUsers(uRes.data)
     }).catch(() => {}).finally(() => setLoading(false))
   }, [userCode, role])
 
@@ -693,6 +700,9 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
     setDeptSearch('')
     setNewDept('')
     setDeptPerms({ can_read: true, allow_download: true })
+    setUserSearch('')
+    setSelectedEmployee('')
+    setUserPerms({ can_read: true, can_upload: true, allow_download: true })
     loadPermissions(s.id)
   }
 
@@ -715,10 +725,16 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
   }, [permissions])
 
   const deptPermsList = permissions.filter(p => p.target_type === 'DEPARTMENT' && !p.role && !p.employee_code)
-  const otherPermsList = permissions.filter(p => p.role || p.employee_code)
+  const userPermsList = permissions.filter(p => p.target_type === 'USER' || (p.employee_code && !p.role))
+  const rolePermsList = permissions.filter(p => p.role && !p.employee_code)
   const usedDepts = new Set(deptPermsList.map(p => p.department))
   const availDepts = departments.filter(d => !usedDepts.has(d.name))
     .filter(d => !deptSearch || d.name.toLowerCase().includes(deptSearch.toLowerCase()))
+  const usedUsers = new Set(userPermsList.map(p => p.employee_code))
+  const availUsers = users.filter(u => !usedUsers.has(u.employee_code))
+    .filter(u => !userSearch
+      || (u.full_name || '').toLowerCase().includes(userSearch.toLowerCase())
+      || (u.employee_code || '').toLowerCase().includes(userSearch.toLowerCase()))
 
   async function saveEveryone() {
     if (!selectedStorage) return
@@ -768,6 +784,37 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
         setNewDept('')
         setDeptSearch('')
         setDeptPerms({ can_read: true, allow_download: true })
+      } else {
+        const d = await res.json().catch(() => ({}))
+        setSaveMsg({ type: 'error', text: d.detail || d.message || 'Lỗi máy chủ' })
+      }
+    } catch (err) { setSaveMsg({ type: 'error', text: `Lỗi kết nối: ${err.message}` }) }
+    finally { setSaving(false) }
+  }
+
+  async function addUserPerm() {
+    if (!selectedEmployee || !selectedStorage) return
+    setSaving(true)
+    try {
+      const body = {
+        storage_id: selectedStorage.id,
+        folder_path: '/',
+        target_type: 'USER',
+        employee_code: selectedEmployee,
+        ...userPerms,
+      }
+      const res = await fetch(`/api/documents/permissions/share?${apiParams()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (res.ok) {
+        const u = users.find(x => x.employee_code === selectedEmployee)
+        setSaveMsg({ type: 'success', text: `Đã cấp quyền cho ${u?.full_name || selectedEmployee}` })
+        loadPermissions(selectedStorage.id)
+        setUserSearch('')
+        setSelectedEmployee('')
+        setUserPerms({ can_read: true, can_upload: true, allow_download: true })
       } else {
         const d = await res.json().catch(() => ({}))
         setSaveMsg({ type: 'error', text: d.detail || d.message || 'Lỗi máy chủ' })
@@ -1003,13 +1050,134 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
               </div>
             </div>
 
-            {otherPermsList.length > 0 && (
+            <h4 style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--bk-primary)', margin: '1rem 0 0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <User size={14} /> Cá nhân được chia sẻ
+            </h4>
+
+            {userPermsList.length === 0 ? (
+              <div style={{ padding: '0.5rem 0.65rem', fontSize: '0.8rem', color: 'var(--bk-text-muted)', background: 'var(--bk-surface-hover)', borderRadius: 'var(--bk-radius-sm)', marginBottom: '0.75rem' }}>
+                Chưa có cá nhân nào được cấp quyền
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '0.75rem' }}>
+                {userPermsList.map(p => {
+                  const isExpanded = expandedPerm === p.id
+                  const u = users.find(x => x.employee_code === p.employee_code)
+                  return (
+                    <div key={p.id} style={{
+                      border: '1px solid var(--bk-border)',
+                      borderRadius: 'var(--bk-radius-sm)', overflow: 'hidden',
+                    }}>
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: '0.4rem',
+                        padding: '0.4rem 0.6rem', cursor: 'pointer',
+                        background: 'var(--bk-surface-hover)',
+                        fontSize: '0.8rem',
+                      }} onClick={() => setExpandedPerm(isExpanded ? null : p.id)}>
+                        <User size={13} style={{ color: 'var(--bk-primary)', flexShrink: 0 }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ flex: 1 }}>{u?.full_name || p.employee_code}</span>
+                            {p.employee_code && (
+                              <span style={{
+                                fontSize: '0.68rem', padding: '0.1rem 0.35rem', borderRadius: '99px',
+                                background: 'var(--bk-surface)', color: 'var(--bk-text-secondary)',
+                                whiteSpace: 'nowrap'
+                              }}>
+                                {p.employee_code}
+                              </span>
+                            )}
+                            {p.folder_path && (
+                              <span style={{
+                                fontSize: '0.68rem', padding: '0.1rem 0.35rem', borderRadius: '99px',
+                                background: 'var(--bk-surface)', color: 'var(--bk-text-secondary)',
+                                whiteSpace: 'nowrap'
+                              }}>
+                                {p.folder_path}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.2rem' }}>
+                          {Object.entries(PERM_LABELS).map(([k, v]) =>
+                            p[k] ? <span key={k} style={{
+                              fontSize: '0.62rem', padding: '0.1rem 0.35rem', borderRadius: '99px',
+                              background: '#eef2ff', color: '#4338ca', fontWeight: 600,
+                            }}>{v.label}</span> : null
+                          )}
+                          {p.allow_download && <span style={{
+                            fontSize: '0.62rem', padding: '0.1rem 0.35rem', borderRadius: '99px',
+                            background: '#f0fdf4', color: '#16a34a', fontWeight: 600,
+                          }}>Tải xuống</span>}
+                        </div>
+                        <button onClick={e => { e.stopPropagation(); removePerm(p.id) }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '2px' }}>
+                          <X size={12} />
+                        </button>
+                        <ChevronDown size={12} style={{
+                          color: 'var(--bk-text-muted)',
+                          transform: isExpanded ? 'rotate(180deg)' : '',
+                          transition: 'transform 0.15s',
+                        }} />
+                      </div>
+                      {isExpanded && (
+                        <div style={{ padding: '0.5rem 0.6rem', borderTop: '1px solid var(--bk-border)' }}>
+                          <PermissionMatrix values={{
+                            can_read: p.can_read, can_write: p.can_write, can_upload: p.can_upload, can_edit: p.can_edit,
+                            can_delete: p.can_delete, can_reshare: p.can_reshare,
+                          }} onChange={k => updateDeptPerm(p, k)} showDownload />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            <div style={{
+              padding: '0.75rem', borderRadius: 'var(--bk-radius-sm)',
+              border: '1px dashed var(--bk-border)', marginBottom: '0.75rem',
+            }}>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                <div style={{ position: 'relative', flex: 1, minWidth: 160 }}>
+                  <Search size={13} style={{ position: 'absolute', left: '0.45rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--bk-text-muted)' }} />
+                  <input className="bk-form-input" placeholder="Tìm theo tên hoặc mã nhân viên..."
+                    value={userSearch} onChange={e => setUserSearch(e.target.value)}
+                    style={{ paddingLeft: '1.6rem', height: '32px', fontSize: '0.8rem' }} />
+                </div>
+                <select value={selectedEmployee} onChange={e => setSelectedEmployee(e.target.value)}
+                  style={{
+                    flex: 1, minWidth: 160, padding: '0.35rem 0.5rem', borderRadius: '6px',
+                    border: '1px solid var(--bk-border)', fontSize: '0.78rem', fontFamily: 'inherit',
+                    background: 'var(--bk-surface)',
+                  }}>
+                  <option value="">Chọn nhân viên...</option>
+                  {availUsers.map(u => (
+                    <option key={u.employee_code} value={u.employee_code}>
+                      {u.full_name || u.employee_code} — {u.employee_code}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <PermissionMatrix values={userPerms}
+                onChange={k => setUserPerms(p => ({ ...p, [k]: !p[k] }))}
+                showDownload />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                <button className="bk-btn bk-btn-primary" style={{ height: '30px', whiteSpace: 'nowrap', fontSize: '0.78rem' }}
+                  onClick={addUserPerm} disabled={!selectedEmployee || saving}>
+                  {saving ? <Loader size={13} className="spin" /> : <Plus size={13} />}
+                  Thêm
+                </button>
+              </div>
+            </div>
+
+            {rolePermsList.length > 0 && (
               <>
                 <h4 style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--bk-text-secondary)', margin: '0 0 0.5rem' }}>
                   Quyền khác
                 </h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-                  {otherPermsList.map(p => (
+                  {rolePermsList.map(p => (
                     <div key={p.id} style={{
                       display: 'flex', alignItems: 'center', gap: '0.5rem',
                       padding: '0.4rem 0.6rem', background: 'var(--bk-surface-hover)',
@@ -1017,8 +1185,7 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
                     }}>
                       <User size={14} style={{ color: 'var(--bk-text-muted)' }} />
                       <span style={{ flex: 1 }}>
-                        {p.role && <span>Vai trò: <strong>{p.role}</strong></span>}
-                        {p.employee_code && <span>NV: <strong>{p.employee_code}</strong></span>}
+                        Vai trò: <strong>{p.role}</strong>
                       </span>
                       <span style={{ fontSize: '0.72rem', color: 'var(--bk-text-muted)' }}>
                         {p.folder_path}
