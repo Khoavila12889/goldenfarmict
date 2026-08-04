@@ -9,6 +9,21 @@
   min-height: 100%;
 }
 
+/* ─── Upload Dropzone ─────────────────────────────────────────── */
+
+.upload-dropzone {
+  transition: all 0.2s ease;
+}
+
+.upload-dropzone:hover {
+  border-color: #3b82f6 !important;
+  background: #eff6ff !important;
+}
+
+.panel-upload {
+  max-width: 480px;
+}
+
 /* ─── Header ─────────────────────────────────────────────────── */
 
 .doc-header {

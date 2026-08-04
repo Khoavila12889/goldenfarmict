@@ -387,7 +387,7 @@ def list_permissions(
         WHERE sp.storage_id=:sid ORDER BY sp.folder_path, sp.target_type DESC, sp.department
     """, {"sid": config_id})
     for r in rows:
-        for k in ('can_read','can_write','can_edit','can_delete','allow_download','can_reshare'):
+        for k in ('can_read','can_write','can_edit','can_delete','allow_download','can_reshare','can_upload'):
             r[k] = bool(r.get(k, 0))
     return {"data": rows}
 
@@ -414,12 +414,13 @@ def create_permission(
     can_write = 1 if perm == 'write' else 0
     can_edit = 1 if perm == 'write' else 0
     can_delete = 1 if perm == 'write' else 0
+    can_upload = 1 if body.get('can_upload', perm == 'write') else 0
     new_id = insert("""
         INSERT INTO storage_permissions
             (storage_id, folder_path, role, employee_code, department, permission,
-             target_type, can_read, can_write, can_edit, can_delete, allow_download, can_reshare)
+             target_type, can_read, can_write, can_edit, can_delete, allow_download, can_reshare, can_upload)
         VALUES (:sid, :fp, :role, :ec, :dept, :perm,
-                :tt, :cr, :cw, :ce, :cd, 1, 0) RETURNING id
+                :tt, :cr, :cw, :ce, :cd, 1, 0, :cu) RETURNING id
     """, {
         "sid": body.get('storage_id'),
         "fp": body.get('folder_path', '/'),
@@ -432,6 +433,7 @@ def create_permission(
         "cw": can_write,
         "ce": can_edit,
         "cd": can_delete,
+        "cu": can_upload,
     })
     return {"success": True, "id": new_id}
 
@@ -1498,3 +1500,240 @@ def onlyoffice_callback(body: OnlyOfficeCallback):
         logging.info(f"[ONLYOFFICE] File saved successfully: {file_path}")
 
     return {"error": 0}
+
+
+# ═══════════════════════════════════════════════════════════════
+# FILE UPLOAD WITH PERMISSION CHECK
+# ═══════════════════════════════════════════════════════════════
+
+from fastapi import UploadFile, File
+
+
+def _check_can_upload(storage_id, folder_path, user_code, user_role):
+    """Check if user has can_upload permission on the folder."""
+    folder_path = folder_path.replace('\\', '/').rstrip('/') or '/'
+    if user_role in ('admin', 'head'):
+        return True
+    row = fetchone("SELECT COUNT(*) AS cnt FROM storage_permissions WHERE storage_id=:id", {"id": storage_id})
+    if row["cnt"] == 0:
+        # No permissions defined = allow upload for authenticated users
+        return True
+    user_dept = ''
+    emp = fetchone("SELECT department FROM employees WHERE employee_code=:code", {"code": user_code})
+    if emp:
+        user_dept = emp['department'] or ''
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    row = fetchone("""
+        SELECT can_upload FROM storage_permissions
+        WHERE storage_id=:sid
+          AND (
+            target_type='EVERYONE'
+            OR (target_type='DEPARTMENT' AND department != '' AND department=:dept)
+            OR (role=:role)
+            OR (employee_code=:code)
+            OR (department='' AND role='' AND employee_code='')
+          )
+          AND (:fp = folder_path OR LOWER(:fp2) LIKE LOWER(folder_path || '/%') OR folder_path = '/')
+          AND (expires_at IS NULL OR expires_at > :now)
+        ORDER BY
+          CASE target_type WHEN 'EVERYONE' THEN 0 ELSE 1 END,
+          length(folder_path) DESC
+        LIMIT 1
+    """, {
+        "sid": storage_id, "dept": user_dept, "role": user_role, "code": user_code,
+        "fp": folder_path, "fp2": folder_path, "now": now_str
+    })
+    if not row:
+        return False
+    return bool(row.get('can_upload', 0))
+
+
+@router.post("/upload")
+async def upload_file(
+    config_id: int = Query(...),
+    folder_path: str = Query('/'),
+    user_code: str = Query(''),
+    user_role: str = Query('user'),
+    file: UploadFile = File(...)
+):
+    """Upload a file to the specified folder in storage.
+
+    Permission check: user must have can_upload=True on the target folder.
+    """
+    import logging
+    logging.info(f"[UPLOAD] config_id={config_id}, folder={folder_path}, filename={file.filename}, user={user_code}")
+
+    # Check storage exists
+    active_sql = "" if user_role in ('admin', 'head') else "AND is_active = TRUE"
+    cfg = fetchone(f"SELECT * FROM storage_config WHERE id=:id {active_sql}", {"id": config_id})
+    if not cfg:
+        raise HTTPException(404, "Storage not found or inactive")
+
+    # Check upload permission
+    if not _check_can_upload(config_id, folder_path, user_code, user_role):
+        raise HTTPException(403, "Bạn không có quyền upload vào thư mục này")
+
+    # Validate filename
+    filename = file.filename or 'unnamed'
+    if '..' in filename or '/' in filename or '\\' in filename:
+        raise HTTPException(400, "Tên file không hợp lệ")
+
+    # Read file content
+    content = await file.read()
+    if len(content) == 0:
+        raise HTTPException(400, "File rỗng")
+
+    # Build destination path
+    folder_path = folder_path.replace('\\', '/').rstrip('/') or '/'
+
+    try:
+        if cfg['type'] == 'ftp':
+            _upload_ftp(cfg, folder_path, filename, content)
+        elif cfg['type'] == 'smb':
+            _upload_smb(cfg, folder_path, filename, content)
+        elif cfg['type'] == 'gdrive':
+            return await _upload_gdrive(cfg, folder_path, filename, content, file.content_type)
+        else:
+            raise HTTPException(400, f"Unsupported storage type: {cfg['type']}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"[UPLOAD] Error: {e}")
+        raise HTTPException(502, f"Upload error: {str(e)}")
+
+    # Publish SSE event
+    from ..core.events import publish_sync
+    publish_sync("document_updated", {
+        "config_id": config_id,
+        "folder_path": folder_path,
+        "filename": filename,
+        "action": "upload",
+        "ts": datetime.now().isoformat(),
+    })
+
+    return {"success": True, "filename": filename, "size": len(content)}
+
+
+def _upload_ftp(cfg, folder_path: str, filename: str, content: bytes):
+    """Upload file to FTP server."""
+    ftp = ftplib.FTP()
+    ftp.connect(cfg['host'], cfg['port'] or 21, timeout=30)
+    ftp.login(cfg['username'] or 'anonymous', cfg['password'] or '')
+
+    base = cfg['remote_path'] or '/'
+    # Build full path
+    if folder_path == '/':
+        full_path = os.path.join(base, filename).replace('\\', '/')
+    else:
+        full_path = os.path.join(base, folder_path.lstrip('/'), filename).replace('\\', '/')
+
+    # Ensure directory exists
+    dir_path = os.path.dirname(full_path)
+    try:
+        ftp.cwd(dir_path)
+    except ftplib.error_perm:
+        # Try to create directory
+        _ftp_mkdirs(ftp, dir_path)
+
+    # Upload file
+    ftp.storbinary(f'STOR {filename}', io.BytesIO(content))
+    ftp.quit()
+
+
+def _ftp_mkdirs(ftp, path: str):
+    """Recursively create directories on FTP server."""
+    dirs = path.strip('/').split('/')
+    current = ''
+    for d in dirs:
+        if not d:
+            continue
+        current = f"{current}/{d}"
+        try:
+            ftp.cwd(current)
+        except ftplib.error_perm:
+            try:
+                ftp.mkd(current)
+            except:
+                pass
+
+
+def _upload_smb(cfg, folder_path: str, filename: str, content: bytes):
+    """Upload file to SMB share."""
+    try:
+        from smb.SMBConnection import SMBConnection
+    except ImportError:
+        raise HTTPException(502, "SMB library not installed (pip install pysmb)")
+
+    conn = SMBConnection(cfg['username'], cfg['password'], 'goldenfarm', cfg['host'], domain=cfg.get('domain', ''))
+    connected = conn.connect(cfg['host'], cfg['port'] or 445)
+    if not connected:
+        raise HTTPException(502, "Cannot connect to SMB server")
+
+    share = cfg.get('remote_path', '').strip('/')
+    if not share:
+        conn.close()
+        raise HTTPException(400, "Remote Path / Share name is required for SMB")
+
+    # Build SMB path
+    if folder_path == '/':
+        smb_path = filename
+    else:
+        smb_path = folder_path.lstrip('/').replace('/', '\\') + '\\' + filename
+
+    # Upload file
+    try:
+        conn.storeFile(share, smb_path, io.BytesIO(content))
+    except Exception as e:
+        conn.close()
+        raise HTTPException(502, f"SMB upload failed: {str(e)}")
+
+    conn.close()
+
+
+async def _upload_gdrive(cfg, folder_path: str, filename: str, content: bytes, mime_type: str = None):
+    """Upload file to Google Drive."""
+    if not _GOOGLE_AVAILABLE:
+        raise HTTPException(502, "Google libraries not installed")
+
+    try:
+        creds_dict = json.loads(cfg['password'])
+        creds = service_account.Credentials.from_service_account_info(creds_dict)
+        service = build('drive', 'v3', credentials=creds)
+    except Exception as e:
+        raise HTTPException(502, f"Google Drive auth error: {str(e)}")
+
+    # folder_path for GDrive is the Google Folder ID
+    parent_id = folder_path.strip('/') if folder_path and folder_path != '/' else cfg['remote_path'] or 'root'
+
+    # Determine MIME type
+    if not mime_type:
+        import mimetypes
+        mime_type, _ = mimetypes.guess_type(filename)
+    if not mime_type:
+        mime_type = 'application/octet-stream'
+
+    # Upload to Google Drive
+    from googleapiclient.http import MediaIoBaseUpload
+    media = MediaIoBaseUpload(io.BytesIO(content), mimetype=mime_type, resumable=True)
+
+    file_metadata = {
+        'name': filename,
+        'parents': [parent_id]
+    }
+
+    try:
+        result = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id, name, size'
+        ).execute()
+    except Exception as e:
+        raise HTTPException(502, f"Google Drive upload failed: {str(e)}")
+
+    return {
+        "success": True,
+        "filename": filename,
+        "size": len(content),
+        "file_id": result.get('id'),
+        "gdrive_name": result.get('name')
+    }

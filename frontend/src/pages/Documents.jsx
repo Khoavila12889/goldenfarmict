@@ -4,7 +4,7 @@ import {
   Server, Wifi, Cloud, RefreshCw, ChevronRight, Home, Shield,
   MoreVertical, FileText, Archive, Image, Eye,
   FileSpreadsheet, FileCode, Music, Video, FileCog,
-  Download, LayoutGrid, List, Search, X, Upload, Share2
+  Download, LayoutGrid, List, Search, X, Upload, Share2, UploadCloud
 } from 'lucide-react'
 import '../styles/shared.css'
 import './Documents.css'
@@ -161,7 +161,7 @@ export default function Documents() {
   const [perms, setPerms] = useState([])
   const [showPerms, setShowPerms] = useState(false)
   const [departments, setDepartments] = useState([])
-  const [permForm, setPermForm] = useState({ folder_path: '/', role: '', employee_code: '', department: '', permission: 'read' })
+  const [permForm, setPermForm] = useState({ folder_path: '/', role: '', employee_code: '', department: '', permission: 'read', can_upload: false })
 
   const [viewerFile, setViewerFile] = useState(null)
   const [viewerOpen, setViewerOpen] = useState(false)
@@ -171,6 +171,13 @@ export default function Documents() {
   const [shareFile, setShareFile] = useState(null)
   const [shareOpen, setShareOpen] = useState(false)
   const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, file: null })
+
+  // Upload state
+  const [showUpload, setShowUpload] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadError, setUploadError] = useState('')
+  const [canUploadCurrent, setCanUploadCurrent] = useState(false)
 
   // ── Lightbox state ──────────────────────────────────────────────
   const [showLightbox, setShowLightbox] = useState(false)
@@ -410,6 +417,80 @@ export default function Documents() {
     browseBreadcrumb(breadcrumbs.length - 2)
   }
 
+  // ── Upload Functions ─────────────────────────────────────────────
+  async function handleUploadFiles(files) {
+    if (!activeConfig || !files || files.length === 0) return
+    
+    const currentPath = breadcrumbs.at(-1).id
+    setUploading(true)
+    setUploadError('')
+    setUploadProgress(0)
+    
+    const totalFiles = files.length
+    let uploadedCount = 0
+    const errors = []
+
+    for (const file of files) {
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+        
+        const response = await fetch(
+          `/api/documents/upload?config_id=${activeConfig.id}&folder_path=${encodeURIComponent(currentPath)}&user_code=${userCode}&user_role=${userRole}`,
+          {
+            method: 'POST',
+            body: formData,
+            headers: {
+              'Authorization': 'Bearer ' + sessionStorage.getItem('token')
+            }
+          }
+        )
+        
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}))
+          throw new Error(errData.detail || `HTTP ${response.status}`)
+        }
+        
+        uploadedCount++
+        setUploadProgress(Math.round((uploadedCount / totalFiles) * 100))
+      } catch (err) {
+        errors.push(`${file.name}: ${err.message}`)
+      }
+    }
+    
+    setUploading(false)
+    
+    if (errors.length > 0) {
+      setUploadError(errors.join('\n'))
+    } else {
+      setShowUpload(false)
+      // Refresh the file list
+      browseFolder(activeConfig.id, currentPath)
+    }
+  }
+
+  function handleDragOver(e) {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  function handleDrop(e) {
+    e.preventDefault()
+    e.stopPropagation()
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length > 0) {
+      handleUploadFiles(files)
+    }
+  }
+
+  function handleFileSelect(e) {
+    const files = Array.from(e.target.files)
+    if (files.length > 0) {
+      handleUploadFiles(files)
+    }
+    e.target.value = ''
+  }
+
   function openConfigForm(cfg) {
     setTestMsg('')
     setTestOk(false)
@@ -501,7 +582,7 @@ export default function Documents() {
       const body = { ...permForm, storage_id: activeConfig.id }
       if (body.department === '__all__') body.department = ''
       await createStoragePermission(body)
-      setPermForm({ folder_path: '/', role: '', employee_code: '', department: '', permission: 'read' })
+      setPermForm({ folder_path: '/', role: '', employee_code: '', department: '', permission: 'read', can_upload: false })
       loadPerms(activeConfig.id)
     } catch (e) { alert('Thêm phân quyền thất bại') }
   }
@@ -591,6 +672,11 @@ export default function Documents() {
                   </button>
                 )}
               </div>
+              {(isAdmin || canUploadCurrent) && (
+                <button className="doc-btn doc-btn-primary" onClick={() => setShowUpload(true)} title="Upload file">
+                  <UploadCloud size={15} /> <span>Upload</span>
+                </button>
+              )}
               {isAdmin && (
                 <button className="doc-btn doc-btn-ghost" onClick={() => loadPerms(activeConfig.id)} title="Phân quyền">
                   <Shield size={15} />
@@ -923,9 +1009,13 @@ export default function Documents() {
                 {departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
               </select>
               <select className="salary-pwd-input" value={permForm.permission} onChange={e => setPermForm({ ...permForm, permission: e.target.value })}>
-                <option value="read">Xem</option>
-                <option value="write">Ghi</option>
+                <option value="read">Chỉ xem</option>
+                <option value="write">Đọc/Ghi</option>
               </select>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
+                <input type="checkbox" checked={permForm.can_upload || false} onChange={e => setPermForm({ ...permForm, can_upload: e.target.checked })} />
+                Upload
+              </label>
               <button className="salary-btn salary-btn-primary" onClick={addPerm}><Plus size={15} /></button>
             </div>
 
@@ -937,6 +1027,7 @@ export default function Documents() {
                   <th>Mã NV</th>
                   <th>Bộ phận</th>
                   <th>Quyền</th>
+                  <th>Upload</th>
                   <th></th>
                 </tr>
               </thead>
@@ -947,11 +1038,12 @@ export default function Documents() {
                     <td>{p.role || '--'}</td>
                     <td>{p.employee_code || '--'}</td>
                     <td>{!p.department && !p.role && !p.employee_code ? 'Tất cả' : p.department || '--'}</td>
-                    <td>{p.permission === 'write' ? 'Ghi' : 'Xem'}</td>
+                    <td>{p.permission === 'write' ? 'Đọc/Ghi' : 'Chỉ xem'}</td>
+                    <td>{p.can_upload ? '✓' : '-'}</td>
                     <td><button className="salary-btn" style={{ padding: '2px 6px', fontSize: '0.7rem', color: '#dc2626' }} onClick={() => removePerm(p.id)}><Trash2 size={12} /></button></td>
                   </tr>
                 ))}
-                {perms.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', padding: '1rem', color: '#94a3b8' }}>Chưa có phân quyền (mặc định tất cả được truy cập)</td></tr>}
+                {perms.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', padding: '1rem', color: '#94a3b8' }}>Chưa có phân quyền (mặc định tất cả được truy cập)</td></tr>}
               </tbody>
             </table>
           </div>
@@ -978,6 +1070,104 @@ export default function Documents() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ─── Upload Modal ───────────────────────────────────────── */}
+      {showUpload && (
+        <>
+          <div className="panel-overlay open" onClick={() => !uploading && setShowUpload(false)} />
+          <div className="side-panel open panel-upload">
+            <div className="panel-body">
+              <h3 style={{ marginBottom: '0.5rem' }}>Upload File</h3>
+              <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1rem' }}>
+                Thư mục đích: {breadcrumbs.at(-1)?.name || '/'}
+              </p>
+
+              {/* Drop Zone */}
+              <div
+                className="upload-dropzone"
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                onClick={() => !uploading && document.getElementById('file-input-upload')?.click()}
+                style={{
+                  border: '2px dashed #cbd5e1',
+                  borderRadius: 12,
+                  padding: '2rem',
+                  textAlign: 'center',
+                  cursor: uploading ? 'not-allowed' : 'pointer',
+                  background: '#f8fafc',
+                  transition: 'all 0.2s',
+                  opacity: uploading ? 0.6 : 1
+                }}
+              >
+                <UploadCloud size={48} style={{ color: '#94a3b8', marginBottom: '0.5rem' }} />
+                <p style={{ color: '#64748b', marginBottom: '0.5rem' }}>
+                  {uploading ? 'Đang upload...' : 'Kéo thả file vào đây hoặc click để chọn'}
+                </p>
+                <p style={{ color: '#94a3b8', fontSize: '0.75rem' }}>
+                  Hỗ trợ mọi loại file
+                </p>
+              </div>
+              <input
+                id="file-input-upload"
+                type="file"
+                multiple
+                style={{ display: 'none' }}
+                onChange={handleFileSelect}
+                disabled={uploading}
+              />
+
+              {/* Progress Bar */}
+              {uploading && (
+                <div style={{ marginTop: '1rem' }}>
+                  <div style={{
+                    height: 8,
+                    background: '#e2e8f0',
+                    borderRadius: 4,
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{
+                      height: '100%',
+                      width: `${uploadProgress}%`,
+                      background: 'linear-gradient(90deg, #3b82f6, #8b5cf6)',
+                      transition: 'width 0.3s'
+                    }} />
+                  </div>
+                  <p style={{ textAlign: 'center', color: '#64748b', fontSize: '0.8rem', marginTop: '0.5rem' }}>
+                    {uploadProgress}%
+                  </p>
+                </div>
+              )}
+
+              {/* Error Message */}
+              {uploadError && (
+                <div style={{
+                  marginTop: '1rem',
+                  padding: '0.75rem',
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  borderRadius: 8,
+                  color: '#dc2626',
+                  fontSize: '0.8rem',
+                  whiteSpace: 'pre-wrap'
+                }}>
+                  {uploadError}
+                </div>
+              )}
+
+              {/* Actions */}
+              <div style={{ marginTop: '1.5rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                <button
+                  className="salary-btn salary-btn-secondary"
+                  onClick={() => { setShowUpload(false); setUploadError(''); }}
+                  disabled={uploading}
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {/* ─── File Viewer ────────────────────────────────────────── */}

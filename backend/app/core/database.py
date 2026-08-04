@@ -81,6 +81,7 @@ def _add_missing_columns(session):
         ("storage_permissions", "can_delete", "INTEGER DEFAULT 0"),
         ("storage_permissions", "allow_download", "INTEGER DEFAULT 1"),
         ("storage_permissions", "can_reshare", "INTEGER DEFAULT 0"),
+        ("storage_permissions", "can_upload", "INTEGER DEFAULT 0"),
         ("storage_permissions", "expires_at", "TEXT DEFAULT ''"),
         ("storage_permissions", "updated_at", "TEXT DEFAULT ''"),
         ("bookings", "completed_at", "TEXT DEFAULT ''"),
