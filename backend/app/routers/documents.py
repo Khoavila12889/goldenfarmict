@@ -23,6 +23,25 @@ try:
 except ImportError:
     _GOOGLE_AVAILABLE = False
 
+# Email Workspace được Service Account impersonate để dùng quota thật (2TB)
+# thay vì quota 0 của bản thân Service Account.
+_GDRIVE_IMPERSONATE_EMAIL = os.environ.get('GDRIVE_IMPERSONATE_EMAIL', 'admin@goldenfarm.vn').strip()
+
+
+def _build_gdrive_creds(cfg, scopes=None):
+    """Tạo credentials cho Google Drive, impersonate user Workspace thật
+    (Domain-Wide Delegation) để dùng quota lưu trữ 2TB thay vì quota 0
+    của Service Account.
+    """
+    scopes = scopes or ['https://www.googleapis.com/auth/drive']
+    creds_dict = json.loads(cfg['password'])
+    creds = service_account.Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    
+    if _GDRIVE_IMPERSONATE_EMAIL:
+        creds = creds.with_subject(_GDRIVE_IMPERSONATE_EMAIL)
+    
+    return creds
+
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 # ─── Storage Config CRUD (admin) ────────────────────────────────
@@ -159,12 +178,11 @@ def _test_gdrive(cfg):
     if not _GOOGLE_AVAILABLE:
         return {"success": False, "message": "Google libraries not installed (pip install google-api-python-client google-auth)"}
     try:
-        creds_dict = json.loads(cfg['password'])
-        creds = service_account.Credentials.from_service_account_info(creds_dict)
+        creds = _build_gdrive_creds(cfg)
         service = build('drive', 'v3', credentials=creds)
         folder_id = cfg['remote_path'] if cfg['remote_path'] else 'root'
         service.files().get(fileId=folder_id, fields="id, name").execute()
-        return {"success": True, "message": "Google Drive connected successfully"}
+        return {"success": True, "message": "Google Drive connected successfully (using quota delegation)"}
     except json.JSONDecodeError:
         return {"success": False, "message": "Service Account JSON không hợp lệ"}
     except Exception as e:
@@ -339,8 +357,7 @@ def _browse_gdrive(cfg, folder_id):
     if not _GOOGLE_AVAILABLE:
         raise HTTPException(502, "Google libraries not installed (pip install google-api-python-client google-auth)")
     try:
-        creds_dict = json.loads(cfg['password'])
-        creds = service_account.Credentials.from_service_account_info(creds_dict)
+        creds = _build_gdrive_creds(cfg)
         service = build('drive', 'v3', credentials=creds)
     except json.JSONDecodeError:
         raise HTTPException(502, "Service Account JSON không hợp lệ")
@@ -368,7 +385,6 @@ def _browse_gdrive(cfg, folder_id):
             "is_dir": is_dir,
             "size": int(f.get('size', 0)) if not is_dir else 0,
             "modified": f.get('modifiedTime', ''),
-            # Google trả thumbnailLink cho file ảnh — dùng làm thumbnail card.
             "thumbnail_link": (f.get('thumbnailLink', '') or '') if not is_dir else '',
         })
     return entries
@@ -667,8 +683,7 @@ def _gdrive_service(cfg):
     if not _GOOGLE_AVAILABLE:
         raise HTTPException(502, "Google libraries not installed (pip install google-api-python-client google-auth)")
     try:
-        creds_dict = json.loads(cfg['password'])
-        creds = service_account.Credentials.from_service_account_info(creds_dict)
+        creds = _build_gdrive_creds(cfg)
         return build('drive', 'v3', credentials=creds)
     except json.JSONDecodeError:
         raise HTTPException(502, "Service Account JSON không hợp lệ")
@@ -1008,8 +1023,7 @@ def _download_gdrive(cfg, file_path, file_id=''):
     file_id = (file_id or '').strip() or file_path.split('/')[0]
 
     try:
-        creds_dict = json.loads(cfg['password'])
-        creds = service_account.Credentials.from_service_account_info(creds_dict)
+        creds = _build_gdrive_creds(cfg)
         service = build('drive', 'v3', credentials=creds)
     except Exception as e:
         raise HTTPException(502, f"Google Drive auth error: {str(e)}")
@@ -1213,8 +1227,7 @@ def _get_file_bytes(cfg, file_path: str, file_id: str = '') -> bytes:
                 conn.close()
         elif cfg['type'] == 'gdrive':
             file_id = (file_id or '').strip() or file_path.split('/')[0]
-            creds_dict = json.loads(cfg['password'])
-            creds = service_account.Credentials.from_service_account_info(creds_dict)
+            creds = _build_gdrive_creds(cfg)
             svc = build('drive', 'v3', credentials=creds)
             _, _, stream = _gdrive_download_stream(svc, file_id)
             buf.write(stream.read())
@@ -1246,8 +1259,7 @@ def _put_file_bytes(cfg, file_path: str, data: bytes, file_id: str = ''):
                 conn.close()
         elif cfg['type'] == 'gdrive':
             file_id = (file_id or '').strip() or file_path.split('/')[0]
-            creds_dict = json.loads(cfg['password'])
-            creds = service_account.Credentials.from_service_account_info(creds_dict)
+            creds = _build_gdrive_creds(cfg)
             svc = build('drive', 'v3', credentials=creds)
             from googleapiclient.http import MediaIoBaseUpload
             media = MediaIoBaseUpload(_io.BytesIO(data), mimetype='application/octet-stream', resumable=True)
@@ -1699,24 +1711,16 @@ def _upload_smb(cfg, folder_path: str, filename: str, content: bytes):
 
 
 async def _upload_gdrive(cfg, folder_path: str, filename: str, content: bytes, mime_type: str = None):
-    """Upload file to Google Drive (supports Shared Drives).
+    """Upload file to Google Drive (supports Shared Drives) using Domain-Wide Delegation.
     
-    Google Service Accounts don't have personal storage quota.
-    Must use Shared Drives (Team Drives) or OAuth delegation.
+    Service Account impersonate Workspace user (admin@goldenfarm.vn) để dùng quota 2TB
+    thay vì quota 0 của bản thân Service Account.
     """
     if not _GOOGLE_AVAILABLE:
         raise HTTPException(502, "Google libraries not installed")
 
     try:
-        creds_dict = json.loads(cfg['password'])
-        creds = service_account.Credentials.from_service_account_info(creds_dict)
-        
-        # Add Drive scope for Shared Drive support
-        from google.auth.transport.requests import Request
-        creds = creds.with_scopes([
-            'https://www.googleapis.com/auth/drive',
-            'https://www.googleapis.com/auth/drive.file',
-        ])
+        creds = _build_gdrive_creds(cfg)
         service = build('drive', 'v3', credentials=creds)
     except json.JSONDecodeError:
         raise HTTPException(502, "Service Account JSON không hợp lệ")
@@ -1886,13 +1890,12 @@ def _create_folder_smb(cfg, parent_path: str, folder_name: str):
 
 
 async def _create_folder_gdrive(cfg, parent_path: str, folder_name: str):
-    """Create folder in Google Drive."""
+    """Create folder in Google Drive using Domain-Wide Delegation."""
     if not _GOOGLE_AVAILABLE:
         raise HTTPException(502, "Google libraries not installed")
 
     try:
-        creds_dict = json.loads(cfg['password'])
-        creds = service_account.Credentials.from_service_account_info(creds_dict)
+        creds = _build_gdrive_creds(cfg)
         service = build('drive', 'v3', credentials=creds)
     except Exception as e:
         raise HTTPException(502, f"Google Drive auth error: {str(e)}")
@@ -2078,13 +2081,12 @@ def _delete_smb(cfg, item_path: str, is_dir: bool):
 
 
 def _delete_gdrive(cfg, file_id: str):
-    """Delete file or folder in Google Drive."""
+    """Delete file or folder in Google Drive using Domain-Wide Delegation."""
     if not _GOOGLE_AVAILABLE:
         raise HTTPException(502, "Google libraries not installed")
 
     try:
-        creds_dict = json.loads(cfg['password'])
-        creds = service_account.Credentials.from_service_account_info(creds_dict)
+        creds = _build_gdrive_creds(cfg)
         service = build('drive', 'v3', credentials=creds)
         service.files().delete(fileId=file_id).execute()
     except Exception as e:
