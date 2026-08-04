@@ -605,6 +605,7 @@ function ModulePermCard({ mod, permissions, togglePerm, targetType, rolePerms, d
 const PERM_LABELS = {
   can_read: { label: 'Đọc', desc: 'Xem nội dung thư mục và tệp' },
   can_write: { label: 'Tạo/Sửa', desc: 'Tạo tệp/thư mục mới' },
+  can_upload: { label: 'Upload', desc: 'Upload file lên thư mục' },
   can_edit: { label: 'Chỉnh sửa', desc: 'Sửa nội dung tệp hiện có' },
   can_delete: { label: 'Xóa', desc: 'Xóa tệp và thư mục' },
   can_reshare: { label: 'Chia sẻ lại', desc: 'Cấp quyền cho người khác' },
@@ -614,7 +615,7 @@ const EXTRA_PERMS = {
 }
 
 function PermissionMatrix({ values, onChange, showDownload }) {
-  const keys = Object.keys(PERM_LABELS)
+  const keys = ['can_read', 'can_write', 'can_upload', 'can_edit', 'can_delete', 'can_reshare']
   const ext = showDownload ? Object.keys(EXTRA_PERMS) : []
   const allKeys = [...keys, ...ext]
   return (
@@ -944,7 +945,7 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
                       {isExpanded && (
                         <div style={{ padding: '0.5rem 0.6rem', borderTop: '1px solid var(--bk-border)' }}>
                           <PermissionMatrix values={{
-                            can_read: p.can_read, can_write: p.can_write, can_edit: p.can_edit,
+                            can_read: p.can_read, can_write: p.can_write, can_upload: p.can_upload, can_edit: p.can_edit,
                             can_delete: p.can_delete, can_reshare: p.can_reshare,
                           }} onChange={k => updateDeptPerm(p, k)} showDownload />
                         </div>
