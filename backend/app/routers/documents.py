@@ -843,7 +843,7 @@ def _check_folder_permission(storage_id, folder_path, user_code, user_role):
     
     now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
-    # An toàn hơn khi so sánh expires_at dưới dạng TEXT thay vì ép kiểu timestamp ép buộc
+    # Fixed: Use CAST for safe TEXT comparison (expires_at can be NULL or empty string)
     row = fetchone("""
         SELECT can_read FROM storage_permissions
         WHERE storage_id = :sid
@@ -857,8 +857,8 @@ def _check_folder_permission(storage_id, folder_path, user_code, user_role):
           AND (:fp = folder_path OR LOWER(:fp2) LIKE LOWER(folder_path || '/%') OR folder_path = '/')
           AND (
             expires_at IS NULL 
-            OR expires_at = '' 
-            OR expires_at > :now
+            OR CAST(expires_at AS TEXT) = '' 
+            OR expires_at::timestamp > :now::timestamp
           )
         ORDER BY
           CASE
