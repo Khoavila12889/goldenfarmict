@@ -911,6 +911,7 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
               </div>
             );
           })()
+        )}
       </div>
 
       <div className="bk-card" style={{ padding: '1.25rem', flex: '1 1 500px', minWidth: 320 }}>
