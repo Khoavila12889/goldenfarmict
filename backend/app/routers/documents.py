@@ -681,94 +681,66 @@ def create_share_permission(
         department = body.get('department', '')
         employee_code = body.get('employee_code', '')
         perm_data = {
-            'can_read': bool(body.get('can_read', True)),
-            'can_write': bool(body.get('can_write', False)),
-            'can_edit': bool(body.get('can_edit', False)),
-            'can_delete': bool(body.get('can_delete', False)),
-            'allow_download': bool(body.get('allow_download', True)),
-            'can_reshare': bool(body.get('can_reshare', False)),
-            'can_upload': bool(body.get('can_upload', False)),
-            'expires_at': body.get('expires_at', '') or None,
+            'cr': bool(body.get('can_read', True)),
+            'cw': bool(body.get('can_write', False)),
+            'ce': bool(body.get('can_edit', False)),
+            'cd': bool(body.get('can_delete', False)),
+            'ad': bool(body.get('allow_download', True)),
+            'crs': bool(body.get('can_reshare', False)),
+            'cu': bool(body.get('can_upload', False)),
+            'ea': body.get('expires_at') or None,
         }
-        if not storage_id:
-            raise HTTPException(400, "Missing storage_id")
-
-        # Find existing permission based on target_type
-        if target_type in ('USER', 'INDIVIDUAL'):
-            if not employee_code:
-                raise HTTPException(400, "Missing employee_code for USER target")
-            existing = fetchone("""
-                SELECT id FROM storage_permissions
-                WHERE storage_id=:sid AND folder_path=:fp AND target_type=:tt
-                   AND employee_code=:ec 
-                   AND (role IS NULL OR role = '') 
-                   AND (department IS NULL OR department = '')
-            """, {"sid": storage_id, "fp": folder_path, "tt": target_type, "ec": employee_code})
-        elif target_type == 'EVERYONE':
-            existing = fetchone("""
-                SELECT id FROM storage_permissions
-                WHERE storage_id=:sid AND folder_path=:fp AND target_type='EVERYONE'
-                   AND (role IS NULL OR role = '') 
-                   AND (employee_code IS NULL OR employee_code = '') 
-                   AND (department IS NULL OR department = '')
-            """, {"sid": storage_id, "fp": folder_path})
-        else:
-            # DEPARTMENT type
+        
+        # 2. Tìm bản ghi hiện tại dựa trên mức độ phân quyền
+        existing = None
+        
+        if target_type == 'EVERYONE':
+            existing = fetchone(
+                "SELECT id FROM storage_permissions WHERE storage_id=:sid AND folder_path=:fp AND target_type='EVERYONE'",
+                {"sid": storage_id, "fp": folder_path}
+            )
+        elif target_type == 'DEPARTMENT':
             if not department:
                 raise HTTPException(400, "Missing department for DEPARTMENT target")
-            existing = fetchone("""
-                SELECT id FROM storage_permissions
-                WHERE storage_id=:sid AND folder_path=:fp AND target_type='DEPARTMENT'
-                   AND department=:dept 
-                   AND (role IS NULL OR role = '') 
-                   AND (employee_code IS NULL OR employee_code = '')
-            """, {"sid": storage_id, "fp": folder_path, "dept": department})
+            existing = fetchone(
+                "SELECT id FROM storage_permissions WHERE storage_id=:sid AND folder_path=:fp AND target_type='DEPARTMENT' AND department=:dept",
+                {"sid": storage_id, "fp": folder_path, "dept": department}
+            )
+        elif target_type in ('USER', 'INDIVIDUAL'):
+            if not employee_code:
+                raise HTTPException(400, "Missing employee_code for USER target")
+            existing = fetchone(
+                "SELECT id FROM storage_permissions WHERE storage_id=:sid AND folder_path=:fp AND target_type IN ('USER', 'INDIVIDUAL') AND employee_code=:ec",
+                {"sid": storage_id, "fp": folder_path, "ec": employee_code}
+            )
 
-        # Get current timestamp as string for compatibility
-        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
+        # 3. Cập nhật hoặc Thêm mới (Không dùng updated_at)
         if existing:
-            # UPDATE existing permission
             execute("""
                 UPDATE storage_permissions SET
                     can_read=:cr, can_write=:cw, can_edit=:ce, can_delete=:cd,
-                    allow_download=:ad, can_reshare=:crs, can_upload=:cu, expires_at=:ea,
-                    updated_at=:now
+                    allow_download=:ad, can_reshare=:crs, can_upload=:cu, expires_at=:ea
                 WHERE id=:id
-            """, {
-                "cr": bool(perm_data['can_read']), "cw": bool(perm_data['can_write']), 
-                "ce": bool(perm_data['can_edit']), "cd": bool(perm_data['can_delete']), 
-                "ad": bool(perm_data['allow_download']), "crs": bool(perm_data['can_reshare']),
-                "cu": bool(perm_data['can_upload']), "ea": perm_data['expires_at'], 
-                "now": now_str, "id": existing['id']
-            })
+            """, {**perm_data, "id": existing['id']})
         else:
-            # INSERT new permission
             execute("""
                 INSERT INTO storage_permissions
-                    (storage_id, folder_path, target_type, department, employee_code,
-                     can_read, can_write, can_edit, can_delete,
-                     allow_download, can_reshare, can_upload, expires_at,
-                     role, permission, created_at, updated_at)
-                VALUES (:sid, :fp, :tt, :dept, :ec,
-                        :cr, :cw, :ce, :cd,
-                        :ad, :crs, :cu, :ea,
-                        '', 'custom', :now, :now)
+                    (storage_id, folder_path, target_type, department, employee_code, role, permission,
+                     can_read, can_write, can_edit, can_delete, allow_download, can_reshare, can_upload, expires_at)
+                VALUES 
+                    (:sid, :fp, :tt, :dept, :ec, '', 'custom',
+                     :cr, :cw, :ce, :cd, :ad, :crs, :cu, :ea)
             """, {
+                **perm_data,
                 "sid": storage_id, "fp": folder_path, "tt": target_type,
                 "dept": department if target_type == 'DEPARTMENT' else '',
-                "ec": employee_code if target_type in ('USER', 'INDIVIDUAL') else '',
-                "cr": bool(perm_data['can_read']), "cw": bool(perm_data['can_write']), 
-                "ce": bool(perm_data['can_edit']), "cd": bool(perm_data['can_delete']), 
-                "ad": bool(perm_data['allow_download']), "crs": bool(perm_data['can_reshare']),
-                "cu": bool(perm_data['can_upload']), "ea": perm_data['expires_at'],
-                "now": now_str
+                "ec": employee_code if target_type in ('USER', 'INDIVIDUAL') else ''
             })
         
         if target_type in ('USER', 'INDIVIDUAL'):
             target_label = f"Nhân viên {employee_code}"
         elif target_type == 'EVERYONE':
-            target_label = 'Tất cả phòng ban'
+            target_label = 'Tất cả nhân viên'
         else:
             target_label = department
         
@@ -810,13 +782,11 @@ def update_permission(
         if 'expires_at' in updates and not updates['expires_at']:
             updates['expires_at'] = None
         
-        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         set_clause = ", ".join(f"{k}=:{k}" for k in updates)
         params = {k: v for k, v in updates.items()}
         params['perm_id'] = perm_id
-        params['now'] = now_str
         
-        execute(f"UPDATE storage_permissions SET {set_clause}, updated_at=:now WHERE id=:perm_id", params)
+        execute(f"UPDATE storage_permissions SET {set_clause} WHERE id=:perm_id", params)
         return {"success": True}
     
     except HTTPException:
