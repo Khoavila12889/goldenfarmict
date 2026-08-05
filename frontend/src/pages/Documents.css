@@ -514,7 +514,8 @@
 
 .doc-card-preview,
 .doc-card-share,
-.doc-card-download {
+.doc-card-download,
+.doc-card-delete {
   position: absolute;
   top: 0.4rem;
   display: flex;
@@ -535,14 +536,17 @@
 .doc-card-preview { right: 0.4rem; }
 .doc-card-download { right: 2.4rem; }
 .doc-card-share { right: 0.4rem; }
+.doc-card-delete { right: 4.4rem; }
 
 .doc-card:hover .doc-card-preview,
 .doc-card:hover .doc-card-share,
-.doc-card:hover .doc-card-download { opacity: 1; }
+.doc-card:hover .doc-card-download,
+.doc-card:hover .doc-card-delete { opacity: 1; }
 
 .doc-card-preview:hover { color: #00468C; background: #eff6ff; }
 .doc-card-download:hover { color: #16a34a; background: #f0fdf4; }
 .doc-card-share:hover { color: #7c3aed; background: #f5f3ff; }
+.doc-card-delete:hover { color: #dc2626; background: #fef2f2; }
 
 .doc-card-skeleton {
   gap: 0.5rem;
@@ -795,6 +799,15 @@
 .doc-context-menu-item:hover {
   background: #f1f5f9;
   color: #0f172a;
+}
+
+.doc-context-menu-danger,
+.doc-context-menu-danger:hover {
+  color: #dc2626;
+}
+
+.doc-context-menu-danger:hover {
+  background: #fef2f2;
 }
 
 /* ─── ONLYOFFICE Viewer ────────────────────────────────────────── */

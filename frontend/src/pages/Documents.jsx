@@ -169,6 +169,7 @@ export default function Documents() {
   const [uploadError, setUploadError] = useState('')
   const [uploadSuccess, setUploadSuccess] = useState(false)
   const [canUploadCurrent, setCanUploadCurrent] = useState(false)
+  const [canDeleteCurrent, setCanDeleteCurrent] = useState(false)
 
   const uploadCloseTimerRef = useRef(null)
 
@@ -248,6 +249,8 @@ export default function Documents() {
         setEntries(r.data?.data || [])
         const canUpload = r.data?.can_upload ?? (isAdmin || false)
         setCanUploadCurrent(canUpload)
+        const canDelete = r.data?.can_delete ?? (isAdmin || false)
+        setCanDeleteCurrent(canDelete)
       })
       .catch(err => {
         setEntries([])
@@ -955,6 +958,11 @@ export default function Documents() {
                         <Download size={14} />
                       </button>
                     )}
+                    {canDeleteCurrent && (
+                      <button className="doc-card-delete" onClick={(ev) => { ev.stopPropagation(); handleDeleteEntry(e) }} title="Xóa">
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </div>
                 )
               })}
@@ -1023,6 +1031,11 @@ export default function Documents() {
                         {!e.is_dir && (
                           <button className="doc-row-action" title="Tải xuống" onClick={(ev) => { ev.stopPropagation(); handleDownloadFile(e); }}>
                             <Download size={14} />
+                          </button>
+                        )}
+                        {canDeleteCurrent && (
+                          <button className="doc-row-action" title="Xóa" style={{ color: '#dc2626' }} onClick={(ev) => { ev.stopPropagation(); handleDeleteEntry(e); }}>
+                            <Trash2 size={14} />
                           </button>
                         )}
                       </div>
@@ -1208,6 +1221,11 @@ export default function Documents() {
           {!contextMenu.file.is_dir && (
             <div className="doc-context-menu-item" onClick={() => handleDownloadFile(contextMenu.file)}>
               <Download size={15} /> Tải xuống
+            </div>
+          )}
+          {canDeleteCurrent && (
+            <div className="doc-context-menu-item doc-context-menu-danger" onClick={() => { handleDeleteEntry(contextMenu.file); setContextMenu({ visible: false }) }}>
+              <Trash2 size={15} /> Xóa
             </div>
           )}
         </div>

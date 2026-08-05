@@ -269,11 +269,19 @@ def browse(config_id: int, path: str = Query('/'), user_code: str = Query(''), u
             print(f"[WARN] Failed to check upload permission: {str(ex)}")
             can_upload = False
 
+        # Check delete permission for current folder
+        try:
+            can_delete = _check_can_delete(config_id, path, user_code, user_role)
+        except Exception as ex:
+            print(f"[WARN] Failed to check delete permission: {str(ex)}")
+            can_delete = False
+
         return {
             "data": filtered, 
             "path": path, 
             "config": {"id": cfg['id'], "name": cfg['name'], "type": cfg['type']},
-            "can_upload": can_upload
+            "can_upload": can_upload,
+            "can_delete": can_delete
         }
     except HTTPException:
         raise
@@ -2233,7 +2241,8 @@ async def delete_item(
 ):
     """Delete a file or folder from storage.
 
-    Permission check: user must have can_delete=True on the parent folder.
+    Permission check: admin/head or user with can_delete/can_edit/can_write
+    (edit storage permission) on the parent folder.
     """
     import logging
     logging.info(f"[DELETE] config_id={config_id}, path={item_path}, is_dir={is_dir}, user={user_code}")
@@ -2277,7 +2286,14 @@ async def delete_item(
 
 
 def _check_can_delete(storage_id, folder_path, user_code, user_role):
-    """Check if user has can_delete permission on the folder."""
+    """Check if user can delete files/folders inside the folder.
+
+    Allowed when:
+      - user is admin/head, OR
+      - a storage_permissions row grants can_delete, OR
+      - a storage_permissions row grants edit access (can_edit or can_write):
+        users granted "edit storage" permission may delete their files/folders.
+    """
     folder_path = folder_path.replace('\\', '/').rstrip('/') or '/'
     if user_role in ('admin', 'head'):
         return True
@@ -2290,19 +2306,24 @@ def _check_can_delete(storage_id, folder_path, user_code, user_role):
         user_dept = emp['department'] or ''
     now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     row = fetchone("""
-        SELECT can_delete FROM storage_permissions
+        SELECT can_delete, can_edit, can_write FROM storage_permissions
         WHERE storage_id=:sid
           AND (
             target_type='EVERYONE'
-            OR (target_type='DEPARTMENT' AND department != '' AND department=:dept)
-            OR (role=:role)
-            OR (employee_code=:code)
-            OR (department='' AND role='' AND employee_code='')
+            OR (target_type='DEPARTMENT' AND department=:dept AND :dept != '')
+            OR (target_type='' AND role=:role AND role != '')
+            OR (target_type='' AND employee_code=:code AND employee_code != '')
           )
           AND (:fp = folder_path OR LOWER(:fp2) LIKE LOWER(folder_path || '/%') OR folder_path = '/')
-          AND (expires_at IS NULL OR expires_at > :now)
+          AND (expires_at IS NULL OR CAST(expires_at AS TEXT) = '' OR CAST(expires_at AS TIMESTAMP) > CAST(:now AS TIMESTAMP))
         ORDER BY
-          CASE target_type WHEN 'EVERYONE' THEN 0 ELSE 1 END,
+          CASE
+            WHEN employee_code != '' THEN 3
+            WHEN role != '' THEN 2
+            WHEN target_type='DEPARTMENT' THEN 1
+            WHEN target_type='EVERYONE' THEN 0
+            ELSE 4
+          END DESC,
           length(folder_path) DESC
         LIMIT 1
     """, {
@@ -2311,7 +2332,7 @@ def _check_can_delete(storage_id, folder_path, user_code, user_role):
     })
     if not row:
         return False
-    return bool(row.get('can_delete', 0))
+    return bool(row.get('can_delete', 0) or row.get('can_edit', 0) or row.get('can_write', 0))
 
 
 def _delete_ftp(cfg, item_path: str, is_dir: bool):
