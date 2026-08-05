@@ -5,7 +5,7 @@ import {
   MoreVertical, FileText, Archive, Image, Eye,
   FileSpreadsheet, FileCode, Music, Video, FileCog,
   Download, LayoutGrid, List, Search, X, Upload, Share2, UploadCloud, FolderPlus,
-  Settings
+  Settings, CheckCircle2
 } from 'lucide-react'
 import '../styles/shared.css'
 import './Documents.css'
@@ -167,7 +167,10 @@ export default function Documents() {
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadError, setUploadError] = useState('')
+  const [uploadSuccess, setUploadSuccess] = useState(false)
   const [canUploadCurrent, setCanUploadCurrent] = useState(false)
+
+  const uploadCloseTimerRef = useRef(null)
 
   // Create folder state
   const [showCreateFolder, setShowCreateFolder] = useState(false)
@@ -192,6 +195,8 @@ export default function Documents() {
   useEffect(() => {
     getStorageDepartments().then(r => setDepartments(r.data?.data || [])).catch(() => {})
   }, [])
+
+  useEffect(() => () => clearTimeout(uploadCloseTimerRef.current), [])
 
   const filteredEntries = useMemo(() => {
     if (!searchQuery.trim()) return entries
@@ -423,53 +428,88 @@ export default function Documents() {
   async function handleUploadFiles(files) {
     if (!activeConfig || !files || files.length === 0) return
     const currentPath = breadcrumbs.at(-1).id
+    const filesList = Array.from(files)
+    const totalBytes = filesList.reduce((sum, f) => sum + (f.size || 0), 0)
+
     setUploading(true)
     setUploadError('')
     setUploadProgress(0)
-    
-    const totalFiles = files.length
-    let uploadedCount = 0
+    setUploadSuccess(false)
+    clearTimeout(uploadCloseTimerRef.current)
+
+    let uploadedBytes = 0
     const errors = []
 
-    for (const file of files) {
+    for (const file of filesList) {
       try {
-        const formData = new FormData()
-        formData.append('file', file)
-        
-        const response = await fetch(
-          `/api/documents/upload?config_id=${activeConfig.id}&folder_path=${encodeURIComponent(currentPath)}&user_code=${userCode}&user_role=${userRole}`,
-          {
-            method: 'POST',
-            body: formData,
-            headers: {
-              'Authorization': 'Bearer ' + sessionStorage.getItem('token')
+        await new Promise((resolve, reject) => {
+          const formData = new FormData()
+          formData.append('file', file)
+
+          const xhr = new XMLHttpRequest()
+          xhr.open('POST', `/api/documents/upload?config_id=${activeConfig.id}&folder_path=${encodeURIComponent(currentPath)}&user_code=${userCode}&user_role=${userRole}`)
+          xhr.setRequestHeader('Authorization', 'Bearer ' + sessionStorage.getItem('token'))
+
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable && totalBytes > 0) {
+              const done = uploadedBytes + e.loaded
+              setUploadProgress(Math.min(100, Math.round((done / totalBytes) * 100)))
             }
           }
-        )
-        
-        if (!response.ok) {
-          const errData = await response.json().catch(() => ({}))
-          let errorMsg = errData.detail || `HTTP ${response.status}`
-          if (activeConfig.type === 'gdrive' && (errorMsg.includes('quota') || errorMsg.includes('dung lượng'))) {
-            errorMsg = "Google Drive không đủ dung lượng. Vui lòng dùng Shared Drive hoặc liên hệ admin."
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve()
+              return
+            }
+            let errorMsg = `HTTP ${xhr.status}`
+            try {
+              const errData = JSON.parse(xhr.responseText || '{}')
+              if (errData.detail) errorMsg = errData.detail
+            } catch (_) {}
+            if (activeConfig.type === 'gdrive' && (errorMsg.includes('quota') || errorMsg.includes('dung lượng'))) {
+              errorMsg = "Google Drive không đủ dung lượng. Vui lòng dùng Shared Drive hoặc liên hệ admin."
+            }
+            reject(new Error(errorMsg))
           }
-          throw new Error(errorMsg)
-        }
-        
-        uploadedCount++
-        setUploadProgress(Math.round((uploadedCount / totalFiles) * 100))
+
+          xhr.onerror = () => reject(new Error('Lỗi mạng, không thể tải file lên'))
+          xhr.onabort = () => reject(new Error('Upload bị hủy'))
+          xhr.send(formData)
+        })
+
+        uploadedBytes += file.size || 0
+        setUploadProgress(Math.min(100, Math.round((uploadedBytes / totalBytes) * 100)))
       } catch (err) {
         errors.push(`${file.name}: ${err.message}`)
+        uploadedBytes += file.size || 0
+        setUploadProgress(Math.min(100, Math.round((uploadedBytes / totalBytes) * 100)))
       }
     }
-    
+
     setUploading(false)
+
     if (errors.length > 0) {
       setUploadError(errors.join('\n'))
-    } else {
-      setShowUpload(false)
-      browseFolder(activeConfig.id, currentPath)
+      return
     }
+
+    // Tất cả file upload thành công → hiện check mark rồi tự đóng sau 1.2s
+    setUploadSuccess(true)
+    uploadCloseTimerRef.current = setTimeout(() => {
+      setShowUpload(false)
+      setUploadProgress(0)
+      setUploadSuccess(false)
+      browseFolder(activeConfig.id, currentPath)
+    }, 1200)
+  }
+
+  function closeUploadPanel() {
+    clearTimeout(uploadCloseTimerRef.current)
+    setShowUpload(false)
+    setUploadError('')
+    setUploadProgress(0)
+    setUploadSuccess(false)
   }
 
   function handleDragOver(e) { e.preventDefault(); e.stopPropagation() }
@@ -1176,7 +1216,7 @@ export default function Documents() {
       {/* Upload */}
       {showUpload && (
         <>
-          <div className="panel-overlay open" onClick={() => !uploading && setShowUpload(false)} />
+          <div className="panel-overlay open" onClick={() => !uploading && closeUploadPanel()} />
           <div className="side-panel open panel-upload">
             <div className="panel-body">
               <h3 style={{ marginBottom: '0.5rem' }}>Upload File</h3>
@@ -1198,10 +1238,17 @@ export default function Documents() {
                 </div>
               )}
 
+              {uploadSuccess && !uploading && (
+                <div className="doc-upload-success" style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 0' }}>
+                  <CheckCircle2 size={48} color="#16a34a" />
+                  <p style={{ margin: 0, color: '#16a34a', fontSize: '0.95rem', fontWeight: 600 }}>Upload thành công!</p>
+                </div>
+              )}
+
               {uploadError && <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#dc2626', fontSize: '0.8rem', whiteSpace: 'pre-wrap' }}>{uploadError}</div>}
 
               <div style={{ marginTop: '1.5rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                <button className="salary-btn salary-btn-secondary" onClick={() => { setShowUpload(false); setUploadError(''); }} disabled={uploading}>Đóng</button>
+                <button className="salary-btn salary-btn-secondary" onClick={closeUploadPanel} disabled={uploading}>Đóng</button>
               </div>
             </div>
           </div>
