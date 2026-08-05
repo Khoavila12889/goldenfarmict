@@ -24,6 +24,11 @@
   max-width: 480px;
 }
 
+.panel-create-folder {
+  width: 420px;
+  max-width: 90vw;
+}
+
 /* ─── Header ─────────────────────────────────────────────────── */
 
 .doc-header {
@@ -1000,8 +1005,8 @@
   .doc-col-date { display: none; }
 
   .panel-config,
-  .panel-perms  { width: 100%; }
-
+  .panel-perms,
+  .panel-create-folder  { width: 100%; }
   .doc-btn span { display: none; }
   .doc-toolbar-actions .doc-btn span { display: none; }
 }

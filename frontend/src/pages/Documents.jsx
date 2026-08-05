@@ -1208,6 +1208,57 @@ export default function Documents() {
         </>
       )}
 
+      {/* Create Folder */}
+      {showCreateFolder && (
+        <>
+          <div className="panel-overlay open" onClick={() => !uploading && setShowCreateFolder(false)} />
+          <div className="side-panel open panel-create-folder">
+            <div className="panel-body">
+              <h3 style={{ marginBottom: '0.5rem' }}>Tạo thư mục mới</h3>
+              <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1rem' }}>
+                Thư mục đích: {breadcrumbs.at(-1)?.name || '/'}
+              </p>
+
+              <div className="form-group">
+                <label className="doc-label">Tên thư mục</label>
+                <input
+                  className="salary-pwd-input"
+                  value={newFolderName}
+                  onChange={e => setNewFolderName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleCreateFolder() }}
+                  placeholder="VD: Hợp đồng 2026"
+                  autoFocus
+                  disabled={uploading}
+                />
+              </div>
+
+              {uploadError && (
+                <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#dc2626', fontSize: '0.8rem', whiteSpace: 'pre-wrap' }}>
+                  {uploadError}
+                </div>
+              )}
+
+              <div style={{ marginTop: '1.5rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                <button
+                  className="salary-btn salary-btn-secondary"
+                  onClick={() => { setShowCreateFolder(false); setNewFolderName(''); setUploadError(''); }}
+                  disabled={uploading}
+                >
+                  Hủy
+                </button>
+                <button
+                  className="salary-btn salary-btn-primary"
+                  onClick={handleCreateFolder}
+                  disabled={uploading || !newFolderName.trim()}
+                >
+                  Tạo thư mục
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       <FileViewer file={viewerFile} isOpen={viewerOpen} onClose={() => { setViewerOpen(false); setViewerFile(null) }} />
       <OnlyOfficeViewer file={ooFile} configId={ooConfigId} isOpen={ooOpen} onClose={() => { setOoOpen(false); setOoFile(null); setOoConfigId(null) }} />
       <ShareDocument file={shareFile} isOpen={shareOpen} onClose={() => { setShareOpen(false); setShareFile(null) }} />
