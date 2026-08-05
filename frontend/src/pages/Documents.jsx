@@ -4,7 +4,8 @@ import {
   Server, Wifi, Cloud, RefreshCw, ChevronRight, Home, Shield,
   MoreVertical, FileText, Archive, Image, Eye,
   FileSpreadsheet, FileCode, Music, Video, FileCog,
-  Download, LayoutGrid, List, Search, X, Upload, Share2, UploadCloud, FolderPlus
+  Download, LayoutGrid, List, Search, X, Upload, Share2, UploadCloud, FolderPlus,
+  Settings
 } from 'lucide-react'
 import '../styles/shared.css'
 import './Documents.css'
@@ -23,31 +24,19 @@ function isImageFile(name) {
   return IMAGE_EXTS.has((name || '').split('.').pop().toLowerCase())
 }
 
-/**
- * Build thumbnail URL for images.
- * For Google Drive: use entry.thumbnailLink (if available) with higher size (=s800),
- * or call backend /api/documents/thumbnail with &file_id=${entry.id} (REQUIRED).
- * For SMB/FTP: call backend /api/documents/thumbnail with &size=400.
- */
 function buildThumbnailUrl(cfg, entry, currentPath, userCode, userRole) {
   if (!cfg || !entry || !isImageFile(entry.name)) return null
-  
   const isGdrive = cfg.type === 'gdrive'
   const normalizedPath = currentPath === '/'
     ? entry.name
     : `${currentPath.replace(/\/$/, '')}/${entry.name}`
   
-  // Google Drive: prefer thumbnailLink with higher resolution (=s800)
   if (isGdrive) {
     if (entry.thumbnailLink) {
-      // Upgrade thumbnail size from =s220 or =s220-c to =s800 for better quality
       return entry.thumbnailLink.replace(/=s\d+(-c)?$/, '=s800')
     }
-    // Fallback: call backend thumbnail endpoint with REQUIRED file_id parameter
     return `/api/documents/thumbnail?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}&file_id=${encodeURIComponent(entry.id)}&user_code=${userCode}&user_role=${userRole}&size=800`
   }
-  
-  // SMB/FTP: call backend thumbnail endpoint
   return `/api/documents/thumbnail?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}&user_code=${userCode}&user_role=${userRole}&size=400`
 }
 
@@ -97,10 +86,6 @@ function formatSize(bytes) {
   return (i === 0 ? size.toFixed(0) : size.toFixed(1)) + ' ' + units[i]
 }
 
-// Builds the download/preview URL for a file.
-// For Google Drive the path is used only for folder-permission checks +
-// filename/ext detection; the real Google file ID must be sent separately
-// via `file_id`, otherwise the backend would download the PARENT FOLDER.
 function buildFileDownloadUrl(cfg, entry, currentPath, userCode, userRole, inline = false) {
   const isGdrive = cfg?.type === 'gdrive'
   const normalizedPath = currentPath === '/'
@@ -149,7 +134,10 @@ export default function Documents() {
 
   const [configs, setConfigs] = useState([])
   const [activeConfig, setActiveConfig] = useState(null)
-  const [breadcrumbs, setBreadcrumbs] = useState([{ id: '/', name: 'Home' }])
+  
+  // ROOT represents the top-level where configs are displayed as folders
+  const [breadcrumbs, setBreadcrumbs] = useState([{ id: 'ROOT', name: 'Home' }])
+  
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(false)
   const [browseError, setBrowseError] = useState('')
@@ -185,7 +173,7 @@ export default function Documents() {
   const [showCreateFolder, setShowCreateFolder] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
 
-  // ── Lightbox state ──────────────────────────────────────────────
+  // Lightbox state
   const [showLightbox, setShowLightbox] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState(0)
 
@@ -197,7 +185,7 @@ export default function Documents() {
 
   const loadConfigs = useCallback(() => {
     getStorageConfigs(userCode, userRole).then(r => setConfigs(r.data?.data || [])).catch(() => {})
-  }, [])
+  }, [userCode, userRole])
 
   useEffect(() => { loadConfigs() }, [loadConfigs])
 
@@ -211,18 +199,13 @@ export default function Documents() {
     return entries.filter(e => e.name.toLowerCase().includes(q))
   }, [entries, searchQuery])
 
-  /**
-   * Mảng memoized chỉ chứa file ảnh trong thư mục hiện tại (không lọc theo search).
-   * Dùng để build danh sách slides cho Lightbox – giữ đúng thứ tự gốc.
-   */
   const imageEntries = useMemo(() => {
     return entries.filter(e => !e.is_dir && isImageFile(e.name))
   }, [entries])
 
-  /** Slides dành cho Lightbox – src dùng API thumbnail size=1920 để né lỗi 502, downloadUrl giữ nguyên cho nút tải */
   const lightboxSlides = useMemo(() => {
     if (!activeConfig) return []
-    const currentPath = breadcrumbs.at(-1).id
+    const currentPath = breadcrumbs.at(-1)?.id || '/'
     return imageEntries.map(e => {
       const thumbUrlSmall = buildThumbnailUrl(activeConfig, e, currentPath, userCode, userRole)
       const thumbUrlLarge = thumbUrlSmall ? thumbUrlSmall.replace('size=400', 'size=1920') : null
@@ -244,7 +227,9 @@ export default function Documents() {
     setSearchQuery('')
     const isGdrive = cfg?.type === 'gdrive'
     const rootId = isGdrive ? (cfg.remote_path || 'root') : '/'
-    setBreadcrumbs([{ id: rootId, name: 'Home' }])
+    
+    // Breadcrumbs starts with ROOT, then the Config name
+    setBreadcrumbs([{ id: 'ROOT', name: 'Home' }, { id: rootId, name: cfg.name }])
     setEntries([])
     if (cfg) browseFolder(cfg.id, rootId)
   }
@@ -256,7 +241,6 @@ export default function Documents() {
     browseStorage(configId, folderId, userCode, userRole)
       .then(r => { 
         setEntries(r.data?.data || [])
-        // Check upload permission from response headers or data
         const canUpload = r.data?.can_upload ?? (isAdmin || false)
         setCanUploadCurrent(canUpload)
       })
@@ -303,7 +287,6 @@ export default function Documents() {
     if (entry.is_dir) return
     const currentPath = breadcrumbs.at(-1).id
 
-    // ── Ảnh → mở Lightbox ────────────────────────────────────────
     if (isImageFile(entry.name)) {
       const idx = imageEntries.findIndex(e => e.name === entry.name)
       setLightboxIndex(idx >= 0 ? idx : 0)
@@ -311,7 +294,6 @@ export default function Documents() {
       return
     }
 
-    // ── Office / PDF → OnlyOffice viewer ────────────────────────
     if (isOfficeFile(entry.name)) {
       setOoFile({ ...entry, browsePath: currentPath, storageType: activeConfig.type })
       setOoConfigId(activeConfig.id)
@@ -319,7 +301,6 @@ export default function Documents() {
       return
     }
 
-    // ── Các file khác → FileViewer chung ────────────────────────
     const fileUrl = buildFileDownloadUrl(activeConfig, entry, currentPath, userCode, userRole)
     setViewerFile({
       name: entry.name,
@@ -369,7 +350,6 @@ export default function Documents() {
       const blob = await response.blob()
       triggerBlobDownload(blob, entry.name)
     } catch (err) {
-      // Nếu là file ảnh và endpoint download bị lỗi (502 bad gateway), fallback tải thông qua API thumbnail chất lượng cao
       if (isImg) {
         try {
           const thumbUrlLarge = buildThumbnailUrl(activeConfig, entry, currentPath, userCode, userRole)?.replace('size=400', 'size=1920')
@@ -419,6 +399,17 @@ export default function Documents() {
   function browseBreadcrumb(idx) {
     const target = breadcrumbs[idx]
     if (!target) return
+    
+    // Nếu bấm vào HOME (ROOT)
+    if (target.id === 'ROOT') {
+      setActiveConfig(null)
+      setBreadcrumbs([{ id: 'ROOT', name: 'Home' }])
+      setEntries([])
+      setSearchQuery('')
+      return
+    }
+
+    // Normal folder browse
     setBreadcrumbs(prev => prev.slice(0, idx + 1))
     browseFolder(activeConfig.id, target.id)
   }
@@ -428,10 +419,9 @@ export default function Documents() {
     browseBreadcrumb(breadcrumbs.length - 2)
   }
 
-  // ── Upload Functions ─────────────────────────────────────────────
+  // ── Upload & Create Folder Functions ─────────────────────────────
   async function handleUploadFiles(files) {
     if (!activeConfig || !files || files.length === 0) return
-    
     const currentPath = breadcrumbs.at(-1).id
     setUploading(true)
     setUploadError('')
@@ -459,12 +449,9 @@ export default function Documents() {
         
         if (!response.ok) {
           const errData = await response.json().catch(() => ({}))
-          // Handle Google Drive specific errors
           let errorMsg = errData.detail || `HTTP ${response.status}`
-          if (activeConfig.type === 'gdrive') {
-            if (errorMsg.includes('quota') || errorMsg.includes('dung lượng')) {
-              errorMsg = "Google Drive không đủ dung lượng. Vui lòng dùng Shared Drive hoặc liên hệ admin."
-            }
+          if (activeConfig.type === 'gdrive' && (errorMsg.includes('quota') || errorMsg.includes('dung lượng'))) {
+            errorMsg = "Google Drive không đủ dung lượng. Vui lòng dùng Shared Drive hoặc liên hệ admin."
           }
           throw new Error(errorMsg)
         }
@@ -477,45 +464,31 @@ export default function Documents() {
     }
     
     setUploading(false)
-    
     if (errors.length > 0) {
       setUploadError(errors.join('\n'))
     } else {
       setShowUpload(false)
-      // Refresh the file list
       browseFolder(activeConfig.id, currentPath)
     }
   }
 
-  function handleDragOver(e) {
-    e.preventDefault()
-    e.stopPropagation()
-  }
-
+  function handleDragOver(e) { e.preventDefault(); e.stopPropagation() }
   function handleDrop(e) {
-    e.preventDefault()
-    e.stopPropagation()
+    e.preventDefault(); e.stopPropagation()
     const files = Array.from(e.dataTransfer.files)
-    if (files.length > 0) {
-      handleUploadFiles(files)
-    }
+    if (files.length > 0) handleUploadFiles(files)
   }
-
   function handleFileSelect(e) {
     const files = Array.from(e.target.files)
-    if (files.length > 0) {
-      handleUploadFiles(files)
-    }
+    if (files.length > 0) handleUploadFiles(files)
     e.target.value = ''
   }
 
   async function handleCreateFolder() {
     if (!newFolderName.trim() || !activeConfig) return
-    
     const currentPath = breadcrumbs.at(-1).id
     setUploading(true)
     setUploadError('')
-    
     try {
       const response = await fetch(
         `/api/documents/create-folder?config_id=${activeConfig.id}&parent_path=${encodeURIComponent(currentPath)}&user_code=${userCode}&user_role=${userRole}`,
@@ -546,7 +519,6 @@ export default function Documents() {
 
   async function handleDeleteEntry(entry) {
     if (!activeConfig || !confirm(`Xóa ${entry.is_dir ? 'thư mục' : 'file'} "${entry.name}"?`)) return
-    
     const currentPath = breadcrumbs.at(-1).id
     const fullPath = entry.is_dir 
       ? (currentPath === '/' ? entry.name : `${currentPath}/${entry.name}`)
@@ -554,28 +526,22 @@ export default function Documents() {
     
     setUploading(true)
     setUploadError('')
-    
     try {
       let file_id = ''
       if (activeConfig.type === 'gdrive' && !entry.is_dir) {
         file_id = entry.id || ''
       }
-      
       const response = await fetch(
         `/api/documents/delete?config_id=${activeConfig.id}&item_path=${encodeURIComponent(fullPath)}&is_dir=${entry.is_dir}&file_id=${encodeURIComponent(file_id)}&user_code=${userCode}&user_role=${userRole}`,
         {
           method: 'DELETE',
-          headers: {
-            'Authorization': 'Bearer ' + sessionStorage.getItem('token')
-          }
+          headers: { 'Authorization': 'Bearer ' + sessionStorage.getItem('token') }
         }
       )
-      
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}))
         throw new Error(errData.detail || `HTTP ${response.status}`)
       }
-      
       browseFolder(activeConfig.id, currentPath)
     } catch (err) {
       setUploadError(err.message)
@@ -584,6 +550,7 @@ export default function Documents() {
     }
   }
 
+  // ── Config Functions ─────────────────────────────────────────────
   function openConfigForm(cfg) {
     setTestMsg('')
     setTestOk(false)
@@ -616,7 +583,10 @@ export default function Documents() {
     if (!confirm('Xóa cấu hình storage này?')) return
     try {
       await deleteStorageConfig(id)
-      if (activeConfig?.id === id) setActiveConfig(null)
+      if (activeConfig?.id === id) {
+        setActiveConfig(null)
+        setBreadcrumbs([{ id: 'ROOT', name: 'Home' }])
+      }
       loadConfigs()
     } catch (e) { alert('Xóa thất bại') }
   }
@@ -669,11 +639,8 @@ export default function Documents() {
       try {
         const data = JSON.parse(ev.target.result)
         setConfigForm({ ...INITIAL_CONFIG, ...data })
-        setTestMsg('')
-        setTestOk(false)
-      } catch {
-        alert('File JSON không hợp lệ')
-      }
+        setTestMsg(''); setTestOk(false)
+      } catch { alert('File JSON không hợp lệ') }
     }
     reader.readAsText(file)
     e.target.value = ''
@@ -696,6 +663,8 @@ export default function Documents() {
     catch (e) { alert('Xóa thất bại') }
   }
 
+
+  // ── Render ───────────────────────────────────────────────────────
   return (
     <div className="doc-wrap">
       {/* ─── Header ───────────────────────────────────────────── */}
@@ -707,64 +676,39 @@ export default function Documents() {
         <div className="doc-header-right">
           {isAdmin && (
             <button className="doc-btn doc-btn-secondary" onClick={() => openConfigForm(null)}>
-              <Plus size={15} /> <span>Cấu hình Storage</span>
+              <Plus size={15} /> <span>Thêm Storage (Ổ đĩa)</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* ─── Storage Tabs ─────────────────────────────────────── */}
-      {configs.length > 0 && (
-        <div className="doc-tabs">
-          {configs.map(cfg => {
-            const IconComp = cfg.type === 'gdrive' ? Cloud : cfg.type === 'smb' ? Server : Wifi
+      {/* ─── Toolbar ──────────────────────────────────────────── */}
+      <div className="doc-toolbar">
+        <div className="doc-breadcrumb">
+          <span className="doc-breadcrumb-home" onClick={() => browseBreadcrumb(0)} title="Home">
+            <Home size={14} />
+          </span>
+          {breadcrumbs.map((b, i) => {
+            // Không render chữ Home nữa vì đã dùng Icon, bắt đầu render từ ổ đĩa (index > 0)
+            if (i === 0) return null 
             return (
-              <div
-                key={cfg.id}
-                className={`doc-tab${activeConfig?.id === cfg.id ? ' active' : ''}`}
-                onClick={() => selectConfig(cfg)}
-              >
-                <IconComp size={14} />
-                <span className="doc-tab-label">{cfg.name}</span>
-                {isAdmin && (
-                  <button className="doc-tab-close" onClick={e => { e.stopPropagation(); removeConfig(cfg.id) }} title="Xóa">
-                    <Trash2 size={12} />
-                  </button>
-                )}
-              </div>
+              <React.Fragment key={b.id + i}>
+                <ChevronRight size={11} className="doc-bc-sep" />
+                <span
+                  className={`doc-bc-item${i === breadcrumbs.length - 1 ? ' active' : ''}`}
+                  onClick={() => browseBreadcrumb(i)}
+                >
+                  {b.name}
+                </span>
+              </React.Fragment>
             )
           })}
         </div>
-      )}
-
-      {configs.length === 0 && (
-        <div className="doc-empty-config">
-          <Folder size={48} />
-          <p>Chưa có cấu hình storage nào.</p>
-          {isAdmin && <button className="doc-btn doc-btn-primary" onClick={() => openConfigForm(null)}><Plus size={15} /> Thêm cấu hình</button>}
-        </div>
-      )}
-
-      {/* ─── File Browser ────────────────────────────────────── */}
-      {activeConfig && (
-        <>
-          {/* Toolbar */}
-          <div className="doc-toolbar">
-            <div className="doc-breadcrumb">
-              <span className="doc-breadcrumb-home" onClick={() => browseBreadcrumb(0)}><Home size={14} /></span>
-              {breadcrumbs.map((b, i) => (
-                <React.Fragment key={b.id}>
-                  <ChevronRight size={11} className="doc-bc-sep" />
-                  <span
-                    className={`doc-bc-item${i === breadcrumbs.length - 1 ? ' active' : ''}`}
-                    onClick={() => browseBreadcrumb(i)}
-                  >
-                    {b.name}
-                  </span>
-                </React.Fragment>
-              ))}
-            </div>
-            <div className="doc-toolbar-actions">
+        
+        <div className="doc-toolbar-actions">
+          {/* Các nút này chỉ hiện khi đã chui vào 1 ổ đĩa (activeConfig != null) */}
+          {activeConfig && (
+            <>
               <div className="doc-search-wrap-mini">
                 <Search size={13} className="doc-search-mini-icon" />
                 <input type="text" className="doc-search-mini-input"
@@ -787,27 +731,112 @@ export default function Documents() {
                 </div>
               )}
               {isAdmin && (
-                <button className="doc-btn doc-btn-ghost" onClick={() => loadPerms(activeConfig.id)} title="Phân quyền">
+                <button className="doc-btn doc-btn-ghost" onClick={() => loadPerms(activeConfig.id)} title="Phân quyền ổ đĩa">
                   <Shield size={15} />
                 </button>
               )}
-              <div className="doc-view-toggle">
-                <button className={`doc-view-btn${viewMode === 'list' ? ' active' : ''}`}
-                  onClick={() => setViewMode('list')} title="Xem dạng danh sách">
-                  <List size={15} />
-                </button>
-                <button className={`doc-view-btn${viewMode === 'grid' ? ' active' : ''}`}
-                  onClick={() => setViewMode('grid')} title="Xem dạng lưới">
-                  <LayoutGrid size={15} />
-                </button>
-              </div>
-              <button className="doc-btn doc-btn-ghost doc-btn-icon" onClick={() => browseFolder(activeConfig.id, breadcrumbs.at(-1).id)} title="Làm mới">
-                <RefreshCw size={15} />
-              </button>
-            </div>
+            </>
+          )}
+          
+          <div className="doc-view-toggle">
+            <button className={`doc-view-btn${viewMode === 'list' ? ' active' : ''}`}
+              onClick={() => setViewMode('list')} title="Xem dạng danh sách">
+              <List size={15} />
+            </button>
+            <button className={`doc-view-btn${viewMode === 'grid' ? ' active' : ''}`}
+              onClick={() => setViewMode('grid')} title="Xem dạng lưới">
+              <LayoutGrid size={15} />
+            </button>
           </div>
+          <button className="doc-btn doc-btn-ghost doc-btn-icon" onClick={() => {
+            if (activeConfig) browseFolder(activeConfig.id, breadcrumbs.at(-1).id)
+            else loadConfigs()
+          }} title="Làm mới">
+            <RefreshCw size={15} />
+          </button>
+        </div>
+      </div>
 
-          {/* Error State */}
+      {/* ─── ROOT VIEW: Xem danh sách Storage như thư mục gốc ───── */}
+      {!activeConfig && (
+        <div className="doc-root-view" style={{ flex: 1, overflow: 'auto' }}>
+          {configs.length === 0 ? (
+            <div className="doc-grid-state doc-grid-empty">
+              <Server size={48} />
+              <p>Chưa có ổ đĩa lưu trữ nào được cấu hình.</p>
+            </div>
+          ) : viewMode === 'grid' ? (
+            <div className="doc-card-grid">
+              {configs.map(cfg => {
+                const IconComp = cfg.type === 'gdrive' ? Cloud : (cfg.type === 'smb' ? Server : Wifi)
+                return (
+                  <div key={cfg.id} className="doc-card doc-card-dir" onClick={() => selectConfig(cfg)}>
+                    <div className="doc-card-icon">
+                      <IconComp size={40} color="#3b82f6" />
+                    </div>
+                    <div className="doc-card-name" title={cfg.name}>{cfg.name}</div>
+                    <div className="doc-card-meta">
+                      {cfg.type.toUpperCase()} Storage
+                    </div>
+                    {isAdmin && (
+                      <>
+                        <button className="doc-card-preview" style={{right: '2.5rem'}}
+                          onClick={(e) => { e.stopPropagation(); openConfigForm(cfg); }} title="Cài đặt">
+                          <Settings size={14} />
+                        </button>
+                        <button className="doc-card-share" style={{right: '0.5rem', color: '#dc2626'}}
+                          onClick={(e) => { e.stopPropagation(); removeConfig(cfg.id); }} title="Xóa ổ đĩa">
+                          <Trash2 size={14} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="doc-grid">
+              <div className="doc-grid-header">
+                <span className="doc-col-name">Tên Ổ đĩa</span>
+                <span className="doc-col-size">Loại Storage</span>
+                <span className="doc-col-date"></span>
+                <span className="doc-col-actions"></span>
+              </div>
+              <div className="doc-grid-body">
+                {configs.map(cfg => {
+                  const IconComp = cfg.type === 'gdrive' ? Cloud : (cfg.type === 'smb' ? Server : Wifi)
+                  return (
+                    <div key={cfg.id} className="doc-grid-row" onClick={() => selectConfig(cfg)} style={{ cursor: 'pointer' }}>
+                      <div className="doc-col-name">
+                        <IconComp size={18} style={{ color: '#3b82f6', flexShrink: 0 }} />
+                        <span className="doc-entry-name" style={{ fontWeight: 600 }}>{cfg.name}</span>
+                      </div>
+                      <div className="doc-col-size">{cfg.type.toUpperCase()}</div>
+                      <div className="doc-col-date"></div>
+                      <div className="doc-col-actions">
+                        {isAdmin && (
+                          <>
+                            <button className="doc-row-action" title="Cài đặt" onClick={(e) => { e.stopPropagation(); openConfigForm(cfg) }}>
+                              <Settings size={14} />
+                            </button>
+                            <button className="doc-row-action" title="Xóa" style={{color: '#dc2626'}} onClick={(e) => { e.stopPropagation(); removeConfig(cfg.id) }}>
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── FILE BROWSER VIEW ──────────────────────────────────── */}
+      {activeConfig && (
+        <>
           {browseError && !loading && (
             <div className="doc-grid-state doc-grid-error">
               <Folder size={40} />
@@ -816,7 +845,6 @@ export default function Documents() {
             </div>
           )}
 
-          {/* Empty State */}
           {!loading && !browseError && filteredEntries.length === 0 && (
             <div className="doc-grid-state doc-grid-empty">
               <FolderOpen size={48} />
@@ -824,7 +852,6 @@ export default function Documents() {
             </div>
           )}
 
-          {/* Loading Skeleton */}
           {loading && (
             viewMode === 'grid' ? <SkeletonCards count={8} /> : (
               <div className="doc-grid">
@@ -839,10 +866,10 @@ export default function Documents() {
             )
           )}
 
-          {/* ─── Grid View (Cards) ───────────────────────────── */}
+          {/* Grid View */}
           {!loading && !browseError && viewMode === 'grid' && filteredEntries.length > 0 && (
             <div className="doc-card-grid">
-              {breadcrumbs.length > 1 && (
+              {breadcrumbs.length > 2 && (
                 <div className="doc-card doc-card-back" onClick={goBack}>
                   <div className="doc-card-icon"><FolderOpen size={32} color="#94a3b8" /></div>
                   <div className="doc-card-name">.. / Quay lại</div>
@@ -852,61 +879,39 @@ export default function Documents() {
                 const { icon: IconComp, color: iconColor } = getFileIcon(e.name, e.is_dir)
                 const currentPath = breadcrumbs.at(-1).id
                 const isImg = !e.is_dir && isImageFile(e.name)
-                const thumbUrl = isImg
-                  ? buildThumbnailUrl(activeConfig, e, currentPath, userCode, userRole)
-                  : null
+                const thumbUrl = isImg ? buildThumbnailUrl(activeConfig, e, currentPath, userCode, userRole) : null
                 return (
-                  <div
-                    key={i}
-                    className={`doc-card${e.is_dir ? ' doc-card-dir' : ''}${isImg ? ' doc-card-image' : ''}`}
+                  <div key={i} className={`doc-card${e.is_dir ? ' doc-card-dir' : ''}${isImg ? ' doc-card-image' : ''}`}
                     onClick={() => e.is_dir ? openFolder(e) : handlePreviewFile(e)}
-                    onContextMenu={(ev) => handleContextMenu(ev, e)}
-                  >
-                    {/* ── Card Icon / Thumbnail ─────────────────── */}
+                    onContextMenu={(ev) => handleContextMenu(ev, e)}>
                     <div className="doc-card-icon">
                       {isImg && thumbUrl ? (
-                        <img
-                          src={thumbUrl}
-                          alt={e.name}
-                          loading="lazy"
-                          className="doc-card-thumb"
+                        <img src={thumbUrl} alt={e.name} loading="lazy" className="doc-card-thumb"
                           onError={(ev) => {
                             ev.currentTarget.style.display = 'none'
                             ev.currentTarget.nextSibling.style.display = 'flex'
                           }}
                         />
                       ) : null}
-                      {/* Fallback icon (luôn render, ẩn nếu thumb OK) */}
-                      <span
-                        className="doc-card-icon-fallback"
-                        style={{ display: isImg && thumbUrl ? 'none' : 'flex' }}
-                      >
+                      <span className="doc-card-icon-fallback" style={{ display: isImg && thumbUrl ? 'none' : 'flex' }}>
                         <IconComp size={36} style={{ color: iconColor }} />
                       </span>
                     </div>
-
                     <div className="doc-card-name" title={e.name}>{e.name}</div>
                     <div className="doc-card-meta">
                       {e.is_dir ? '' : formatSize(e.size)}
                       {!e.is_dir && e.modified ? ` · ${formatDate(e.modified)}` : ''}
                     </div>
-
                     {!e.is_dir && canPreviewFile(e.name) && (
-                      <button className="doc-card-preview"
-                        onClick={(ev) => { ev.stopPropagation(); handlePreviewFile(e) }}
-                        title="Xem trước">
+                      <button className="doc-card-preview" onClick={(ev) => { ev.stopPropagation(); handlePreviewFile(e) }} title="Xem trước">
                         <Eye size={14} />
                       </button>
                     )}
-                    <button className="doc-card-share"
-                      onClick={(ev) => { ev.stopPropagation(); handleShareEntry(e) }}
-                      title={e.is_dir ? 'Chia sẻ thư mục' : 'Chia sẻ'}>
+                    <button className="doc-card-share" onClick={(ev) => { ev.stopPropagation(); handleShareEntry(e) }} title={e.is_dir ? 'Chia sẻ thư mục' : 'Chia sẻ'}>
                       <Share2 size={14} />
                     </button>
                     {!e.is_dir && (
-                      <button className="doc-card-download"
-                        onClick={(ev) => { ev.stopPropagation(); handleDownloadFile(e) }}
-                        title="Tải xuống">
+                      <button className="doc-card-download" onClick={(ev) => { ev.stopPropagation(); handleDownloadFile(e) }} title="Tải xuống">
                         <Download size={14} />
                       </button>
                     )}
@@ -916,7 +921,7 @@ export default function Documents() {
             </div>
           )}
 
-          {/* ─── List View ───────────────────────────────────── */}
+          {/* List View */}
           {!loading && !browseError && viewMode === 'list' && filteredEntries.length > 0 && (
             <div className="doc-grid">
               <div className="doc-grid-header">
@@ -926,8 +931,8 @@ export default function Documents() {
                 <span className="doc-col-actions" />
               </div>
               <div className="doc-grid-body">
-                {breadcrumbs.length > 1 && (
-                  <div className="doc-grid-row doc-back-row" onClick={goBack}>
+                {breadcrumbs.length > 2 && (
+                  <div className="doc-grid-row doc-back-row" onClick={goBack} style={{ cursor: 'pointer' }}>
                     <div className="doc-col-name"><span className="doc-back-link">.. / Quay lại</span></div>
                     <div className="doc-col-size" />
                     <div className="doc-col-date" />
@@ -938,26 +943,16 @@ export default function Documents() {
                   const { icon: IconComp, color: iconColor } = getFileIcon(e.name, e.is_dir)
                   const currentPath = breadcrumbs.at(-1).id
                   const isImg = !e.is_dir && isImageFile(e.name)
-                  const thumbUrl = isImg
-                    ? buildThumbnailUrl(activeConfig, e, currentPath, userCode, userRole)
-                    : null
+                  const thumbUrl = isImg ? buildThumbnailUrl(activeConfig, e, currentPath, userCode, userRole) : null
                   return (
-                    <div
-                      key={i}
-                      className="doc-grid-row"
+                    <div key={i} className="doc-grid-row"
                       onClick={() => e.is_dir ? openFolder(e) : (isImg ? handlePreviewFile(e) : undefined)}
                       onContextMenu={(ev) => handleContextMenu(ev, e)}
-                      style={{ cursor: (e.is_dir || isImg) ? 'pointer' : 'default' }}
-                    >
+                      style={{ cursor: (e.is_dir || isImg) ? 'pointer' : 'default' }}>
                       <div className="doc-col-name">
-                        {/* Mini-thumbnail cho ảnh trong List view */}
                         {isImg && thumbUrl ? (
                           <div className="doc-list-thumb-wrap">
-                            <img
-                              src={thumbUrl}
-                              alt={e.name}
-                              loading="lazy"
-                              className="doc-list-thumb"
+                            <img src={thumbUrl} alt={e.name} loading="lazy" className="doc-list-thumb"
                               onError={(ev) => {
                                 ev.currentTarget.style.display = 'none'
                                 ev.currentTarget.parentElement.nextSibling?.removeAttribute('style')
@@ -978,18 +973,15 @@ export default function Documents() {
                       <div className="doc-col-date">{formatDate(e.modified)}</div>
                       <div className="doc-col-actions">
                         {!e.is_dir && canPreviewFile(e.name) && (
-                          <button className="doc-row-action" title="Xem trước"
-                            onClick={(ev) => { ev.stopPropagation(); handlePreviewFile(e); }}>
+                          <button className="doc-row-action" title="Xem trước" onClick={(ev) => { ev.stopPropagation(); handlePreviewFile(e); }}>
                             <Eye size={14} />
                           </button>
                         )}
-                        <button className="doc-row-action" title={e.is_dir ? 'Chia sẻ thư mục' : 'Chia sẻ'}
-                          onClick={(ev) => { ev.stopPropagation(); handleShareEntry(e); }}>
+                        <button className="doc-row-action" title={e.is_dir ? 'Chia sẻ thư mục' : 'Chia sẻ'} onClick={(ev) => { ev.stopPropagation(); handleShareEntry(e); }}>
                           <Share2 size={14} />
                         </button>
                         {!e.is_dir && (
-                          <button className="doc-row-action" title="Tải xuống"
-                            onClick={(ev) => { ev.stopPropagation(); handleDownloadFile(e); }}>
+                          <button className="doc-row-action" title="Tải xuống" onClick={(ev) => { ev.stopPropagation(); handleDownloadFile(e); }}>
                             <Download size={14} />
                           </button>
                         )}
@@ -1008,16 +1000,12 @@ export default function Documents() {
       {showConfig && (
         <div className="side-panel open panel-config">
           <div className="panel-body">
-            <h3>{editingConfig ? 'Sửa cấu hình' : 'Thêm cấu hình Storage'}</h3>
+            <h3>{editingConfig ? 'Sửa cấu hình' : 'Thêm Ổ đĩa Storage'}</h3>
             <p className="panel-subtitle">Cấu hình kết nối tới máy chủ file qua SMB, FTP, hoặc Google Drive.</p>
 
             <div className="btn-import-export">
-              <button className="btn-ie" onClick={() => fileInputRef.current?.click()}>
-                <Upload size={13} /> Import JSON
-              </button>
-              <button className="btn-ie" onClick={exportConfigToFile}>
-                <Download size={13} /> Export JSON
-              </button>
+              <button className="btn-ie" onClick={() => fileInputRef.current?.click()}><Upload size={13} /> Import JSON</button>
+              <button className="btn-ie" onClick={exportConfigToFile}><Download size={13} /> Export JSON</button>
             </div>
             <input ref={fileInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={importConfigFromFile} />
 
@@ -1166,12 +1154,9 @@ export default function Documents() {
         </div>
       )}
 
-      {/* ─── Context Menu ───────────────────────────────────────── */}
+      {/* Context Menu */}
       {contextMenu.visible && (
-        <div
-          className="doc-context-menu"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-        >
+        <div className="doc-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
           {!contextMenu.file.is_dir && (
             <div className="doc-context-menu-item" onClick={() => { handlePreviewFile(contextMenu.file); setContextMenu({ visible: false }) }}>
               <Eye size={15} /> Xem trước
@@ -1188,143 +1173,45 @@ export default function Documents() {
         </div>
       )}
 
-      {/* ─── Upload Modal ───────────────────────────────────────── */}
+      {/* Upload */}
       {showUpload && (
         <>
           <div className="panel-overlay open" onClick={() => !uploading && setShowUpload(false)} />
           <div className="side-panel open panel-upload">
             <div className="panel-body">
               <h3 style={{ marginBottom: '0.5rem' }}>Upload File</h3>
-              <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1rem' }}>
-                Thư mục đích: {breadcrumbs.at(-1)?.name || '/'}
-              </p>
+              <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1rem' }}>Thư mục đích: {breadcrumbs.at(-1)?.name || '/'}</p>
 
-              {/* Drop Zone */}
-              <div
-                className="upload-dropzone"
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-                onClick={() => !uploading && document.getElementById('file-input-upload')?.click()}
-                style={{
-                  border: '2px dashed #cbd5e1',
-                  borderRadius: 12,
-                  padding: '2rem',
-                  textAlign: 'center',
-                  cursor: uploading ? 'not-allowed' : 'pointer',
-                  background: '#f8fafc',
-                  transition: 'all 0.2s',
-                  opacity: uploading ? 0.6 : 1
-                }}
-              >
+              <div className="upload-dropzone" onDragOver={handleDragOver} onDrop={handleDrop} onClick={() => !uploading && document.getElementById('file-input-upload')?.click()}
+                style={{ border: '2px dashed #cbd5e1', borderRadius: 12, padding: '2rem', textAlign: 'center', cursor: uploading ? 'not-allowed' : 'pointer', background: '#f8fafc', transition: 'all 0.2s', opacity: uploading ? 0.6 : 1 }}>
                 <UploadCloud size={48} style={{ color: '#94a3b8', marginBottom: '0.5rem' }} />
-                <p style={{ color: '#64748b', marginBottom: '0.5rem' }}>
-                  {uploading ? 'Đang upload...' : 'Kéo thả file vào đây hoặc click để chọn'}
-                </p>
-                <p style={{ color: '#94a3b8', fontSize: '0.75rem' }}>
-                  Hỗ trợ mọi loại file
-                </p>
+                <p style={{ color: '#64748b', marginBottom: '0.5rem' }}>{uploading ? 'Đang upload...' : 'Kéo thả file vào đây hoặc click để chọn'}</p>
               </div>
-              <input
-                id="file-input-upload"
-                type="file"
-                multiple
-                style={{ display: 'none' }}
-                onChange={handleFileSelect}
-                disabled={uploading}
-              />
+              <input id="file-input-upload" type="file" multiple style={{ display: 'none' }} onChange={handleFileSelect} disabled={uploading} />
 
-              {/* Progress Bar */}
               {uploading && (
                 <div style={{ marginTop: '1rem' }}>
-                  <div style={{
-                    height: 8,
-                    background: '#e2e8f0',
-                    borderRadius: 4,
-                    overflow: 'hidden'
-                  }}>
-                    <div style={{
-                      height: '100%',
-                      width: `${uploadProgress}%`,
-                      background: 'linear-gradient(90deg, #3b82f6, #8b5cf6)',
-                      transition: 'width 0.3s'
-                    }} />
+                  <div style={{ height: 8, background: '#e2e8f0', borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${uploadProgress}%`, background: 'linear-gradient(90deg, #3b82f6, #8b5cf6)', transition: 'width 0.3s' }} />
                   </div>
-                  <p style={{ textAlign: 'center', color: '#64748b', fontSize: '0.8rem', marginTop: '0.5rem' }}>
-                    {uploadProgress}%
-                  </p>
+                  <p style={{ textAlign: 'center', color: '#64748b', fontSize: '0.8rem', marginTop: '0.5rem' }}>{uploadProgress}%</p>
                 </div>
               )}
 
-              {/* Error Message */}
-              {uploadError && (
-                <div style={{
-                  marginTop: '1rem',
-                  padding: '0.75rem',
-                  background: '#fef2f2',
-                  border: '1px solid #fecaca',
-                  borderRadius: 8,
-                  color: '#dc2626',
-                  fontSize: '0.8rem',
-                  whiteSpace: 'pre-wrap'
-                }}>
-                  {uploadError}
-                </div>
-              )}
+              {uploadError && <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#dc2626', fontSize: '0.8rem', whiteSpace: 'pre-wrap' }}>{uploadError}</div>}
 
-              {/* Actions */}
               <div style={{ marginTop: '1.5rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                <button
-                  className="salary-btn salary-btn-secondary"
-                  onClick={() => { setShowUpload(false); setUploadError(''); }}
-                  disabled={uploading}
-                >
-                  Đóng
-                </button>
+                <button className="salary-btn salary-btn-secondary" onClick={() => { setShowUpload(false); setUploadError(''); }} disabled={uploading}>Đóng</button>
               </div>
             </div>
           </div>
         </>
       )}
 
-      {/* ─── File Viewer ────────────────────────────────────────── */}
-      <FileViewer
-        file={viewerFile}
-        isOpen={viewerOpen}
-        onClose={() => {
-          setViewerOpen(false)
-          setViewerFile(null)
-        }}
-      />
-
-      {/* ─── ONLYOFFICE Editor ──────────────────────────────────── */}
-      <OnlyOfficeViewer
-        file={ooFile}
-        configId={ooConfigId}
-        isOpen={ooOpen}
-        onClose={() => {
-          setOoOpen(false)
-          setOoFile(null)
-          setOoConfigId(null)
-        }}
-      />
-
-      {/* ─── Share Document Modal ───────────────────────────────── */}
-      <ShareDocument
-        file={shareFile}
-        isOpen={shareOpen}
-        onClose={() => {
-          setShareOpen(false)
-          setShareFile(null)
-        }}
-      />
-
-      {/* ─── Image Lightbox ─────────────────────────────────────── */}
-      <ImageLightbox
-        open={showLightbox}
-        onClose={() => setShowLightbox(false)}
-        slides={lightboxSlides}
-        index={lightboxIndex}
-      />
+      <FileViewer file={viewerFile} isOpen={viewerOpen} onClose={() => { setViewerOpen(false); setViewerFile(null) }} />
+      <OnlyOfficeViewer file={ooFile} configId={ooConfigId} isOpen={ooOpen} onClose={() => { setOoOpen(false); setOoFile(null); setOoConfigId(null) }} />
+      <ShareDocument file={shareFile} isOpen={shareOpen} onClose={() => { setShareOpen(false); setShareFile(null) }} />
+      <ImageLightbox open={showLightbox} onClose={() => setShowLightbox(false)} slides={lightboxSlides} index={lightboxIndex} />
     </div>
   )
 }
