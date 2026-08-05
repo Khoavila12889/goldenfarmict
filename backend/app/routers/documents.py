@@ -208,7 +208,12 @@ def _test_gdrive(cfg):
         creds = _build_gdrive_creds(cfg)
         service = build('drive', 'v3', credentials=creds)
         folder_id = cfg['remote_path'] if cfg['remote_path'] else 'root'
-        service.files().get(fileId=folder_id, fields="id, name").execute()
+        if folder_id == 'root':
+            service.files().get(fileId='root', fields="id, name").execute()
+        elif _gdrive_is_drive_id(service, folder_id):
+            service.drives().get(driveId=folder_id).execute()
+        else:
+            service.files().get(fileId=folder_id, fields="id, name", supportsAllDrives=True).execute()
         return {"success": True, "message": "Google Drive connected successfully (using quota delegation)"}
     except json.JSONDecodeError:
         return {"success": False, "message": "Service Account JSON không hợp lệ"}
@@ -529,14 +534,28 @@ def _list_folders_gdrive(cfg):
 
     folders = []
     root_id = cfg['remote_path'] if cfg['remote_path'] else 'root'
+    root_is_drive = _gdrive_is_drive_id(service, root_id)
     
-    def list_recursive(parent_id, current_path=''):
+    def list_recursive(parent_id, current_path='', parent_is_drive=False):
         try:
-            results = service.files().list(
-                q=f"'{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
-                fields="files(id, name)",
-                pageSize=1000
-            ).execute()
+            if parent_is_drive:
+                results = service.files().list(
+                    corpora='drive',
+                    driveId=parent_id,
+                    includeItemsFromAllDrives=True,
+                    supportsAllDrives=True,
+                    q="'root' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+                    fields="files(id, name)",
+                    pageSize=1000
+                ).execute()
+            else:
+                results = service.files().list(
+                    q=f"'{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+                    fields="files(id, name)",
+                    pageSize=1000,
+                    includeItemsFromAllDrives=True,
+                    supportsAllDrives=True
+                ).execute()
             
             for f in results.get('files', []):
                 folder_path = os.path.join(current_path, f['name']).replace('\\', '/')
@@ -545,12 +564,12 @@ def _list_folders_gdrive(cfg):
                     "name": f['name'],
                     "full_path": folder_path
                 })
-                list_recursive(f['id'], folder_path)
+                list_recursive(f['id'], folder_path, False)
         except:
             pass
     
     try:
-        list_recursive(root_id)
+        list_recursive(root_id, '', root_is_drive)
     except:
         pass
     
@@ -603,12 +622,28 @@ def _browse_gdrive(cfg, folder_id):
     current_id = folder_id if folder_id and folder_id not in ('/', '') else (cfg['remote_path'] or 'root')
 
     try:
-        results = service.files().list(
-            q=f"'{current_id}' in parents and trashed=false",
-            fields="files(id, name, mimeType, size, modifiedTime, thumbnailLink)",
-            pageSize=500,
-            orderBy="folder,name"
-        ).execute()
+        if current_id != 'root' and _gdrive_is_drive_id(service, current_id):
+            # Root of the storage is a Shared Drive (Team Drive): list top-level
+            # items with corpora='drive' + driveId.
+            results = service.files().list(
+                corpora='drive',
+                driveId=current_id,
+                includeItemsFromAllDrives=True,
+                supportsAllDrives=True,
+                q="'root' in parents and trashed=false",
+                fields="files(id, name, mimeType, size, modifiedTime, thumbnailLink)",
+                pageSize=500,
+                orderBy="folder,name"
+            ).execute()
+        else:
+            results = service.files().list(
+                q=f"'{current_id}' in parents and trashed=false",
+                fields="files(id, name, mimeType, size, modifiedTime, thumbnailLink)",
+                pageSize=500,
+                orderBy="folder,name",
+                includeItemsFromAllDrives=True,
+                supportsAllDrives=True
+            ).execute()
     except Exception as e:
         raise HTTPException(502, f"Google Drive list error: {str(e)}")
 
@@ -1000,16 +1035,66 @@ def _gdrive_service(cfg):
         raise HTTPException(502, f"Google Drive auth error: {str(e)}")
 
 
+def _gdrive_is_drive_id(service, node_id: str) -> bool:
+    """True when `node_id` is a Shared Drive ID (not a folder/file ID).
+
+    Shared Drive IDs (Team Drive) must be handled with `corpora='drive'` +
+    `driveId`, while regular folder IDs use `'<id>' in parents`.
+    """
+    if not node_id or node_id == 'root':
+        return False
+    try:
+        service.drives().get(driveId=node_id).execute()
+        return True
+    except Exception:
+        return False
+
+
+def _gdrive_drive_root_folder_id(service, drive_id: str):
+    """Return the root folder ID of a Shared Drive.
+
+    The Drive API has no direct method for this, but the `parents` of any
+    top-level item ('root' in parents) equals the drive's root folder ID.
+    Returns None when the drive is empty or the lookup fails.
+    """
+    try:
+        results = service.files().list(
+            corpora='drive',
+            driveId=drive_id,
+            includeItemsFromAllDrives=True,
+            supportsAllDrives=True,
+            q="'root' in parents",
+            pageSize=1,
+            fields="files(parents)"
+        ).execute()
+        files = results.get('files', [])
+        if files and files[0].get('parents'):
+            return files[0]['parents'][0]
+    except Exception:
+        pass
+    return None
+
+
 def _gdrive_folder_within(cfg, root_folder_id: str, folder_id: str) -> bool:
     """True when `folder_id` is `root_folder_id` or a descendant of it.
 
     Walks the `parents` chain up to the drive root, so a guest can never
     browse an arbitrary folder id that lives outside the shared folder.
+    Works for both regular folders and Shared Drive roots (matched by driveId).
     """
     if not folder_id:
         return False
     root = (root_folder_id or '').strip() or (cfg.get('remote_path') or 'root')
     svc = _gdrive_service(cfg)
+
+    if root != 'root' and _gdrive_is_drive_id(svc, root):
+        # Root is a Shared Drive: any item inside it has this driveId.
+        try:
+            meta = svc.files().get(fileId=folder_id, fields="driveId", supportsAllDrives=True).execute()
+            return meta.get('driveId') == root
+        except Exception:
+            return False
+
     current = folder_id
     seen = set()
     for _ in range(200):
@@ -1019,7 +1104,7 @@ def _gdrive_folder_within(cfg, root_folder_id: str, folder_id: str) -> bool:
             return False
         seen.add(current)
         try:
-            meta = svc.files().get(fileId=current, fields="parents").execute()
+            meta = svc.files().get(fileId=current, fields="parents", supportsAllDrives=True).execute()
         except Exception:
             return False
         parents = meta.get('parents') or []
@@ -1303,7 +1388,7 @@ def _gdrive_download_stream(service, file_id):
 
     Returns (filename, mime_type, BytesIO).
     """
-    meta = service.files().get(fileId=file_id, fields="name, mimeType").execute()
+    meta = service.files().get(fileId=file_id, fields="name, mimeType", supportsAllDrives=True).execute()
     filename = meta.get('name', 'download')
     mime = meta.get('mimeType', 'application/octet-stream')
     buf = io.BytesIO()
@@ -1312,11 +1397,11 @@ def _gdrive_download_stream(service, file_id):
         export_mime = _GDRIVE_EXPORT_MIME.get(mime)
         if not export_mime:
             raise HTTPException(400, f"Google native format chưa được hỗ trợ xuất: {mime}")
-        buf.write(service.files().export(fileId=file_id, mimeType=export_mime).execute())
+        buf.write(service.files().export(fileId=file_id, mimeType=export_mime, supportsAllDrives=True).execute())
         mime = export_mime
     else:
         from googleapiclient.http import MediaIoBaseDownload
-        dl = MediaIoBaseDownload(buf, service.files().get_media(fileId=file_id))
+        dl = MediaIoBaseDownload(buf, service.files().get_media(fileId=file_id, supportsAllDrives=True))
         done = False
         while not done:
             _, done = dl.next_chunk()
@@ -1572,7 +1657,7 @@ def _put_file_bytes(cfg, file_path: str, data: bytes, file_id: str = ''):
             svc = build('drive', 'v3', credentials=creds)
             from googleapiclient.http import MediaIoBaseUpload
             media = MediaIoBaseUpload(_io.BytesIO(data), mimetype='application/octet-stream', resumable=True)
-            svc.files().update(fileId=file_id, media_body=media).execute()
+            svc.files().update(fileId=file_id, media_body=media, supportsAllDrives=True).execute()
     except Exception as e:
         raise HTTPException(502, f"Failed to write file: {str(e)}")
 
@@ -2058,6 +2143,14 @@ async def _upload_gdrive(cfg, folder_path: str, filename: str, content: bytes, m
     # For Shared Drive, use 'drive' parameter in file creation
     parent_id = folder_path.strip('/') if folder_path and folder_path != '/' else cfg['remote_path'] or 'root'
 
+    # When the target parent is a Shared Drive ID, resolve it to the drive's
+    # root folder ID (a Drive ID cannot be used in the `parents` field).
+    if parent_id and parent_id != 'root' and _gdrive_is_drive_id(service, parent_id):
+        drive_root = _gdrive_drive_root_folder_id(service, parent_id)
+        if not drive_root:
+            raise HTTPException(502, "Không tìm thấy thư mục gốc của Shared Drive. Vui lòng thử upload vào một thư mục con.")
+        parent_id = drive_root
+
     # Determine MIME type
     if not mime_type:
         import mimetypes
@@ -2230,6 +2323,14 @@ async def _create_folder_gdrive(cfg, parent_path: str, folder_name: str):
     # parent_path for GDrive is the Google Folder ID
     parent_id = parent_path.strip('/') if parent_path and parent_path != '/' else cfg['remote_path'] or 'root'
 
+    # When the parent is a Shared Drive ID, resolve it to the drive's root
+    # folder ID (a Drive ID cannot be used in the `parents` field).
+    if parent_id and parent_id != 'root' and _gdrive_is_drive_id(service, parent_id):
+        drive_root = _gdrive_drive_root_folder_id(service, parent_id)
+        if not drive_root:
+            raise HTTPException(502, "Không tìm thấy thư mục gốc của Shared Drive. Vui lòng thử tạo trong một thư mục con.")
+        parent_id = drive_root
+
     file_metadata = {
         'name': folder_name,
         'mimeType': 'application/vnd.google-apps.folder',
@@ -2239,7 +2340,8 @@ async def _create_folder_gdrive(cfg, parent_path: str, folder_name: str):
     try:
         result = service.files().create(
             body=file_metadata,
-            fields='id, name'
+            fields='id, name',
+            supportsAllDrives=True
         ).execute()
     except Exception as e:
         if 'alreadyExists' in str(e) or 'duplicate' in str(e).lower():
@@ -2428,7 +2530,7 @@ def _delete_gdrive(cfg, file_id: str):
     try:
         creds = _build_gdrive_creds(cfg)
         service = build('drive', 'v3', credentials=creds)
-        service.files().delete(fileId=file_id).execute()
+        service.files().delete(fileId=file_id, supportsAllDrives=True).execute()
     except Exception as e:
         if 'notFound' in str(e):
             raise HTTPException(404, "Item không tồn tại")
