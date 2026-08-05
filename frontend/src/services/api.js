@@ -475,6 +475,9 @@ function docAuthParams() {
 export function getStorageConfig(id) {
   return api.get(`/documents/config/${id}`, { params: docAuthParams() })
 }
+export function exportStorageConfig(id) {
+  return api.get(`/documents/config/${id}/export`, { params: docAuthParams() })
+}
 export function createStorageConfig(data) {
   return api.post('/documents/config', data, { params: docAuthParams() })
 }

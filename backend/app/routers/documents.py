@@ -80,6 +80,33 @@ def get_config(config_id: int):
         row['password'] = '********'
     return {"data": row}
 
+@router.get("/config/{config_id}/export")
+def export_config(
+    config_id: int,
+    admin_code: str = Query(''),
+    token: str = Query(''),
+    role: str = Query('')
+):
+    """Export full storage config including password / Service Account JSON.
+
+    Only admin can export, so the secret is returned unmasked to allow
+    re-importing the config on a fresh install.
+    """
+    _require_auth(admin_code, token, role)
+    row = fetchone("SELECT * FROM storage_config WHERE id=:id", {"id": config_id})
+    if not row:
+        raise HTTPException(404, "Config not found")
+    return {"data": {
+        "name": row.get('name', ''),
+        "type": row.get('type', ''),
+        "host": row.get('host', ''),
+        "port": row.get('port', 0),
+        "username": row.get('username', ''),
+        "password": row.get('password', ''),
+        "remote_path": row.get('remote_path', ''),
+        "domain": row.get('domain', ''),
+    }}
+
 @router.post("/config")
 def create_config(
     body: dict,

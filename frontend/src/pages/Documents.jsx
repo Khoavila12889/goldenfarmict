@@ -13,7 +13,7 @@ import FileViewer from '../components/FileViewer'
 import OnlyOfficeViewer from '../components/OnlyOfficeViewer'
 import ShareDocument from '../components/ShareDocument'
 import ImageLightbox from '../components/ImageLightbox'
-import { getStorageConfigs, browseStorage, getStoragePermissions, createStoragePermission, deleteStoragePermission, createStorageConfig, updateStorageConfig, deleteStorageConfig, testStorageConnection, testStorageConnectionDirect, getStorageDepartments } from '../services/api'
+import { getStorageConfigs, browseStorage, getStoragePermissions, createStoragePermission, deleteStoragePermission, createStorageConfig, updateStorageConfig, deleteStorageConfig, exportStorageConfig, testStorageConnection, testStorageConnectionDirect, getStorageDepartments } from '../services/api'
 import { formatDate } from '../utils/date'
 const INITIAL_CONFIG = { name: '', type: 'smb', host: '', port: 445, username: '', password: '', remote_path: '', domain: '' }
 
@@ -660,12 +660,33 @@ export default function Documents() {
     }).finally(() => setLoadingFolders(false))
   }
 
-  function exportConfigToFile() {
-    const json = JSON.stringify(configForm, null, 2)
+  async function exportConfigToFile() {
+    let payload = { ...configForm }
+    if (editingConfig) {
+      try {
+        const r = await exportStorageConfig(editingConfig.id)
+        const d = r.data?.data
+        if (d) {
+          payload = {
+            name: d.name || '',
+            type: d.type || '',
+            host: d.host || '',
+            port: d.port || 0,
+            username: d.username || '',
+            password: d.password || '',
+            remote_path: d.remote_path || '',
+            domain: d.domain || '',
+          }
+        }
+      } catch (err) {
+        console.warn('Không tải được cấu hình đầy đủ, xuất theo form hiện tại:', err)
+      }
+    }
+    const json = JSON.stringify(payload, null, 2)
     const blob = new Blob([json], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
-    const safeName = (configForm.name || 'storage_config').replace(/[^a-zA-Z0-9_\-]/g, '_')
+    const safeName = (payload.name || 'storage_config').replace(/[^a-zA-Z0-9_\-]/g, '_')
     link.href = url
     link.download = `storage_config_${safeName}.json`
     document.body.appendChild(link)
