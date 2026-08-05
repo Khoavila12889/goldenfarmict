@@ -166,6 +166,7 @@ export default function Documents() {
   const [showUpload, setShowUpload] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadStatusText, setUploadStatusText] = useState('')
   const [uploadError, setUploadError] = useState('')
   const [uploadSuccess, setUploadSuccess] = useState(false)
   const [canUploadCurrent, setCanUploadCurrent] = useState(false)
@@ -427,7 +428,7 @@ export default function Documents() {
     browseBreadcrumb(breadcrumbs.length - 2)
   }
 
-  // ── Upload & Create Folder Functions ─────────────────────────────
+  // ── Upload & Create Folder Functions (OPTIMIZED PROGRESS) ─────────
   async function handleUploadFiles(files) {
     if (!activeConfig || !files || files.length === 0) return
     const currentPath = breadcrumbs.at(-1).id
@@ -436,14 +437,36 @@ export default function Documents() {
 
     setUploading(true)
     setUploadError('')
-    setUploadProgress(0)
+    setUploadProgress(1)
     setUploadSuccess(false)
+    setUploadStatusText(`Chuẩn bị tải lên ${filesList.length} file...`)
     clearTimeout(uploadCloseTimerRef.current)
 
     let uploadedBytes = 0
+    let lastPercent = 0
     const errors = []
 
-    for (const file of filesList) {
+    // Cập nhật thanh tiến trình tổng: tăng dần (không thụt lùi),
+    // chặn tối đa 99% cho tới khi server xác nhận hoàn tất.
+    const applyProgress = (currentLoaded, index) => {
+      let ratio
+      if (totalBytes > 0) {
+        ratio = (uploadedBytes + currentLoaded) / totalBytes
+      } else {
+        // File rỗng / không biết kích thước -> chạy theo số lượng file
+        ratio = filesList.length > 0 ? (index + 1) / filesList.length : 1
+      }
+      const percent = Math.min(99, Math.max(1, Math.round(ratio * 100)))
+      if (percent >= lastPercent) {
+        lastPercent = percent
+        setUploadProgress(percent)
+      }
+    }
+
+    for (let index = 0; index < filesList.length; index++) {
+      const file = filesList[index]
+      setUploadStatusText(`Đang tải lên (${index + 1}/${filesList.length}): ${file.name}`)
+
       try {
         await new Promise((resolve, reject) => {
           const formData = new FormData()
@@ -454,10 +477,17 @@ export default function Documents() {
           xhr.setRequestHeader('Authorization', 'Bearer ' + sessionStorage.getItem('token'))
 
           xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable && totalBytes > 0) {
-              const done = uploadedBytes + e.loaded
-              setUploadProgress(Math.min(100, Math.round((done / totalBytes) * 100)))
+            let currentLoaded
+            if (e.lengthComputable && e.total > 0) {
+              currentLoaded = e.loaded
+            } else if (file.size > 0) {
+              // Không có thông tin byte (chunked/stream) -> ước lượng giữa chừng
+              // để thanh vẫn di chuyển thay vì đứng yên.
+              currentLoaded = file.size * 0.5
+            } else {
+              currentLoaded = 0
             }
+            applyProgress(currentLoaded, index)
           }
 
           xhr.onload = () => {
@@ -482,11 +512,11 @@ export default function Documents() {
         })
 
         uploadedBytes += file.size || 0
-        setUploadProgress(Math.min(100, Math.round((uploadedBytes / totalBytes) * 100)))
+        applyProgress(file.size || 0, index)
       } catch (err) {
         errors.push(`${file.name}: ${err.message}`)
         uploadedBytes += file.size || 0
-        setUploadProgress(Math.min(100, Math.round((uploadedBytes / totalBytes) * 100)))
+        applyProgress(file.size || 0, index)
       }
     }
 
@@ -497,11 +527,15 @@ export default function Documents() {
       return
     }
 
-    // Tất cả file upload thành công → hiện check mark rồi tự đóng sau 1.2s
+    // Hoàn tất tải file -> đặt tiến trình 100% và hiện thành công
+    setUploadProgress(100)
+    setUploadStatusText('Tải lên hoàn tất!')
     setUploadSuccess(true)
+
     uploadCloseTimerRef.current = setTimeout(() => {
       setShowUpload(false)
       setUploadProgress(0)
+      setUploadStatusText('')
       setUploadSuccess(false)
       browseFolder(activeConfig.id, currentPath)
     }, 1200)
@@ -512,6 +546,7 @@ export default function Documents() {
     setShowUpload(false)
     setUploadError('')
     setUploadProgress(0)
+    setUploadStatusText('')
     setUploadSuccess(false)
   }
 
@@ -1252,7 +1287,7 @@ export default function Documents() {
         </div>
       )}
 
-      {/* Upload */}
+      {/* Upload Modal & Tối ưu Thanh Tiến Trình (Progress Bar) */}
       {showUpload && (
         <>
           <div className="panel-overlay open" onClick={() => !uploading && closeUploadPanel()} />
@@ -1268,12 +1303,23 @@ export default function Documents() {
               </div>
               <input id="file-input-upload" type="file" multiple style={{ display: 'none' }} onChange={handleFileSelect} disabled={uploading} />
 
-              {uploading && (
-                <div style={{ marginTop: '1rem' }}>
-                  <div style={{ height: 8, background: '#e2e8f0', borderRadius: 4, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${uploadProgress}%`, background: 'linear-gradient(90deg, #3b82f6, #8b5cf6)', transition: 'width 0.3s' }} />
+              {/* Progress Bar UI được tinh chỉnh hiển thị mượt mà hơn */}
+              {(uploading || uploadProgress > 0) && (
+                <div style={{ marginTop: '1.25rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: '#475569', marginBottom: '0.4rem', fontWeight: 500 }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '80%' }}>
+                      {uploadStatusText || 'Đang tiến hành upload...'}
+                    </span>
+                    <span>{uploadProgress}%</span>
                   </div>
-                  <p style={{ textAlign: 'center', color: '#64748b', fontSize: '0.8rem', marginTop: '0.5rem' }}>{uploadProgress}%</p>
+                  <div style={{ height: 10, background: '#e2e8f0', borderRadius: 5, overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%',
+                      width: `${uploadProgress}%`,
+                      background: uploadSuccess ? '#16a34a' : 'linear-gradient(90deg, #3b82f6, #8b5cf6)',
+                      transition: 'width 0.2s ease-in-out'
+                    }} />
+                  </div>
                 </div>
               )}
 
