@@ -375,12 +375,12 @@ export default function Layout() {
         .bk-sidebar-overlay.open { opacity: 1; visibility: visible; }
 
         .bk-sidebar {
-          position: fixed; right: 0; left: auto; z-index: 100;
+          position: fixed; left: 0; right: auto; z-index: 100;
           width: auto; min-width: 0; max-width: 320px; 
           top: 52px; height: calc(100vh - 52px);
           background: var(--bk-primary);
           display: flex; flex-direction: column;
-          transform: translateX(100%);
+          transform: translateX(-100%);
           transition: transform 0.3s ease;
           box-shadow: var(--bk-shadow-lg, 0 4px 16px rgba(15,23,42,0.08));
         }
@@ -516,16 +516,17 @@ export default function Layout() {
 
       {/* TOPBAR */}
       <header className="bk-topbar">
-        <div className="bk-topbar-left" />
+        <div className="bk-topbar-left">
+          <button className="bk-topbar-btn menu-btn" onClick={() => setIsSidebarOpen(true)}>
+            <Menu size={20} />
+          </button>
+        </div>
 
         <div className="bk-topbar-center">
           <span className="bk-topbar-title">GOLDENFARM ICT</span>
         </div>
 
         <div className="bk-topbar-right">
-          <button className="bk-topbar-btn menu-btn" onClick={() => setIsSidebarOpen(true)}>
-            <Menu size={20} />
-          </button>
           <button className="bk-topbar-btn user-btn" onClick={toggleUserPopup}>
             <User size={20} />
           </button>
