@@ -963,14 +963,33 @@
 /* ─── Responsive ──────────────────────────────────────────────── */
 
 @media (max-width: 768px) {
-  .doc-wrap { padding: 1rem; }
+  .doc-wrap { padding: 0.75rem; }
 
-  .doc-header { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+  .doc-header {
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+  .doc-header-left { flex-wrap: wrap; gap: 0.6rem; }
   .doc-header-left h2 { font-size: 1.25rem; }
+  .doc-header-right { flex-wrap: wrap; justify-content: flex-start; }
 
-  .doc-tabs { width: 100%; overflow-x: auto; }
+  .doc-tabs {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+    width: 100%;
+    scrollbar-width: none;
+  }
+  .doc-tabs::-webkit-scrollbar { display: none; }
+  .doc-tabs .doc-tab { white-space: nowrap; flex-shrink: 0; }
 
   .doc-toolbar { flex-wrap: wrap; gap: 0.5rem; }
+  .doc-toolbar-actions { flex-wrap: wrap; }
 
   .doc-search-wrap-mini { width: 140px; }
   .doc-search-wrap-mini:focus-within { width: 160px; }
@@ -988,12 +1007,21 @@
 }
 
 @media (max-width: 480px) {
-  .doc-wrap { padding: 0.75rem; }
+  .doc-wrap { padding: 0.5rem; }
 
+  .doc-header { gap: 0.5rem; }
+  .doc-header-left { gap: 0.5rem; }
   .doc-header-left h2 { font-size: 1.1rem; }
+  .doc-header-right { gap: 0.4rem; }
+
+  .doc-btn { padding: 0.5rem 0.6rem; }
 
   .doc-tabs { gap: 0.2rem; }
   .doc-tab { padding: 0.45rem 0.75rem; font-size: 0.78rem; }
+
+  .doc-toolbar { flex-direction: column; align-items: stretch; }
+  .doc-toolbar .doc-breadcrumb { flex: none; width: 100%; }
+  .doc-toolbar-actions { flex-wrap: wrap; justify-content: flex-end; }
 
   .doc-card-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.5rem; }
   .doc-card { padding: 0.75rem; min-height: 120px; }
@@ -1146,9 +1174,7 @@
   .doc-card.doc-card-image .doc-card-icon { height: 75px; }
   .doc-card.doc-card-image .doc-card-name { font-size: 0.75rem; }
 }
-/ *    % % %  D o c u m e n t   V i e w e r   ( S i d e b a r   s t y l e )    % % % % % % % % % % % % % % % % % % % % % % % % % % %  * / 
- 
- 
+
 /* ─── Document Viewer (Sidebar style) ─────────────────────────── */
 
 .doc-container {
