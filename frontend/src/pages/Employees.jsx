@@ -1,4 +1,5 @@
 ﻿import React, { useEffect, useState, useCallback, useRef } from 'react'
+import * as XLSX from 'xlsx'
 import '../styles/shared.css'
 import { formatDate } from '../utils/date'
 import {
@@ -185,86 +186,119 @@ export default function Employees() {
     } catch { showMsg('❌ Lỗi bàn giao') }
   }
 
-  function handleExportCSV() {
-    const headers = ['Mã NV', 'Họ và tên', 'Bộ phận', 'Chức vụ', 'Trạng thái', 'Số điện thoại', 'Email', 'Ngày bàn giao', 'Ghi chú']
-    
-    // Sắp xếp tăng dần theo Mã NV (hỗ trợ cả chuỗi và số tự nhiên như NV1, NV2, NV10)
+  function handleExportXLSX() {
+    // Sắp xếp tăng dần theo Mã NV
     const sortedEmps = [...emps].sort((a, b) => 
       (a.employee_code || '').localeCompare(b.employee_code || '', undefined, { numeric: true, sensitivity: 'base' })
     )
 
-    const rows = sortedEmps.map(emp => [
-      emp.employee_code,
-      emp.full_name,
-      emp.department,
-      emp.position,
-      getStatusInfo(emp.status).label,
-      emp.phone,
-      emp.email,
-      emp.handover_date ? formatDate(emp.handover_date) : '',
-      emp.notes || '',
-    ])
-    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${(c || '').replace(/"/g, '""')}"`).join(','))].join('\r\n')
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url; a.download = `nhan-vien-${new Date().toISOString().slice(0, 10)}.csv`
-    document.body.appendChild(a); a.click(); document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    // Chuẩn bị mảng Object dữ liệu để tạo Sheet
+    const data = sortedEmps.map(emp => ({
+      'Mã NV': emp.employee_code,
+      'Họ và tên': emp.full_name,
+      'Bộ phận': emp.department,
+      'Chức vụ': emp.position,
+      'Trạng thái': getStatusInfo(emp.status).label, // Xuất ra Tiếng Việt
+      'Số điện thoại': emp.phone,
+      'Email': emp.email,
+      'Ngày bàn giao': emp.handover_date ? formatDate(emp.handover_date) : '',
+      'Ghi chú': emp.notes || '',
+    }))
+
+    // Tạo file Excel và tải xuống
+    const worksheet = XLSX.utils.json_to_sheet(data)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, "DanhSachNhanVien")
+    
+    // Đặt tên file có ngày tháng
+    XLSX.writeFile(workbook, `nhan-vien-${new Date().toISOString().slice(0, 10)}.xlsx`)
   }
 
-  async function handleImportCSV(e) {
+  async function handleImportXLSX(e) {
     const file = e.target.files?.[0]
     if (!file) return
-    const text = await file.text()
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-    if (lines.length < 2) { setImportMsg('❌ File CSV không có dữ liệu.'); return }
 
-    const nor = v => (v || '').trim()
-    const employees = []
-    const parseErrors = []
+    const reader = new FileReader()
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target.result
+        const wb = XLSX.read(bstr, { type: 'binary' })
+        
+        // Lấy sheet đầu tiên
+        const wsname = wb.SheetNames[0]
+        const ws = wb.Sheets[wsname]
+        
+        // Chuyển Sheet thành mảng 2 chiều (bỏ qua header dòng 1)
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1 })
 
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''))
-      const [employee_code, full_name, department, position, status, phone, email, handover_date, notes] = cols
-      const code = nor(employee_code)
-      if (!code) { parseErrors.push(`Dòng ${i + 1}: thiếu mã nhân viên`); continue }
-      employees.push({
-        employee_code: code,
-        full_name: nor(full_name),
-        department: nor(department),
-        position: nor(position) || 'Nhân viên',
-        status: nor(status) || 'active',
-        phone: nor(phone),
-        email: nor(email),
-        handover_date: nor(handover_date),
-        notes: nor(notes),
-      })
-    }
+        if (data.length < 2) { 
+          setImportMsg('❌ File Excel không có dữ liệu.')
+          return
+        }
 
-    if (employees.length === 0) {
-      setImportMsg('❌ Không có dữ liệu hợp lệ để import.')
-      e.target.value = ''
-      return
-    }
+        const nor = v => (v ? String(v) : '').trim()
+        const employees = []
+        const parseErrors = []
 
-    try {
-      const res = await importEmployees({ employees })
-      const r = res.data
-      let msg = `✅ Import xong: ${r.created} tạo mới, ${r.updated} cập nhật`
-      if (r.users_created > 0) msg += `, ${r.users_created} tài khoản đã khởi tạo`
-      if (r.skipped) msg += `, ${r.skipped} bỏ qua`
-      if (r.errors?.length > 0 || parseErrors.length > 0) {
-        const allErrors = [...r.errors, ...parseErrors]
-        msg += `, ${allErrors.length} lỗi`
-        msg += `\n${allErrors.join('\n')}`
+        // Bắt đầu từ 1 để bỏ qua dòng tiêu đề (header)
+        for (let i = 1; i < data.length; i++) {
+          const row = data[i]
+          if (!row || row.length === 0) continue // Bỏ qua dòng trống
+
+          // Các cột tương ứng với thứ tự Export ở trên
+          const [employee_code, full_name, department, position, status, phone, email, handover_date, notes] = row
+          
+          const code = nor(employee_code)
+          if (!code) { parseErrors.push(`Dòng ${i + 1}: thiếu mã nhân viên`); continue }
+
+          // Logic xử lý trạng thái giống như đã fix
+          const rawStatusLabel = nor(status) || ''
+          const matchedStatus = STATUS_OPTIONS.find(
+            s => s.label.toLowerCase() === rawStatusLabel.toLowerCase()
+          )
+          const finalStatus = matchedStatus ? matchedStatus.value : 'active'
+
+          employees.push({
+            employee_code: code,
+            full_name: nor(full_name),
+            department: nor(department),
+            position: nor(position) || 'Nhân viên',
+            status: finalStatus,
+            phone: nor(phone),
+            email: nor(email),
+            handover_date: nor(handover_date),
+            notes: nor(notes),
+          })
+        }
+
+        if (employees.length === 0) {
+          setImportMsg('❌ Không có dữ liệu hợp lệ để import.')
+          e.target.value = ''
+          return
+        }
+
+        // Gọi API lên server
+        const res = await importEmployees({ employees })
+        const r = res.data
+        let msg = `✅ Import xong: ${r.created} tạo mới, ${r.updated} cập nhật`
+        if (r.users_created > 0) msg += `, ${r.users_created} tài khoản đã khởi tạo`
+        if (r.skipped) msg += `, ${r.skipped} bỏ qua`
+        if (r.errors?.length > 0 || parseErrors.length > 0) {
+          const allErrors = [...(r.errors || []), ...parseErrors]
+          msg += `, ${allErrors.length} lỗi\n${allErrors.join('\n')}`
+        }
+        setImportMsg(msg)
+        load()
+      } catch (err) {
+        setImportMsg(`❌ Lỗi đọc file Excel hoặc server: ${err?.response?.data?.detail || err.message}`)
       }
-      setImportMsg(msg)
-    } catch (err) {
-      setImportMsg(`❌ Lỗi kết nối đến máy chủ: ${err?.response?.data?.detail || err.message}`)
     }
+    
+    // Tiến hành đọc file
+    reader.readAsBinaryString(file)
+    
+    // Reset file input
     setTimeout(() => setImportMsg(''), 5000)
-    load()
     e.target.value = ''
   }
 
@@ -318,17 +352,17 @@ export default function Employees() {
             border: 'none', borderRadius: 8, fontWeight: 600, fontSize: '0.82rem',
             cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
           }}>➕ Thêm NV</button>
-          <button onClick={handleExportCSV} style={{
+          <button onClick={handleExportXLSX} style={{
             padding: '0.45rem 0.9rem', height: 36, background: '#fff', color: '#475569',
             border: '1px solid #e2e8f0', borderRadius: 8, fontWeight: 500, fontSize: '0.82rem',
             cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-          }}>📤 Export</button>
-          <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleImportCSV} />
+          }}>📤 Export Excel</button>
+          <input ref={fileInputRef} type="file" accept=".xlsx, .xls" style={{ display: 'none' }} onChange={handleImportXLSX} />
           <button onClick={() => fileInputRef.current?.click()} style={{
             padding: '0.45rem 0.9rem', height: 36, background: '#fff', color: '#475569',
             border: '1px solid #e2e8f0', borderRadius: 8, fontWeight: 500, fontSize: '0.82rem',
             cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-          }}>📥 Import</button>
+          }}>📥 Import Excel</button>
         </div>
       </div>
 
