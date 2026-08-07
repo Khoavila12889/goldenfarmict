@@ -589,11 +589,11 @@ function ModulePermCard({ mod, permissions, togglePerm, targetType, rolePerms, d
           Xem
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.78rem', cursor: 'pointer',
-          color: isAdminMod ? 'var(--bk-text-muted)' : 'var(--bk-text-secondary)' }}>
+          color: isAdminMod && targetType === 'role' ? 'var(--bk-text-muted)' : 'var(--bk-text-secondary)' }}>
           <input type="checkbox" checked={!!perm.can_edit}
             onChange={() => togglePerm(mod.key, 'can_edit')}
             style={{ accentColor: 'var(--bk-primary)' }}
-            disabled={isAdminMod} />
+            disabled={isAdminMod && targetType === 'role'} />
           Sửa
         </label>
       </div>

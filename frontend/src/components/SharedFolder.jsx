@@ -19,19 +19,34 @@ function isImageFile(name) {
   return IMAGE_EXTS.has(getExt(name))
 }
 
+/** GDrive API field: backend trả snake_case, một số client dùng camelCase */
+function getEntryThumbnailLink(entry) {
+  return entry?.thumbnailLink || entry?.thumbnail_link || ''
+}
+
 /**
- * URL thumbnail cho SharedFolder:
- * - Nếu entry có `thumbnailLink` (Google Drive) -> dùng luôn
- * - Khác -> kô có dedicated thumbnail endpoint cho share,
- *   dùng tạm thời URL download inline (file nhỏ) với tất cả những gì có
+ * URL Thumbnail xem trước nhỏ
  */
-function buildShareThumbnailUrl(token, entry) {
+function buildShareThumbnailUrl(token, entry, size = 400) {
   if (!entry || !isImageFile(entry.name)) return null
-  // GDrive thumbnail link
-  if (entry.thumbnailLink) {
-    return entry.thumbnailLink.replace(/=s\d+$/, '=s400')
+  const thumb = getEntryThumbnailLink(entry)
+  if (thumb) {
+    return thumb.replace(/=s\d+(-c)?$/, `=s${size}`)
   }
-  // Fallback: inline download URL (browser sẽ cache, chỉ phù hợp file nhỏ)
+  // Nếu không có API thumbnail riêng, dùng inline download
+  return getShareDownloadUrl(token, entry.path, entry.id || '', 'inline')
+}
+
+/**
+ * URL Ảnh gốc nét căng dành riêng cho Lightbox
+ */
+function buildShareFullImageUrl(token, entry) {
+  if (!entry || !isImageFile(entry.name)) return null
+  const thumb = getEntryThumbnailLink(entry)
+  if (thumb) {
+    // Tăng kích thước thumbnail của GDrive lên 2048px thay vì dùng inline download bị chậm
+    return thumb.replace(/=s\d+(-c)?$/, '=s2048')
+  }
   return getShareDownloadUrl(token, entry.path, entry.id || '', 'inline')
 }
 
@@ -92,10 +107,11 @@ export default function SharedFolder({ token, info }) {
   const lightboxSlides = useMemo(() =>
     imageEntries.map(e => {
       const downloadAttachmentUrl = getShareDownloadUrl(token, e.path, e.id || '', 'attachment')
-      const thumbUrl = buildShareThumbnailUrl(token, e)
+      const thumbUrl = buildShareThumbnailUrl(token, e, 400)
+      const fullImageUrl = buildShareFullImageUrl(token, e)
       return {
-        src: thumbUrl,
-        thumbnail: thumbUrl,
+        src: fullImageUrl || thumbUrl, // Ảnh gốc nét căng
+        thumbnail: thumbUrl,           // Ảnh preview nhỏ
         downloadUrl: downloadAttachmentUrl,
         alt: e.name,
         title: e.name,
@@ -204,7 +220,7 @@ export default function SharedFolder({ token, info }) {
     }
   }
 
-  // ─── File view (full-screen overlay, like OnlyOffice viewer) ───
+  // ─── File view (full-screen overlay) ───
   if (selected) {
     const ext = getExt(selected.name)
     const isOffice = OFFICE_EXTS.has(ext)
@@ -233,12 +249,6 @@ export default function SharedFolder({ token, info }) {
         <div className="sf-overlay-body">
           {isOffice && (
             <div className="sf-editor-wrap sf-editor-wrap-full">
-              {/*
-                The error + loading overlays are ALWAYS mounted (toggled via
-                display) and the ONLYOFFICE placeholder keeps a stable React
-                index, so React never recreates the placeholder node (which
-                would destroy the editor and leave a blank page).
-              */}
               <div className="psp-error sf-editor-error" style={{ display: ooError ? 'flex' : 'none' }}>
                 <AlertCircle size={18} /> {ooError || ''}
               </div>
@@ -333,7 +343,7 @@ export default function SharedFolder({ token, info }) {
           {entries.map((e, i) => {
             const { icon: IconComp, color: iconColor } = getFileIcon(e.name, e.is_dir)
             const isImg = !e.is_dir && isImageFile(e.name)
-            const thumbUrl = isImg ? buildShareThumbnailUrl(token, e) : null
+            const thumbUrl = isImg ? buildShareThumbnailUrl(token, e, 400) : null
             return (
               <div
                 key={e.id || i}
@@ -346,10 +356,13 @@ export default function SharedFolder({ token, info }) {
                       src={thumbUrl}
                       alt={e.name}
                       loading="lazy"
+                      decoding="async"
                       className="sf-card-thumb"
                       onError={(ev) => {
                         ev.currentTarget.style.display = 'none'
-                        ev.currentTarget.nextSibling.style.display = 'flex'
+                        if (ev.currentTarget.nextSibling) {
+                          ev.currentTarget.nextSibling.style.display = 'flex'
+                        }
                       }}
                     />
                   ) : null}
@@ -362,21 +375,18 @@ export default function SharedFolder({ token, info }) {
                 </div>
                 <div className="sf-card-name" title={e.name}>{e.name}</div>
                 <div className="sf-card-meta">
-                  {e.is_dir ? 'Thư mục' : ''}
+                  {e.is_dir ? 'Thư mục' : formatSize(e.size)}
                 </div>
                 {!e.is_dir && canDownload && (
-                  <button className="sf-card-action" title="Tải xuống"
-                    onClick={(ev) => {
-                      ev.stopPropagation()
-                      const a = document.createElement('a')
-                      a.href = getShareDownloadUrl(token, e.path, e.id, 'attachment')
-                      a.download = e.name
-                      document.body.appendChild(a)
-                      a.click()
-                      document.body.removeChild(a)
-                    }}>
+                  <a
+                    className="sf-card-action"
+                    title="Tải xuống"
+                    href={getShareDownloadUrl(token, e.path, e.id, 'attachment')}
+                    download={e.name}
+                    onClick={(ev) => ev.stopPropagation()}
+                  >
                     <Download size={14} />
-                  </button>
+                  </a>
                 )}
               </div>
             )

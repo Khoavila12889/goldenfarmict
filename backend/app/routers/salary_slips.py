@@ -17,6 +17,7 @@ import shutil
 from datetime import datetime
 from ..core.db import fetchall, fetchone, execute, insert
 from ..core.auth import verify_token
+from .auth import _get_effective_permissions
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -25,11 +26,16 @@ router = APIRouter(prefix="/api/salary-slips", tags=["Salary Slips"])
 
 
 def require_admin(employee_code: str, token: str, role: str):
-    if role not in ("admin", "head"):
-        raise HTTPException(status_code=403, detail="Admin/Head access required")
+    if role in ("admin", "head"):
+        if not verify_token(employee_code, token, role):
+            raise HTTPException(status_code=401, detail="Invalid token")
+        return employee_code
     if not verify_token(employee_code, token, role):
         raise HTTPException(status_code=401, detail="Invalid token")
-    return employee_code
+    perms = _get_effective_permissions(employee_code)
+    if (perms.get("salary-admin") or {}).get("can_edit"):
+        return employee_code
+    raise HTTPException(status_code=403, detail="Admin/Head access required")
 
 
 # ─── View Own Salary Slip PDF (legacy fallback) ─────────────────────────
