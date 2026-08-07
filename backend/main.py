@@ -68,6 +68,15 @@ def on_startup():
             sess.rollback()
             print(f"  → users.is_first_login migration: {e}")
 
+    # employees.start_date — ngày vào làm (tách khỏi handover_date ngày bàn giao thiết bị)
+    with SessionLocal() as sess:
+        try:
+            sess.execute(text("ALTER TABLE employees ADD COLUMN IF NOT EXISTS start_date TEXT DEFAULT ''"))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → employees.start_date migration: {e}")
+
     # document_shares.item_type — distinguishes file vs folder shares
     with SessionLocal() as sess:
         try:

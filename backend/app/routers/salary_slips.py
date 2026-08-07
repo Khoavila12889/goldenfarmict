@@ -415,9 +415,9 @@ async def upload_salaries_excel(
             emp_row = fetchone("SELECT id FROM employees WHERE employee_code=:employee_code", {"employee_code": emp_id})
             if not emp_row:
                 execute("""
-                    INSERT INTO employees (employee_code, full_name, department, position, handover_date, status, created_at)
-                    VALUES (:employee_code, :full_name, :department, :position, :handover_date, 'active', CURRENT_TIMESTAMP)
-                """, {"employee_code": context['ID'], "full_name": context['NAME'], "department": context.get('PB', ''), "position": context.get('CHUCVU', ''), "handover_date": context.get('NVL', '')})
+                    INSERT INTO employees (employee_code, full_name, department, position, start_date, status, created_at)
+                    VALUES (:employee_code, :full_name, :department, :position, :start_date, 'active', CURRENT_TIMESTAMP)
+                """, {"employee_code": context['ID'], "full_name": context['NAME'], "department": context.get('PB', ''), "position": context.get('CHUCVU', ''), "start_date": context.get('NVL', '')})
             success += 1
         except Exception as e:
             errors.append(f"Dòng {idx+2}: {str(e)}")

@@ -70,6 +70,7 @@ def _add_missing_columns(session):
         ("employees", "status", "TEXT DEFAULT 'active'"),
         ("employees", "employee_code", "TEXT DEFAULT ''"),
         ("employees", "handover_date", "TEXT DEFAULT ''"),
+        ("employees", "start_date", "TEXT DEFAULT ''"),
         ("tickets", "employee_code", "TEXT DEFAULT ''"),
         ("users", "updated_at", "TEXT DEFAULT ''"),
         ("users", "is_first_login", "BOOLEAN DEFAULT TRUE"),

@@ -718,7 +718,7 @@ goldenfarm-ict-web/
 
 | Table | Records | Ghi chú |
 |-------|---------|---------|
-| `employees` | 354 | `employee_code` unique, `status` (active/inactive) |
+| `employees` | 354 | `employee_code` unique, `status` (active/inactive), `handover_date` (bàn giao), `start_date` (ngày vào làm) |
 | `equipment` | 100 | `asset_code` (TS-XXXXX), `lifecycle_status`, `storage` (in_stock/issued) |
 | `licenses` | 216 | `license_key` UNIQUE, gán theo equipment_id |
 | `lic_categories` | 4 | name, icon, order_index |

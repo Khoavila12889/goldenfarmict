@@ -83,8 +83,8 @@ def create_employee(body: dict):
     with SessionLocal() as sess:
         try:
             result = sess.execute(text("""
-                INSERT INTO employees (employee_code, full_name, department, position, handover_date, phone, email, notes, status, created_at, updated_at)
-                VALUES (:code, :name, :dept, :pos, :handover, :phone, :email, :notes, :status, :now, :now)
+                INSERT INTO employees (employee_code, full_name, department, position, handover_date, start_date, phone, email, notes, status, created_at, updated_at)
+                VALUES (:code, :name, :dept, :pos, :handover, :start_date, :phone, :email, :notes, :status, :now, :now)
                 RETURNING id
             """), {
                 "code": emp_code,
@@ -92,6 +92,7 @@ def create_employee(body: dict):
                 "dept": body.get("department", ""),
                 "pos": body.get("position", ""),
                 "handover": body.get("handover_date", ""),
+                "start_date": body.get("start_date", ""),
                 "phone": body.get("phone", ""),
                 "email": body.get("email", ""),
                 "notes": body.get("notes", ""),
@@ -139,6 +140,7 @@ def import_employees(body: dict):
                 phone = emp.get("phone", "").strip()
                 email = emp.get("email", "").strip()
                 handover_date = emp.get("handover_date", "").strip()
+                start_date = emp.get("start_date", "").strip()
                 notes = emp.get("notes", "").strip()
 
                 existing = sess.execute(
@@ -149,22 +151,22 @@ def import_employees(body: dict):
                 if existing:
                     sess.execute(text("""
                         UPDATE employees SET full_name=:name, department=:dept, position=:pos,
-                            handover_date=:handover, phone=:phone, email=:email, notes=:notes, status=:status,
+                            handover_date=:handover, start_date=:start_date, phone=:phone, email=:email, notes=:notes, status=:status,
                             updated_at=:now
                         WHERE id=:id
                     """), {
                         "id": existing[0], "name": full_name, "dept": department, "pos": position,
-                        "handover": handover_date, "phone": phone, "email": email,
+                        "handover": handover_date, "start_date": start_date, "phone": phone, "email": email,
                         "notes": notes, "status": status, "now": now,
                     })
                     stats["updated"] += 1
                 else:
                     sess.execute(text("""
-                        INSERT INTO employees (employee_code, full_name, department, position, handover_date, phone, email, notes, status, created_at, updated_at)
-                        VALUES (:code, :name, :dept, :pos, :handover, :phone, :email, :notes, :status, :now, :now)
+                        INSERT INTO employees (employee_code, full_name, department, position, handover_date, start_date, phone, email, notes, status, created_at, updated_at)
+                        VALUES (:code, :name, :dept, :pos, :handover, :start_date, :phone, :email, :notes, :status, :now, :now)
                     """), {
                         "code": code, "name": full_name, "dept": department, "pos": position,
-                        "handover": handover_date, "phone": phone, "email": email,
+                        "handover": handover_date, "start_date": start_date, "phone": phone, "email": email,
                         "notes": notes, "status": status, "now": now,
                     })
                     stats["created"] += 1
@@ -184,7 +186,7 @@ def import_employees(body: dict):
 def update_employee(employee_id: int, body: dict):
     fields = []
     params = {}
-    for col in ["employee_code", "full_name", "department", "position", "handover_date", "phone", "email", "notes", "status"]:
+    for col in ["employee_code", "full_name", "department", "position", "handover_date", "start_date", "phone", "email", "notes", "status"]:
         if col in body:
             fields.append(f"{col} = :{col}")
             params[col] = body[col]

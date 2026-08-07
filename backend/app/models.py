@@ -19,6 +19,7 @@ class Employee(Base):
     department = Column(String, default='')
     position = Column(String, default='')
     handover_date = Column(String, default='')
+    start_date = Column(String, default='')
     phone = Column(String, default='')
     email = Column(String, default='')
     employee_code = Column(String, default='', index=True)

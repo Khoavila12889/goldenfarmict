@@ -28,6 +28,22 @@ function getStatusInfo(status) {
   return STATUS_OPTIONS.find(s => s.value === status) || STATUS_OPTIONS[0]
 }
 
+function mapStatusValue(raw) {
+  const text = (raw || '').trim().toLowerCase()
+  if (!text) return 'active'
+
+  const byValue = STATUS_OPTIONS.find(s => s.value.toLowerCase() === text)
+  if (byValue) return byValue.value
+
+  const byLabel = STATUS_OPTIONS.find(s => s.label.toLowerCase() === text)
+  if (byLabel) return byLabel.value
+
+  if (text.includes('nghỉ việc') || text.includes('nghỉ việ')) return 'resigned'
+  if (text.includes('thai sản') || text.includes('thai san')) return 'maternity'
+  if (text.includes('tạm nghỉ') || text.includes('tam nghi') || text.includes('đình chỉ') || text.includes('suspended')) return 'suspended'
+  return 'active'
+}
+
 export default function Employees() {
   const userRole = sessionStorage.getItem('user_role') || ''
   const userCode = sessionStorage.getItem('user_code') || ''
@@ -54,7 +70,6 @@ export default function Employees() {
   const [formOpen, setFormOpen] = useState(false)
   const [editId, setEditId] = useState(null)
   const [formData, setFormData] = useState(emptyForm())
-  const [handoverDisplay, setHandoverDisplay] = useState('')
 
   const [transferEqId, setTransferEqId] = useState(null)
   const [transferSearch, setTransferSearch] = useState('')
@@ -87,16 +102,17 @@ export default function Employees() {
     setEquipLoading(false)
   }
 
-  function parseDateInput(val) {
-    const parts = val.split('/')
-    if (parts.length === 3 && parts[0].length === 2 && parts[1].length === 2 && parts[2].length === 4) {
-      return `${parts[2]}-${parts[1]}-${parts[0]}`
+  function toISOInput(val) {
+    if (!val) return ''
+    const parts = String(val).split('/')
+    if (parts.length === 3 && parts[2].length === 4) {
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
     }
-    return null
+    return String(val)
   }
 
   function openAdd() {
-    setEditId(null); setFormData(emptyForm()); setHandoverDisplay(''); setFormOpen(true)
+    setEditId(null); setFormData(emptyForm()); setFormOpen(true)
   }
 
   function openEdit(emp) {
@@ -106,13 +122,13 @@ export default function Employees() {
       full_name: emp.full_name || '',
       department: emp.department || '',
       position: emp.position || 'Nhân viên',
-      handover_date: emp.handover_date || '',
+      handover_date: toISOInput(emp.handover_date),
+      start_date: toISOInput(emp.start_date),
       phone: emp.phone || '',
       email: emp.email || '',
       notes: emp.notes || '',
       status: emp.status || 'active',
     })
-    setHandoverDisplay(emp.handover_date ? formatDate(emp.handover_date) : '')
     setFormOpen(true)
   }
 
@@ -202,6 +218,7 @@ export default function Employees() {
       'Số điện thoại': emp.phone,
       'Email': emp.email,
       'Ngày bàn giao': emp.handover_date ? formatDate(emp.handover_date) : '',
+      'Ngày vào làm': emp.start_date ? formatDate(emp.start_date) : '',
       'Ghi chú': emp.notes || '',
     }))
 
@@ -240,34 +257,68 @@ export default function Employees() {
         const employees = []
         const parseErrors = []
 
-        // Bắt đầu từ 1 để bỏ qua dòng tiêu đề (header)
+        // Map cột theo TÊN header (không phụ thuộc thứ tự cột)
+        const headerRow = (data[0] || []).map(h => nor(h).toLowerCase())
+        const colOf = (...names) => headerRow.findIndex(h => names.includes(h))
+        let colMap = {
+          code: colOf('mã nv', 'ma nv', 'mã nhân viên', 'employee_code', 'emp_code', 'employee code'),
+          name: colOf('họ và tên', 'ho va ten', 'họ tên', 'tên', 'full_name', 'full name', 'name'),
+          dept: colOf('bộ phận', 'bo phan', 'phòng ban', 'phong ban', 'department', 'dept'),
+          position: colOf('chức vụ', 'chuc vu', 'position', 'pos'),
+          status: colOf('trạng thái', 'trang thai', 'status'),
+          phone: colOf('số điện thoại', 'so dien thoai', 'điện thoại', 'dien thoai', 'phone', 'sđt'),
+          email: colOf('email', 'e-mail', 'mail'),
+          handover: colOf('ngày bàn giao', 'ngay ban giao', 'handover_date', 'handover date'),
+          startDate: colOf('ngày vào làm', 'ngay vao lam', 'ngày vào làm', 'ngay bat dau lam', 'start_date', 'start date', 'join date'),
+          notes: colOf('ghi chú', 'ghi chu', 'notes', 'note'),
+        }
+
+        // Fallback: file không có header nhận diện được -> dùng thứ tự cột mặc định
+        if (colMap.code < 0 || colMap.name < 0) {
+          colMap = {
+            code: 0, name: 1, dept: 2, position: 3, status: 4, phone: 5, email: 6, handover: 7, startDate: 8, notes: 9,
+          }
+        }
+
+        // Nếu không tìm thấy cột status bằng tên header -> phát hiện bằng giá trị dữ liệu
+        if (colMap.status < 0) {
+          const statusKeywords = ['đang làm việc', 'nghỉ việc', 'thai sản', 'tạm nghỉ', 'đình chỉ', 'active', 'resigned', 'maternity', 'suspended']
+          const maxCol = Math.max(...data.slice(1).filter(Boolean).map(r => r.length), 0)
+          let bestCol = -1, bestScore = 0
+          for (let c = 0; c < maxCol; c++) {
+            let score = 0
+            for (let i = 1; i < data.length; i++) {
+              const v = (data[i]?.[c] || '').toString().trim().toLowerCase()
+              if (statusKeywords.some(k => v.includes(k))) score++
+            }
+            if (score > bestScore) { bestScore = score; bestCol = c }
+          }
+          if (bestScore > 0) colMap.status = bestCol
+        }
+
+        // Duyệt dữ liệu từ dòng 1 (bỏ header)
         for (let i = 1; i < data.length; i++) {
           const row = data[i]
           if (!row || row.length === 0) continue // Bỏ qua dòng trống
 
-          // Các cột tương ứng với thứ tự Export ở trên
-          const [employee_code, full_name, department, position, status, phone, email, handover_date, notes] = row
-          
-          const code = nor(employee_code)
+          const get = idx => (idx >= 0 ? row[idx] : '')
+
+          const code = nor(get(colMap.code))
           if (!code) { parseErrors.push(`Dòng ${i + 1}: thiếu mã nhân viên`); continue }
 
-          // Logic xử lý trạng thái giống như đã fix
-          const rawStatusLabel = nor(status) || ''
-          const matchedStatus = STATUS_OPTIONS.find(
-            s => s.label.toLowerCase() === rawStatusLabel.toLowerCase()
-          )
-          const finalStatus = matchedStatus ? matchedStatus.value : 'active'
+          const finalStatus = mapStatusValue(get(colMap.status))
 
           employees.push({
             employee_code: code,
-            full_name: nor(full_name),
-            department: nor(department),
-            position: nor(position) || 'Nhân viên',
+            full_name: nor(get(colMap.name)),
+            department: nor(get(colMap.dept)),
+            position: nor(get(colMap.position)) || 'Nhân viên',
             status: finalStatus,
-            phone: nor(phone),
-            email: nor(email),
-            handover_date: nor(handover_date),
-            notes: nor(notes),
+            phone: nor(get(colMap.phone)),
+            email: nor(get(colMap.email)),
+            handover_date: nor(get(colMap.handover)),
+            start_date: nor(get(colMap.startDate)),
+            notes: nor(get(colMap.notes)),
           })
         }
 
@@ -460,13 +511,12 @@ export default function Employees() {
                   </select>
                 </FormField>
                 <FormField label="Ngày bắt đầu bàn giao">
-                  <input type="text" placeholder="DD/MM/YYYY" value={handoverDisplay}
-                    onChange={e => {
-                      const v = e.target.value
-                      setHandoverDisplay(v)
-                      const parsed = parseDateInput(v)
-                      if (parsed) setFormData({ ...formData, handover_date: parsed })
-                    }} style={inputS} />
+                  <input type="date" value={formData.handover_date || ''}
+                    onChange={e => setFormData({ ...formData, handover_date: e.target.value })} style={inputS} />
+                </FormField>
+                <FormField label="Ngày vào làm">
+                  <input type="date" value={formData.start_date || ''}
+                    onChange={e => setFormData({ ...formData, start_date: e.target.value })} style={inputS} />
                 </FormField>
                 <FormField label="Số điện thoại">
                   <input type="text" value={formData.phone} placeholder="Nhập SĐT liên hệ"
@@ -679,6 +729,7 @@ export default function Employees() {
                 <DetailItem label="Chức vụ" value={selectedEmp.position} />
                 <DetailItem label="Số điện thoại" value={selectedEmp.phone} />
                 <DetailItem label="Địa chỉ Email" value={selectedEmp.email} />
+                <DetailItem label="Ngày vào làm" value={formatDate(selectedEmp.start_date)} />
                 <DetailItem label="Ngày bàn giao" value={formatDate(selectedEmp.handover_date)} />
               </div>
               {selectedEmp.notes && (
@@ -827,7 +878,7 @@ function DetailItem({ label, value }) {
 }
 
 function emptyForm() {
-  return { employee_code: '', full_name: '', department: '', position: 'Nhân viên', handover_date: '', phone: '', email: '', notes: '', status: 'active' }
+  return { employee_code: '', full_name: '', department: '', position: 'Nhân viên', handover_date: '', start_date: '', phone: '', email: '', notes: '', status: 'active' }
 }
 
 const inputS = {
