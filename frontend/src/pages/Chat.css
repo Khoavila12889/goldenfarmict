@@ -3,6 +3,7 @@
 .chat-page {
   display: flex;
   height: calc(100vh - 52px - 3rem);
+  height: calc(100dvh - 52px - 3rem);
   min-height: 480px;
   background: #fff;
   border: 1px solid #e2e8f0;
@@ -216,6 +217,30 @@
 .chat-ws-dot.open { background: #dcfce7; color: #166534; }
 .chat-ws-dot.connecting, .chat-ws-dot.closed { background: #fef3c7; color: #92400e; }
 
+/* ── Trạng thái online — chấm xanh nhấp nháy ── */
+.presence-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #22c55e;
+  flex-shrink: 0;
+  margin-right: 6px;
+  vertical-align: middle;
+  animation: presence-blink 1.4s ease-in-out infinite;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45);
+}
+.presence-dot.offline {
+  background: #cbd5e1;
+  animation: none;
+  box-shadow: none;
+}
+@keyframes presence-blink {
+  0% { opacity: 1; box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+  50% { opacity: 0.55; box-shadow: 0 0 0 5px rgba(34, 197, 94, 0); }
+  100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+
 /* ── Messages ── */
 .chat-messages {
   flex: 1;
@@ -389,6 +414,8 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.7rem 1rem;
+  padding-bottom: calc(0.7rem + env(safe-area-inset-bottom));
+  flex-shrink: 0;
   border-top: 1px solid #e2e8f0;
   background: #fff;
 }
@@ -1126,6 +1153,7 @@
 @media (max-width: 768px) {
   .chat-page {
     height: calc(100vh - 52px - 1.5rem);
+    height: calc(100dvh - 52px - 1.5rem);
     position: relative;
   }
 
@@ -1150,11 +1178,18 @@
 }
 
 @media (max-width: 480px) {
-  .chat-page { height: calc(100vh - 52px - 1rem); }
+  .chat-page {
+    height: calc(100vh - 52px - 1rem);
+    height: calc(100dvh - 52px - 1rem);
+  }
   .chat-panel-header { padding: 0.75rem 0.85rem; }
   .chat-window-header { padding: 0.65rem 0.8rem; gap: 0.5rem; }
   .chat-messages { padding: 0.75rem 0.8rem; }
-  .chat-input-bar { padding: 0.6rem 0.75rem; gap: 0.4rem; }
+  .chat-input-bar {
+    padding: 0.6rem 0.75rem;
+    padding-bottom: calc(0.6rem + env(safe-area-inset-bottom));
+    gap: 0.4rem;
+  }
   .chat-send-btn { width: 38px; height: 38px; }
   .chat-avatar { width: 34px; height: 34px; }
   .chat-avatar-header { width: 34px; height: 34px; }

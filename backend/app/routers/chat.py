@@ -180,6 +180,25 @@ def _room_member_codes(room_id: str) -> List[str]:
         db.close()
 
 
+def _online_codes() -> set:
+    """Tập employee_code đang có WebSocket kết nối (đang online)."""
+    return set(manager.active_connections())
+
+
+async def _broadcast_presence(changed_code: str, status: bool) -> None:
+    """Gửi sự kiện presence (kèm toàn bộ danh sách online) tới mọi user đang online."""
+    online = manager.active_connections()
+    await manager.broadcast_to_room(
+        {
+            "event": "presence",
+            "online": online,
+            "changed": changed_code,
+            "status": bool(status),
+        },
+        online,
+    )
+
+
 def _resolve_ws_user(employee_code: str, token: str) -> Optional[dict]:
     """Xác thực token cho WebSocket (WS không gửi Header Authorization)."""
     db = SessionLocal()
@@ -259,16 +278,19 @@ async def chat_ws(
 
     await manager.connect(websocket, user["employee_code"])
     try:
+        await _broadcast_presence(user["employee_code"], True)
         while True:
             data = await websocket.receive_json()
             message = _handle_incoming_message(user, data)
             if message:
                 await manager.broadcast_to_room(message, _room_member_codes(message["room_id"]))
     except WebSocketDisconnect:
-        await manager.disconnect(user["employee_code"])
+        pass
     except Exception as e:
         print(f"Chat WS error ({user['employee_code']}): {e}")
+    finally:
         await manager.disconnect(user["employee_code"])
+        await _broadcast_presence(user["employee_code"], False)
 
 
 # ---------------------------------------------------------------------------
@@ -305,6 +327,7 @@ def chat_contacts(
                 | (Employee.department.ilike(like))
             )
         rows = query.order_by(Employee.full_name).limit(500).all()
+        online = _online_codes()
         return {
             "status": "success",
             "data": [
@@ -313,10 +336,49 @@ def chat_contacts(
                     "full_name": r.full_name,
                     "department": r.department,
                     "position": r.position,
+                    "online": r.employee_code in online,
                 }
                 for r in rows
             ],
         }
+    finally:
+        db.close()
+
+
+@router.get("/online")
+def get_online_users(
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token"),
+):
+    """Danh sách nhân viên đang online (có WebSocket chat kết nối)."""
+    user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
+    user = _normalize_user(user)
+
+    codes = manager.active_connections()
+    if not codes:
+        return {"status": "success", "data": []}
+
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(Employee.employee_code, Employee.full_name, Employee.department, Employee.position)
+            .filter(Employee.employee_code.in_(codes))
+            .all()
+        )
+        info = {r.employee_code: r for r in rows}
+        data = []
+        for code in codes:
+            r = info.get(code)
+            data.append({
+                "employee_code": code,
+                "full_name": r.full_name if r else code,
+                "department": r.department if r else "",
+                "position": r.position if r else "",
+                "online": True,
+            })
+        return {"status": "success", "data": data}
     finally:
         db.close()
 
@@ -337,6 +399,7 @@ def get_rooms(
 
         rows = db.query(ChatRoom).all()
         rooms = []
+        online = _online_codes()
         for room in rows:
             if not _is_room_member(db, room, user["employee_code"]):
                 continue
@@ -347,6 +410,7 @@ def get_rooms(
                 .order_by(ChatMessage.created_at.desc())
                 .first()
             )
+            online_codes = [c for c in member_codes if c in online]
             rooms.append({
                 "id": room.id,
                 "type": room.type,
@@ -355,6 +419,8 @@ def get_rooms(
                 "owner_code": room.owner_code,
                 "member_codes": member_codes,
                 "member_count": len(member_codes),
+                "online_codes": online_codes,
+                "online_count": len(online_codes),
                 "can_manage": _can_manage_room(user, room),
                 "last_message": (
                     _serialize_message(last_msg, _sender_name(db, last_msg.sender_id))
@@ -540,6 +606,7 @@ def room_members(
         codes = _room_member_codes(room_id)
         members = []
         if codes:
+            online = _online_codes()
             rows = (
                 db.query(Employee.employee_code, Employee.full_name, Employee.department, Employee.position)
                 .filter(Employee.employee_code.in_(codes))
@@ -554,6 +621,7 @@ def room_members(
                     "department": r.department if r else "",
                     "position": r.position if r else "",
                     "is_owner": room.owner_code == code,
+                    "online": code in online,
                 })
         return {"status": "success", "data": members}
     finally:

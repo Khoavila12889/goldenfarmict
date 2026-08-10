@@ -8,7 +8,7 @@ import {
 import {
   getChatRooms, getChatMessages, createChatRoom, uploadChatFile, getChatContacts, chatWebSocketUrl,
   getChatRoomMembers, renameChatRoom, deleteChatRoom, addChatRoomMembers, removeChatRoomMember,
-  getChatPinnedMessages, pinChatMessage, unpinChatMessage,
+  getChatPinnedMessages, pinChatMessage, unpinChatMessage, getChatOnline,
 } from '../services/api'
 import { getEmployees, getDepartments } from '../services/api'
 import './Chat.css'
@@ -40,6 +40,12 @@ function formatDay(iso) {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 }
 
+function formatDayShort(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`
+}
+
 function isSameDay(a, b) {
   if (!a || !b) return false
   return new Date(a).toDateString() === new Date(b).toDateString()
@@ -62,6 +68,16 @@ function attachmentFileName(m) {
   return parts[parts.length - 1] || 'Tệp đính kèm'
 }
 
+// Chấm trạng thái online — xanh nhấp nháy nếu online, xám nếu offline
+function PresenceDot({ online, title }) {
+  return (
+    <span
+      className={`presence-dot${online ? '' : ' offline'}`}
+      title={title || (online ? 'Đang trực tuyến' : 'Đang ngoại tuyến')}
+    />
+  )
+}
+
 export default function Chat() {
   const userCode = sessionStorage.getItem('user_code') || ''
   const userRole = sessionStorage.getItem('user_role') || 'user'
@@ -75,6 +91,7 @@ export default function Chat() {
   const [employees, setEmployees] = useState([])
   const [departments, setDepartments] = useState([])
   const [nameMap, setNameMap] = useState({})
+  const [onlineUsers, setOnlineUsers] = useState([])
   const [activeRoomId, setActiveRoomId] = useState(null)
   const [messages, setMessages] = useState([])
   const [hasMore, setHasMore] = useState(false)
@@ -138,8 +155,12 @@ export default function Chat() {
     if (!room) return ''
     if (room.type === 'department') return `${room.member_count || 0} thành viên phòng ban`
     if (room.type === 'group') return `${room.member_count || 0} thành viên`
-    return (room.member_codes || []).filter(c => c !== userCode).map(displayNameOf).join(', ')
-  }, [userCode, displayNameOf])
+    const others = (room.member_codes || []).filter(c => c !== userCode)
+    const base = others.map(displayNameOf).join(', ')
+    if (!others.length) return base
+    const anyOnline = others.some(c => onlineUsers.includes(c))
+    return `${base} — ${anyOnline ? '● Trực tuyến' : '○ Ngoại tuyến'}`
+  }, [userCode, displayNameOf, onlineUsers])
 
   const refreshRooms = useCallback(async () => {
     try {
@@ -156,7 +177,8 @@ export default function Chat() {
       getChatContacts(),
       getChatRooms(),
       getDepartments(),
-    ]).then(([empRes, contactRes, roomRes, deptRes]) => {
+      getChatOnline(),
+    ]).then(([empRes, contactRes, roomRes, deptRes, onlineRes]) => {
       if (cancelled) return
       const emps = empRes.status === 'fulfilled' ? (empRes.value.data?.data || []) : []
       const map = {}
@@ -168,6 +190,8 @@ export default function Chat() {
       setRooms(roomList)
       const deptList = deptRes.status === 'fulfilled' ? (deptRes.value.data?.data || []) : []
       setDepartments(deptList)
+      const onlineList = onlineRes.status === 'fulfilled' ? (onlineRes.value.data?.data || []) : []
+      setOnlineUsers(onlineList.map(u => u.employee_code).filter(Boolean))
       setDeptSelect(prev => prev || userDept || deptList[0]?.name || '')
       setLoadingRooms(false)
     })
@@ -183,6 +207,10 @@ export default function Chat() {
       if (msg.room_id === activeRoomIdRef.current) {
         setPinnedMessages(msg.pinned || [])
       }
+      return
+    }
+    if (msg.event === 'presence') {
+      setOnlineUsers(Array.isArray(msg.online) ? msg.online : [])
       return
     }
     if (!msg.id) return
@@ -567,6 +595,10 @@ export default function Chat() {
       ? (last.sender_id === userCode ? 'Bạn: ' : '')
         + (last.content || (last.attachment_url ? `📎 ${attachmentFileName(last)}` : ''))
       : 'Chưa có tin nhắn'
+    const isDirect = room.type === 'direct'
+    const otherOnline = isDirect
+      ? (room.member_codes || []).filter(c => c !== userCode).some(c => onlineUsers.includes(c))
+      : false
     return (
       <button
         key={room.id}
@@ -578,6 +610,7 @@ export default function Chat() {
         </div>
         <div className="chat-room-meta">
           <div className="chat-room-name">
+            {room.type === 'direct' && <PresenceDot online={otherOnline} />}
             {roomDisplayName(room)}
             {room.type === 'department' && <span className="chat-room-tag">Phòng ban</span>}
             {room.type === 'group' && <span className="chat-room-tag">Nhóm</span>}
@@ -769,7 +802,7 @@ export default function Chat() {
                       </div>
                       <div className="chat-msg-meta">
                         {m.is_pinned && <span className="chat-msg-pinned-flag" title="Tin nhắn đã ghim"><Pin size={11} /></span>}
-                        <span className="chat-msg-time">{formatTime(m.created_at)}</span>
+                        <span className="chat-msg-time">{formatDayShort(m.created_at)} · {formatTime(m.created_at)}</span>
                         <button
                           type="button"
                           className={`chat-msg-pin${m.is_pinned ? ' active' : ''}`}
@@ -963,6 +996,7 @@ export default function Chat() {
                         >
                           <span className="chat-emp-check">{sel ? '✓' : ''}</span>
                           <span className="chat-emp-name">
+                            <PresenceDot online={onlineUsers.includes(emp.employee_code)} />
                             {emp.full_name || emp.employee_code}
                             {emp.employee_code && <span className="chat-emp-code">{emp.employee_code}</span>}
                           </span>
@@ -1044,6 +1078,7 @@ export default function Chat() {
                             >
                               <span className="chat-emp-check">{sel ? '✓' : ''}</span>
                               <span className="chat-emp-name">
+                                <PresenceDot online={onlineUsers.includes(emp.employee_code)} />
                                 {emp.full_name || emp.employee_code}
                                 {emp.employee_code && <span className="chat-emp-code">{emp.employee_code}</span>}
                               </span>
@@ -1081,6 +1116,7 @@ export default function Chat() {
                           </span>
                           <div className="chat-member-info">
                             <span className="chat-member-name">
+                              <PresenceDot online={onlineUsers.includes(m.employee_code)} />
                               {m.full_name || m.employee_code}
                               {m.is_owner && <span className="chat-owner-badge"><Crown size={11} /> Chủ nhóm</span>}
                               {m.employee_code === userCode && <span className="chat-me-badge">Bạn</span>}
