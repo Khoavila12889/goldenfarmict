@@ -53,19 +53,26 @@ def list_configs(user_code: str = Query(''), user_role: str = Query('')):
     else:
         emp = fetchone("SELECT department FROM employees WHERE employee_code=:code", {"code": user_code})
         user_dept = (emp['department'] or '') if emp else ''
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         rows = fetchall("""
             SELECT DISTINCT sc.* FROM storage_config sc
             JOIN storage_permissions sp ON sp.storage_id = sc.id
             WHERE sc.is_active = TRUE
+              AND sp.can_read = TRUE
+              AND (
+                sp.expires_at IS NULL
+                OR CAST(sp.expires_at AS TEXT) = ''
+                OR CAST(sp.expires_at AS TIMESTAMP) > CAST(:now AS TIMESTAMP)
+              )
               AND (
                 sp.target_type = 'EVERYONE'
-                OR (sp.target_type = 'DEPARTMENT' AND sp.department != '' AND sp.department = :dept)
-                OR sp.employee_code = :code
-                OR sp.role = :role
+                OR (sp.target_type = 'DEPARTMENT' AND sp.department = :dept AND :dept != '')
+                OR (sp.target_type = '' AND sp.role = :role AND :role != '')
+                OR (sp.target_type IN ('', 'USER', 'INDIVIDUAL') AND sp.employee_code = :code AND :code != '')
                 OR (sp.department = '' AND sp.role = '' AND sp.employee_code = '')
               )
             ORDER BY sc.name
-        """, {"role": user_role, "code": user_code, "dept": user_dept})
+        """, {"role": user_role, "code": user_code, "dept": user_dept, "now": now_str})
     for r in rows:
         if r.get('password'):
             r['password'] = '********'

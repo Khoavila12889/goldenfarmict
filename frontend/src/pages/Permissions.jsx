@@ -4,6 +4,8 @@ import {
   Users, BookOpen, FolderOpen, Building, Trash2, Plus, ChevronDown, CheckSquare, Square
 } from 'lucide-react'
 import '../styles/booking.css'
+import './Permissions.css'
+import { PERM_KEYS, PERM_LABELS, EXTRA_PERMS, ALL_PERM_INFO, toPermObject, resolveEffectivePermissions } from '../utils/permission'
 
 const MODULES = [
   { key: 'employees', label: 'Nhân viên', group: 'admin', desc: 'Quản lý thông tin nhân viên' },
@@ -602,40 +604,56 @@ function ModulePermCard({ mod, permissions, togglePerm, targetType, rolePerms, d
 }
 
 /* ─── Tab 2 & 3 Giữ Nguyên Logic Chuẩn ─── */
-const PERM_LABELS = {
-  can_read: { label: 'Đọc', desc: 'Xem nội dung thư mục và tệp' },
-  can_write: { label: 'Tạo/Sửa', desc: 'Tạo tệp/thư mục mới' },
-  can_upload: { label: 'Upload', desc: 'Upload file lên thư mục' },
-  can_edit: { label: 'Chỉnh sửa', desc: 'Sửa nội dung tệp hiện có' },
-  can_delete: { label: 'Xóa', desc: 'Xóa tệp và thư mục' },
-  can_reshare: { label: 'Chia sẻ lại', desc: 'Cấp quyền cho người khác' },
-}
-const EXTRA_PERMS = {
-  allow_download: { label: 'Cho phép tải xuống', desc: 'Tải tệp về máy' },
-}
 
-function PermissionMatrix({ values, onChange, showDownload }) {
-  const keys = ['can_read', 'can_write', 'can_upload', 'can_edit', 'can_delete', 'can_reshare']
-  const ext = showDownload ? Object.keys(EXTRA_PERMS) : []
-  const allKeys = [...keys, ...ext]
+function PermissionRow({ title, subtitle, icon: Icon, isExpanded, onToggle, onDelete, values = {}, inheritedState = {}, onChange, isGlobal }) {
+  const allKeys = [...Object.keys(PERM_LABELS), ...Object.keys(EXTRA_PERMS)]
+
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-      {allKeys.map(k => {
-        const info = PERM_LABELS[k] || EXTRA_PERMS[k]
-        return (
-          <label key={k} title={info.desc} style={{
-            display: 'flex', alignItems: 'center', gap: '0.25rem',
-            fontSize: '0.76rem', cursor: 'pointer', color: 'var(--bk-text-secondary)',
-            padding: '0.2rem 0.4rem', borderRadius: '4px',
-            background: values[k] ? '#eef2ff' : 'transparent',
-            border: `1px solid ${values[k] ? '#c7d2fe' : 'transparent'}`,
-          }}>
-            <input type="checkbox" checked={!!values[k]}
-              onChange={() => onChange(k)} style={{ accentColor: 'var(--bk-primary)' }} />
-            {info.label}
-          </label>
-        )
-      })}
+    <div className={`pq-row${isExpanded ? ' open' : ''}`}>
+      <div className="pq-row-header" onClick={onToggle}>
+        <div className="pq-row-icon"><Icon size={16} /></div>
+        <div className="pq-row-info">
+          <div className="pq-row-title">
+            {title}
+            {isGlobal && <span className="pq-badge-global">Đã cấp quyền</span>}
+          </div>
+          {subtitle && <div className="pq-row-subtitle">{subtitle}</div>}
+        </div>
+        {onDelete && (
+          <div className="pq-row-actions">
+            <button className="pq-icon-btn" title="Xóa quyền" onClick={(e) => { e.stopPropagation(); onDelete() }}>
+              <Trash2 size={14} />
+            </button>
+          </div>
+        )}
+        <ChevronDown size={16} className={`pq-chevron${isExpanded ? ' open' : ''}`} />
+      </div>
+
+      {isExpanded && (
+        <div className="pq-row-body">
+          <div className="pq-perm-grid">
+            {allKeys.map(k => {
+              const info = ALL_PERM_INFO[k]
+              const isInherited = Boolean(inheritedState[k])
+              const isChecked = Boolean(values[k]) || isInherited
+
+              return (
+                <label key={k} title={info.desc}
+                  className={`pq-perm-item${isChecked ? ' on' : ''}${isInherited ? ' inherited' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    disabled={isInherited}
+                    onChange={() => !isInherited && onChange(k)}
+                  />
+                  {info.label}
+                  {isInherited && <span className="pq-badge-inherited">Kế thừa</span>}
+                </label>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -656,6 +674,8 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
   const [deptPerms, setDeptPerms] = useState({ can_read: true, allow_download: true })
   const [saving, setSaving] = useState(false)
   const [expandedPerm, setExpandedPerm] = useState(null)
+  const [showAddDept, setShowAddDept] = useState(false)
+  const [showAddUser, setShowAddUser] = useState(false)
 
   const [users, setUsers] = useState([])
   const [userSearch, setUserSearch] = useState('')
@@ -859,372 +879,244 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
   }
 
   if (loading) {
-    return <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--bk-text-muted)' }}>
-      <Loader size={20} className="spin" />
-    </div>
+    return <div className="pq-loading"><Loader size={20} className="spin" /></div>
   }
 
+  const everyoneRow = permissions.find(p => p.target_type === 'EVERYONE')
+
   return (
-    <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap' }}>
-      <div className="bk-card" style={{ padding: '1rem', flex: '1 1 280px', minWidth: 240, maxWidth: 360 }}>
-        <div style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <FolderOpen size={16} /> Kho tài liệu
-        </div>
-        {storages.length === 0 ? (
-          <div style={{ padding: '1rem 0', textAlign: 'center', fontSize: '0.82rem', color: 'var(--bk-text-muted)' }}>
-            Chưa có cấu hình lưu trữ
-          </div>
-        ) : (
-          // Filter storages: only show those with permission or admin
-          (() => {
-            const accessibleStorages = storages.filter(s => {
-              // Admin/head luôn thấy tất cả
-              if (role === 'admin' || role === 'head') return true;
-              // Nếu có permission cụ thể cho storage này
-              return permissions.some(p => p.storage_id === s.id && p.can_read);
-            });
-            
-            return accessibleStorages.length === 0 ? (
-              <div style={{ padding: '1rem 0', textAlign: 'center', fontSize: '0.82rem', color: '#dc2626' }}>
-                Bạn chưa được cấp quyền truy cập tài liệu nào.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-                {accessibleStorages.map(s => (
-                  <div key={s.id} onClick={() => selectStorage(s)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '0.5rem',
-                      padding: '0.55rem 0.65rem', borderRadius: 'var(--bk-radius-sm)', cursor: 'pointer',
-                      background: selectedStorage?.id === s.id ? 'var(--bk-primary)' : 'var(--bk-surface-hover)',
-                      color: selectedStorage?.id === s.id ? '#fff' : 'var(--bk-text)',
-                    }}
-                  >
-                    <Building size={16} style={{ flexShrink: 0 }} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: '0.82rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {s.name}
+    <div className="pq-wrap">
+      <div className="pq-sidebar">
+        <div className="pq-card">
+          <div className="pq-card-title"><FolderOpen size={16} className="pq-accent" /> Kho tài liệu</div>
+          {storages.length === 0 ? (
+            <div className="pq-empty">Chưa có cấu hình lưu trữ</div>
+          ) : (
+            (() => {
+              const accessibleStorages = storages.filter(s => {
+                if (role === 'admin' || role === 'head') return true
+                return permissions.some(p => p.storage_id === s.id && p.can_read)
+              })
+              return accessibleStorages.length === 0 ? (
+                <div className="pq-empty danger">Bạn chưa được cấp quyền truy cập tài liệu nào.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                  {accessibleStorages.map(s => (
+                    <div key={s.id} onClick={() => selectStorage(s)}
+                      className={`pq-storage-item${selectedStorage?.id === s.id ? ' active' : ''}`}>
+                      <Building size={16} className="pq-icon" />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="pq-name">{s.name}</div>
+                        <div className="pq-sub">{s.type?.toUpperCase()} · {s.host || '—'}</div>
                       </div>
-                      <div style={{ fontSize: '0.72rem', opacity: 0.7 }}>{s.type?.toUpperCase()} · {s.host || '—'}</div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            );
-          })()
-        )}
+                  ))}
+                </div>
+              )
+            })()
+          )}
+        </div>
       </div>
 
-      <div className="bk-card" style={{ padding: '1.25rem', flex: '1 1 500px', minWidth: 320 }}>
-        {!selectedStorage ? (
-          <div style={{ padding: '2rem 0', textAlign: 'center', color: 'var(--bk-text-muted)', fontSize: '0.9rem' }}>
-            <FolderOpen size={40} style={{ marginBottom: '0.75rem', opacity: 0.4 }} />
-            <div>Chọn kho tài liệu để quản lý quyền chia sẻ</div>
-          </div>
-        ) : permLoading ? (
-          <div style={{ textAlign: 'center', padding: '2rem' }}>
-            <Loader size={20} className="spin" />
-          </div>
-        ) : (
-          <>
-            <div style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <Building size={16} />
-              {selectedStorage.name}
-              <span style={{ fontSize: '0.72rem', fontWeight: 500, color: 'var(--bk-text-secondary)', marginLeft: '0.35rem' }}>
-                · {selectedStorage.type?.toUpperCase()}
-              </span>
+      <div className="pq-main">
+        <div className="pq-card">
+          {!selectedStorage ? (
+            <div className="pq-empty" style={{ padding: '2rem 0' }}>
+              <FolderOpen size={40} style={{ marginBottom: '0.75rem', opacity: 0.4, display: 'block', marginLeft: 'auto', marginRight: 'auto' }} />
+              <div>Chọn kho tài liệu để quản lý quyền chia sẻ</div>
             </div>
-
-            <div style={{
-              marginBottom: '1rem', padding: '0.75rem', borderRadius: 'var(--bk-radius-sm)',
-              background: everyoneExists ? '#f0fdf4' : 'var(--bk-surface-hover)',
-              border: `1px solid ${everyoneExists ? '#bbf7d0' : 'var(--bk-border)'}`,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 700, fontSize: '0.82rem' }}>
-                  <Users size={14} style={{ color: 'var(--bk-text-secondary)' }} />
-                  Tất cả nhân viên
-                  {everyoneExists && <span style={{ fontSize: '0.65rem', color: '#16a34a' }}>✓ Đã cấp quyền</span>}
-                </div>
-                {everyoneExists && (
-                  <button onClick={() => removePerm(permissions.find(p => p.target_type === 'EVERYONE')?.id)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '2px' }}
-                    title="Xóa quyền Everyone">
-                    <Trash2 size={13} />
-                  </button>
-                )}
+          ) : permLoading ? (
+            <div className="pq-loading"><Loader size={20} className="spin" /></div>
+          ) : (
+            <>
+              <div className="pq-header-title">
+                <Building size={16} className="pq-accent" />
+                {selectedStorage.name}
+                <span className="pq-muted">· {selectedStorage.type?.toUpperCase()}</span>
               </div>
-              <PermissionMatrix values={everyonePerms}
+
+              {/* ─── KHỐI 1: TẤT CẢ NHÂN VIÊN ─── */}
+              <div className="pq-section-title"><Shield size={15} className="pq-accent" /> Cấp quyền toàn cục</div>
+              <PermissionRow
+                title="Tất cả nhân viên"
+                subtitle="Mọi nhân viên nội bộ đều được hưởng các quyền này"
+                icon={Users}
+                isGlobal={everyoneExists}
+                isExpanded={expandedPerm === 'everyone'}
+                onToggle={() => setExpandedPerm(expandedPerm === 'everyone' ? null : 'everyone')}
+                onDelete={everyoneExists ? () => removePerm(everyoneRow?.id) : null}
+                values={everyonePerms}
+                inheritedState={{}}
                 onChange={k => setEveryonePerms(p => ({ ...p, [k]: !p[k] }))}
-                showDownload />
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-                <button className="bk-btn bk-btn-primary" style={{ height: '30px', fontSize: '0.78rem', whiteSpace: 'nowrap' }}
-                  onClick={saveEveryone} disabled={saving}>
-                  {everyoneExists ? 'Cập nhật' : 'Áp dụng'}
-                </button>
-              </div>
-            </div>
-
-            <h4 style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--bk-primary)', margin: '0 0 0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-              <Building size={14} /> Phòng ban được chia sẻ
-            </h4>
-
-            {deptPermsList.length === 0 ? (
-              <div style={{ padding: '0.5rem 0.65rem', fontSize: '0.8rem', color: 'var(--bk-text-muted)', background: 'var(--bk-surface-hover)', borderRadius: 'var(--bk-radius-sm)', marginBottom: '0.75rem' }}>
-                Chưa có phòng ban nào được cấp quyền
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '0.75rem' }}>
-                {deptPermsList.map(p => {
-                  const isExpanded = expandedPerm === p.id
-                  return (
-                    <div key={p.id} style={{
-                      border: '1px solid var(--bk-border)',
-                      borderRadius: 'var(--bk-radius-sm)', overflow: 'hidden',
-                    }}>
-                      <div style={{
-                        display: 'flex', alignItems: 'center', gap: '0.4rem',
-                        padding: '0.4rem 0.6rem', cursor: 'pointer',
-                        background: 'var(--bk-surface-hover)',
-                        fontSize: '0.8rem',
-                      }} onClick={() => setExpandedPerm(isExpanded ? null : p.id)}>
-                        <Building size={13} style={{ color: 'var(--bk-primary)', flexShrink: 0 }} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <span style={{ flex: 1 }}>{p.department_name || p.department}</span>
-                            {p.folder_path && (
-                              <span style={{
-                                fontSize: '0.68rem', padding: '0.1rem 0.35rem', borderRadius: '99px',
-                                background: 'var(--bk-surface)', color: 'var(--bk-text-secondary)',
-                                whiteSpace: 'nowrap'
-                              }}>
-                                {p.folder_path}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: '0.2rem' }}>
-                          {Object.entries(PERM_LABELS).map(([k, v]) =>
-                            p[k] ? <span key={k} style={{
-                              fontSize: '0.62rem', padding: '0.1rem 0.35rem', borderRadius: '99px',
-                              background: '#eef2ff', color: '#4338ca', fontWeight: 600,
-                            }}>{v.label}</span> : null
-                          )}
-                          {p.allow_download && <span style={{
-                            fontSize: '0.62rem', padding: '0.1rem 0.35rem', borderRadius: '99px',
-                            background: '#f0fdf4', color: '#16a34a', fontWeight: 600,
-                          }}>Tải xuống</span>}
-                        </div>
-                        <button onClick={e => { e.stopPropagation(); removePerm(p.id) }}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '2px' }}>
-                          <X size={12} />
-                        </button>
-                        <ChevronDown size={12} style={{
-                          color: 'var(--bk-text-muted)',
-                          transform: isExpanded ? 'rotate(180deg)' : '',
-                          transition: 'transform 0.15s',
-                        }} />
-                      </div>
-                      {isExpanded && (
-                        <div style={{ padding: '0.5rem 0.6rem', borderTop: '1px solid var(--bk-border)' }}>
-                          <PermissionMatrix values={{
-                            can_read: p.can_read, can_write: p.can_write, can_upload: p.can_upload, can_edit: p.can_edit,
-                            can_delete: p.can_delete, can_reshare: p.can_reshare,
-                          }} onChange={k => updateDeptPerm(p, k)} showDownload />
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-            <div style={{
-              padding: '0.75rem', borderRadius: 'var(--bk-radius-sm)',
-              border: '1px dashed var(--bk-border)', marginBottom: '0.75rem',
-            }}>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
-                <div style={{ position: 'relative', flex: 1, minWidth: 160 }}>
-                  <Search size={13} style={{ position: 'absolute', left: '0.45rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--bk-text-muted)' }} />
-                  <input className="bk-form-input" placeholder="Tìm phòng ban..."
-                    value={deptSearch} onChange={e => setDeptSearch(e.target.value)}
-                    style={{ paddingLeft: '1.6rem', height: '32px', fontSize: '0.8rem' }} />
+              />
+              {expandedPerm === 'everyone' && (
+                <div className="pq-add-btn-row">
+                  <button className="pq-btn pq-btn-primary" onClick={saveEveryone} disabled={saving}>
+                    {saving ? <Loader size={13} className="spin" /> : <Save size={13} />}
+                    {everyoneExists ? 'Cập nhật quyền' : 'Áp dụng cho hệ thống'}
+                  </button>
                 </div>
-                <select value={newDept} onChange={e => setNewDept(e.target.value)}
-                  style={{
-                    flex: 1, minWidth: 140, padding: '0.35rem 0.5rem', borderRadius: '6px',
-                    border: '1px solid var(--bk-border)', fontSize: '0.78rem', fontFamily: 'inherit',
-                    background: 'var(--bk-surface)',
-                  }}>
-                  <option value="">Chọn phòng ban...</option>
-                  {deptSearch && !availDepts.find(d => d.name === deptSearch) && (
-                    <option value={deptSearch}>+ Thêm "{deptSearch}"</option>
-                  )}
-                  {availDepts.map(d => <option key={d.id || d.name} value={d.name}>{d.name}</option>)}
-                </select>
-              </div>
-              <PermissionMatrix values={deptPerms}
-                onChange={k => setDeptPerms(p => ({ ...p, [k]: !p[k] }))}
-                showDownload />
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-                <button className="bk-btn bk-btn-primary" style={{ height: '30px', whiteSpace: 'nowrap', fontSize: '0.78rem' }}
-                  onClick={addDepartmentPerm} disabled={!newDept || saving}>
-                  {saving ? <Loader size={13} className="spin" /> : <Plus size={13} />}
-                  Thêm
+              )}
+
+              <hr className="pq-divider" />
+
+              {/* ─── KHỐI 2: PHÒNG BAN ─── */}
+              <div className="pq-toolbar">
+                <div className="pq-section-title" style={{ margin: 0 }}><Building size={15} className="pq-accent" /> Phòng ban được chia sẻ</div>
+                <button className="pq-btn pq-btn-ghost" onClick={() => setShowAddDept(v => !v)}>
+                  <Plus size={14} /> Thêm phòng ban
                 </button>
               </div>
-            </div>
 
-            <h4 style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--bk-primary)', margin: '1rem 0 0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-              <User size={14} /> Cá nhân được chia sẻ
-            </h4>
+              {showAddDept && (
+                <div className="pq-add-box">
+                  <div className="pq-form-row">
+                    <div className="pq-input-wrap">
+                      <Search size={13} className="pq-search-ic" />
+                      <input className="pq-input" style={{ paddingLeft: '1.6rem' }} placeholder="Tìm phòng ban..."
+                        value={deptSearch} onChange={e => setDeptSearch(e.target.value)} />
+                    </div>
+                    <select className="pq-select" value={newDept} onChange={e => setNewDept(e.target.value)}>
+                      <option value="">Chọn phòng ban...</option>
+                      {deptSearch && !availDepts.find(d => d.name === deptSearch) && (
+                        <option value={deptSearch}>+ Thêm "{deptSearch}"</option>
+                      )}
+                      {availDepts.map(d => <option key={d.id || d.name} value={d.name}>{d.name}</option>)}
+                    </select>
+                  </div>
+                  <PermissionRow
+                    title="Quyền mặc định"
+                    icon={Building}
+                    isExpanded
+                    onToggle={() => {}}
+                    onDelete={null}
+                    values={deptPerms}
+                    inheritedState={{}}
+                    onChange={k => setDeptPerms(p => ({ ...p, [k]: !p[k] }))}
+                  />
+                  <div className="pq-add-btn-row">
+                    <button className="pq-btn pq-btn-primary" onClick={addDepartmentPerm} disabled={!newDept || saving}>
+                      {saving ? <Loader size={13} className="spin" /> : <Plus size={13} />}
+                      Thêm
+                    </button>
+                  </div>
+                </div>
+              )}
 
-            {userPermsList.length === 0 ? (
-              <div style={{ padding: '0.5rem 0.65rem', fontSize: '0.8rem', color: 'var(--bk-text-muted)', background: 'var(--bk-surface-hover)', borderRadius: 'var(--bk-radius-sm)', marginBottom: '0.75rem' }}>
-                Chưa có cá nhân nào được cấp quyền
+              {deptPermsList.length === 0 ? (
+                <div className="pq-empty-state">Chưa có phòng ban nào được cấp quyền</div>
+              ) : (
+                deptPermsList.map(p => {
+                  const inherited = resolveEffectivePermissions(everyonePerms, null, toPermObject(p)).inheritedFrom
+                  return (
+                    <PermissionRow
+                      key={p.id}
+                      title={p.department_name || p.department}
+                      subtitle={p.folder_path ? `Đường dẫn: ${p.folder_path}` : `Phòng: ${p.department_name || p.department}`}
+                      icon={Building}
+                      isExpanded={expandedPerm === p.id}
+                      onToggle={() => setExpandedPerm(expandedPerm === p.id ? null : p.id)}
+                      onDelete={() => removePerm(p.id)}
+                      values={toPermObject(p)}
+                      inheritedState={inherited}
+                      onChange={k => updateDeptPerm(p, k)}
+                    />
+                  )
+                })
+              )}
+
+              <hr className="pq-divider" />
+
+              {/* ─── KHỐI 3: CÁ NHÂN ─── */}
+              <div className="pq-toolbar">
+                <div className="pq-section-title" style={{ margin: 0 }}><User size={15} className="pq-accent" /> Cá nhân được chia sẻ</div>
+                <button className="pq-btn pq-btn-ghost" onClick={() => setShowAddUser(v => !v)}>
+                  <Plus size={14} /> Thêm cá nhân
+                </button>
               </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '0.75rem' }}>
-                {userPermsList.map(p => {
-                  const isExpanded = expandedPerm === p.id
+
+              {showAddUser && (
+                <div className="pq-add-box">
+                  <div className="pq-form-row">
+                    <div className="pq-input-wrap">
+                      <Search size={13} className="pq-search-ic" />
+                      <input className="pq-input" style={{ paddingLeft: '1.6rem' }} placeholder="Tìm theo tên hoặc mã nhân viên..."
+                        value={userSearch} onChange={e => setUserSearch(e.target.value)} />
+                    </div>
+                    <select className="pq-select" value={selectedEmployee} onChange={e => setSelectedEmployee(e.target.value)}>
+                      <option value="">Chọn nhân viên...</option>
+                      {availUsers.map(u => (
+                        <option key={u.employee_code} value={u.employee_code}>
+                          {u.full_name || u.employee_code} — {u.employee_code}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <PermissionRow
+                    title="Quyền mặc định"
+                    icon={User}
+                    isExpanded
+                    onToggle={() => {}}
+                    onDelete={null}
+                    values={userPerms}
+                    inheritedState={{}}
+                    onChange={k => setUserPerms(p => ({ ...p, [k]: !p[k] }))}
+                  />
+                  <div className="pq-add-btn-row">
+                    <button className="pq-btn pq-btn-primary" onClick={addUserPerm} disabled={!selectedEmployee || saving}>
+                      {saving ? <Loader size={13} className="spin" /> : <Plus size={13} />}
+                      Thêm
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {userPermsList.length === 0 ? (
+                <div className="pq-empty-state">Chưa có cá nhân nào được cấp quyền</div>
+              ) : (
+                userPermsList.map(p => {
                   const u = users.find(x => x.employee_code === p.employee_code)
+                  const deptPerm = deptPermsList.find(d => d.department === (u?.department || '')) || null
+                  const { inheritedFrom } = resolveEffectivePermissions(everyonePerms, deptPerm, toPermObject(p))
                   return (
-                    <div key={p.id} style={{
-                      border: '1px solid var(--bk-border)',
-                      borderRadius: 'var(--bk-radius-sm)', overflow: 'hidden',
-                    }}>
-                      <div style={{
-                        display: 'flex', alignItems: 'center', gap: '0.4rem',
-                        padding: '0.4rem 0.6rem', cursor: 'pointer',
-                        background: 'var(--bk-surface-hover)',
-                        fontSize: '0.8rem',
-                      }} onClick={() => setExpandedPerm(isExpanded ? null : p.id)}>
-                        <User size={13} style={{ color: 'var(--bk-primary)', flexShrink: 0 }} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <span style={{ flex: 1 }}>{u?.full_name || p.employee_code}</span>
-                            {p.employee_code && (
-                              <span style={{
-                                fontSize: '0.68rem', padding: '0.1rem 0.35rem', borderRadius: '99px',
-                                background: 'var(--bk-surface)', color: 'var(--bk-text-secondary)',
-                                whiteSpace: 'nowrap'
-                              }}>
-                                {p.employee_code}
-                              </span>
-                            )}
-                            {p.folder_path && (
-                              <span style={{
-                                fontSize: '0.68rem', padding: '0.1rem 0.35rem', borderRadius: '99px',
-                                background: 'var(--bk-surface)', color: 'var(--bk-text-secondary)',
-                                whiteSpace: 'nowrap'
-                              }}>
-                                {p.folder_path}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: '0.2rem' }}>
-                          {Object.entries(PERM_LABELS).map(([k, v]) =>
-                            p[k] ? <span key={k} style={{
-                              fontSize: '0.62rem', padding: '0.1rem 0.35rem', borderRadius: '99px',
-                              background: '#eef2ff', color: '#4338ca', fontWeight: 600,
-                            }}>{v.label}</span> : null
-                          )}
-                          {p.allow_download && <span style={{
-                            fontSize: '0.62rem', padding: '0.1rem 0.35rem', borderRadius: '99px',
-                            background: '#f0fdf4', color: '#16a34a', fontWeight: 600,
-                          }}>Tải xuống</span>}
-                        </div>
-                        <button onClick={e => { e.stopPropagation(); removePerm(p.id) }}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '2px' }}>
-                          <X size={12} />
-                        </button>
-                        <ChevronDown size={12} style={{
-                          color: 'var(--bk-text-muted)',
-                          transform: isExpanded ? 'rotate(180deg)' : '',
-                          transition: 'transform 0.15s',
-                        }} />
-                      </div>
-                      {isExpanded && (
-                        <div style={{ padding: '0.5rem 0.6rem', borderTop: '1px solid var(--bk-border)' }}>
-                          <PermissionMatrix values={{
-                            can_read: p.can_read, can_write: p.can_write, can_upload: p.can_upload, can_edit: p.can_edit,
-                            can_delete: p.can_delete, can_reshare: p.can_reshare,
-                          }} onChange={k => updateDeptPerm(p, k)} showDownload />
-                        </div>
-                      )}
-                    </div>
+                    <PermissionRow
+                      key={p.id}
+                      title={u?.full_name || p.employee_code}
+                      subtitle={`Mã NV: ${p.employee_code}${u?.department ? ` · Phòng: ${u.department}` : ''}`}
+                      icon={User}
+                      isExpanded={expandedPerm === p.id}
+                      onToggle={() => setExpandedPerm(expandedPerm === p.id ? null : p.id)}
+                      onDelete={() => removePerm(p.id)}
+                      values={toPermObject(p)}
+                      inheritedState={inheritedFrom}
+                      onChange={k => updateDeptPerm(p, k)}
+                    />
                   )
-                })}
-              </div>
-            )}
+                })
+              )}
 
-            <div style={{
-              padding: '0.75rem', borderRadius: 'var(--bk-radius-sm)',
-              border: '1px dashed var(--bk-border)', marginBottom: '0.75rem',
-            }}>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
-                <div style={{ position: 'relative', flex: 1, minWidth: 160 }}>
-                  <Search size={13} style={{ position: 'absolute', left: '0.45rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--bk-text-muted)' }} />
-                  <input className="bk-form-input" placeholder="Tìm theo tên hoặc mã nhân viên..."
-                    value={userSearch} onChange={e => setUserSearch(e.target.value)}
-                    style={{ paddingLeft: '1.6rem', height: '32px', fontSize: '0.8rem' }} />
-                </div>
-                <select value={selectedEmployee} onChange={e => setSelectedEmployee(e.target.value)}
-                  style={{
-                    flex: 1, minWidth: 160, padding: '0.35rem 0.5rem', borderRadius: '6px',
-                    border: '1px solid var(--bk-border)', fontSize: '0.78rem', fontFamily: 'inherit',
-                    background: 'var(--bk-surface)',
-                  }}>
-                  <option value="">Chọn nhân viên...</option>
-                  {availUsers.map(u => (
-                    <option key={u.employee_code} value={u.employee_code}>
-                      {u.full_name || u.employee_code} — {u.employee_code}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <PermissionMatrix values={userPerms}
-                onChange={k => setUserPerms(p => ({ ...p, [k]: !p[k] }))}
-                showDownload />
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-                <button className="bk-btn bk-btn-primary" style={{ height: '30px', whiteSpace: 'nowrap', fontSize: '0.78rem' }}
-                  onClick={addUserPerm} disabled={!selectedEmployee || saving}>
-                  {saving ? <Loader size={13} className="spin" /> : <Plus size={13} />}
-                  Thêm
-                </button>
-              </div>
-            </div>
-
-            {rolePermsList.length > 0 && (
-              <>
-                <h4 style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--bk-text-secondary)', margin: '0 0 0.5rem' }}>
-                  Quyền khác
-                </h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+              {rolePermsList.length > 0 && (
+                <>
+                  <div className="pq-section-title" style={{ color: '#64748b' }}>Quyền khác</div>
                   {rolePermsList.map(p => (
-                    <div key={p.id} style={{
-                      display: 'flex', alignItems: 'center', gap: '0.5rem',
-                      padding: '0.4rem 0.6rem', background: 'var(--bk-surface-hover)',
-                      borderRadius: 'var(--bk-radius-sm)', fontSize: '0.8rem',
-                    }}>
-                      <User size={14} style={{ color: 'var(--bk-text-muted)' }} />
-                      <span style={{ flex: 1 }}>
-                        Vai trò: <strong>{p.role}</strong>
-                      </span>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--bk-text-muted)' }}>
-                        {p.folder_path}
-                      </span>
-                      <button onClick={() => removePerm(p.id)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '2px' }}>
-                        <Trash2 size={12} />
-                      </button>
+                    <div key={p.id} className="pq-row">
+                      <div className="pq-row-header" style={{ cursor: 'default' }}>
+                        <div className="pq-row-icon"><User size={14} /></div>
+                        <div className="pq-row-info">
+                          <div className="pq-row-title">Vai trò: <strong>{p.role}</strong></div>
+                          <div className="pq-row-subtitle">{p.folder_path}</div>
+                        </div>
+                        <button className="pq-icon-btn" onClick={() => removePerm(p.id)} title="Xóa quyền">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </div>
                   ))}
-                </div>
-              </>
-            )}
-          </>
-        )}
+                </>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   )

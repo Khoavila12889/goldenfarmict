@@ -256,6 +256,14 @@ export default function Documents() {
       .catch(err => {
         setEntries([])
         const msg = err.response?.data?.detail || err.message || 'Không thể kết nối storage'
+        if (err.response?.status === 403 && /No permission to access this storage/i.test(msg)) {
+          // Không có quyền → ẩn storage khỏi danh sách và quay về Home, không hiện lỗi
+          setConfigs(prev => prev.filter(c => c.id !== configId))
+          setActiveConfig(null)
+          setBreadcrumbs([{ id: 'ROOT', name: 'Home' }])
+          setBrowseError('')
+          return
+        }
         setBrowseError(msg)
       })
       .finally(() => setLoading(false))
