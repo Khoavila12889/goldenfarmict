@@ -97,11 +97,12 @@ def get_todos(
 
     if u_role == 'admin':
         if scope == 'personal':
-            query += " AND (scope = 'personal' AND (creator_code = :u_code OR assignee_code = :u_code))"
+            query += " AND scope = 'personal' AND (creator_code = :u_code OR assignee_code = :u_code)"
             params['u_code'] = u_code
         elif scope == 'department':
             query += " AND scope = 'department'"
-    else:
+
+    elif u_role == 'head':
         if scope == 'personal':
             query += " AND scope = 'personal' AND (creator_code = :u_code OR assignee_code = :u_code)"
             params['u_code'] = u_code
@@ -110,6 +111,20 @@ def get_todos(
             params['u_dept'] = u_dept
         else:
             query += " AND ((scope = 'personal' AND (creator_code = :u_code OR assignee_code = :u_code)) OR (scope = 'department' AND department = :u_dept))"
+            params['u_code'] = u_code
+            params['u_dept'] = u_dept
+
+    else:  # User thường
+        if scope == 'personal':
+            query += " AND scope = 'personal' AND (creator_code = :u_code OR assignee_code = :u_code)"
+            params['u_code'] = u_code
+        elif scope == 'department':
+            # CHỈ XEM TASK ĐÃ DUYỆT HOẶC DO CHÍNH MÌNH TẠO
+            query += " AND scope = 'department' AND department = :u_dept AND (is_dept_approved = 1 OR creator_code = :u_code)"
+            params['u_dept'] = u_dept
+            params['u_code'] = u_code
+        else:
+            query += " AND ((scope = 'personal' AND (creator_code = :u_code OR assignee_code = :u_code)) OR (scope = 'department' AND department = :u_dept AND (is_dept_approved = 1 OR creator_code = :u_code)))"
             params['u_code'] = u_code
             params['u_dept'] = u_dept
 
@@ -163,7 +178,7 @@ def get_todo_stats(
     base_where = ""
     params = {}
     if u_role != 'admin':
-        base_where = " WHERE ((scope = 'personal' AND (creator_code = :u_code OR assignee_code = :u_code)) OR (scope = 'department' AND department = :u_dept))"
+        base_where = " WHERE ((scope = 'personal' AND (creator_code = :u_code OR assignee_code = :u_code)) OR (scope = 'department' AND department = :u_dept AND (is_dept_approved = 1 OR creator_code = :u_code)))"
         params = {"u_code": u_code, "u_dept": u_dept}
 
     total = fetchone(f"SELECT COUNT(*) AS cnt FROM todos{base_where}", params)["cnt"]
@@ -206,38 +221,61 @@ def create_todo(
     creator_dept = user["department"]
     u_role = user["user_role"]
 
-    if u_role != 'admin' and data.assignee_code:
-        if u_role == 'head':
-            if not fetchone("SELECT id FROM employees WHERE employee_code = :code AND department = :dept", {"code": data.assignee_code, "dept": creator_dept}):
-                raise HTTPException(403, "Trưởng phòng chỉ có thể giao việc cho nhân viên trong phòng ban của mình")
+    scope = (data.scope or "personal").strip()
+    if scope not in ("personal", "department"):
+        raise HTTPException(400, "Phạm vi công việc không hợp lệ")
+
+    # ── Phân quyền tạo nhiệm vụ ──────────────────────────────
+    is_dept_approved = 1  # Mặc định là đã duyệt (dành cho Cá nhân, hoặc Sếp tạo)
+
+    if scope == "department":
+        if u_role not in ("admin", "head"):
+            # NHÂN VIÊN TẠO: Cho phép, nhưng phải chờ sếp duyệt
+            target_dept = creator_dept
+            assignee_code = data.assignee_code or ""
+            assignee_name = data.assignee_name or ""
+            is_dept_approved = 0
         else:
-            if data.assignee_code != creator_code:
-                raise HTTPException(403, "Người dùng chỉ có thể giao việc cho chính mình")
+            # SẾP TẠO: Duyệt luôn
+            if u_role == "head":
+                if data.department and data.department != creator_dept:
+                    raise HTTPException(403, f"Trưởng phòng chỉ có thể tạo công việc cho phòng {creator_dept}")
+                target_dept = creator_dept
+            else:
+                target_dept = data.department or ""
 
-    if u_role != 'admin' and data.scope == 'department' and data.department and data.department != creator_dept:
-        raise HTTPException(403, f"Bạn chỉ có thể tạo công việc trong phòng ban {creator_dept}")
+            assignee_code = data.assignee_code or ""
+            assignee_name = data.assignee_name or ""
+            is_dept_approved = 1
 
-    target_dept = data.department if data.department else (creator_dept if data.scope == 'department' else "")
+    elif scope == "personal":
+        # Cá nhân
+        if data.assignee_code and data.assignee_code != creator_code:
+            raise HTTPException(403, "Công việc cá nhân chỉ giao cho chính bạn")
+        target_dept = ""
+        assignee_code = creator_code
+        assignee_name = creator_name
 
     todo_id = insert("""
         INSERT INTO todos (
             title, description, scope, department, creator_code, creator_name,
-            assignee_code, assignee_name, status, priority, due_date, tags
+            assignee_code, assignee_name, status, priority, due_date, tags, is_dept_approved
         ) VALUES (:title, :description, :scope, :department, :creator_code, :creator_name,
-                  :assignee_code, :assignee_name, 'todo', :priority, :due_date, :tags)
+                  :assignee_code, :assignee_name, 'todo', :priority, :due_date, :tags, :is_dept_approved)
         RETURNING id
     """, {
         "title": data.title,
         "description": data.description or "",
-        "scope": data.scope or "personal",
+        "scope": scope,
         "department": target_dept,
         "creator_code": creator_code,
         "creator_name": creator_name,
-        "assignee_code": data.assignee_code or "",
-        "assignee_name": data.assignee_name or "",
+        "assignee_code": assignee_code,
+        "assignee_name": assignee_name,
         "priority": data.priority or "medium",
         "due_date": data.due_date or "",
-        "tags": data.tags or ""
+        "tags": data.tags or "",
+        "is_dept_approved": is_dept_approved
     })
 
     if data.subtasks:
@@ -272,9 +310,10 @@ def get_assignees(
             {"dept": u_dept}
         )
     else:
+        # Nhân viên: chỉ thấy đồng nghiệp trong phòng ban của mình (để tạo việc phòng ban chờ duyệt)
         rows = fetchall(
-            "SELECT employee_code, full_name, department, position FROM employees WHERE status='active' AND employee_code = :code",
-            {"code": u_code}
+            "SELECT employee_code, full_name, department, position FROM employees WHERE status='active' AND department = :dept ORDER BY full_name",
+            {"dept": u_dept}
         )
 
     return {"status": "success", "data": rows}
@@ -297,6 +336,13 @@ def update_todo(
     u_code = user["user_code"]
     u_dept = user["department"]
 
+    # ── Ràng buộc bổ sung khi sửa ─────────────────────────────
+    new_scope = data.scope if data.scope is not None else todo['scope']
+    if new_scope == 'department' and u_role == 'head' and data.department and data.department != u_dept:
+        raise HTTPException(403, "Trưởng phòng chỉ có thể tạo công việc cho phòng ban của mình")
+    if (data.scope or todo['scope']) == 'personal' and data.assignee_code and data.assignee_code != u_code:
+        raise HTTPException(403, "Công việc cá nhân chỉ giao cho chính bạn")
+
     if u_role == 'admin':
         pass
     elif u_role == 'head':
@@ -310,16 +356,23 @@ def update_todo(
             raise HTTPException(403, "Bạn chỉ có thể cập nhật công việc của chính mình")
 
     if data.assignee_code and u_role != 'admin':
-        if u_role == 'head':
+        if new_scope == 'department':
+            # Nhân viên / trưởng phòng: chỉ giao cho người trong phòng ban của mình
             if not fetchone("SELECT id FROM employees WHERE employee_code = :code AND department = :dept", {"code": data.assignee_code, "dept": u_dept}):
-                raise HTTPException(403, "Trưởng phòng chỉ có thể giao việc cho nhân viên trong phòng ban của mình")
+                raise HTTPException(403, "Chỉ có thể giao việc cho nhân viên trong phòng ban của mình")
         else:
             if data.assignee_code != u_code:
-                raise HTTPException(403, "Người dùng chỉ có thể giao việc cho chính mình")
+                raise HTTPException(403, "Công việc cá nhân chỉ giao cho chính bạn")
 
     if data.department and u_role != 'admin':
         if data.department != u_dept:
             raise HTTPException(403, "Bạn chỉ có thể gán công việc trong phòng ban của mình")
+
+    # Nhân viên tạo/sửa việc phòng ban → luôn chờ duyệt; sếp/admin → đã duyệt; cá nhân → đã duyệt
+    if new_scope == 'department' and u_role not in ('admin', 'head'):
+        is_dept_approved = 0
+    else:
+        is_dept_approved = 1
 
     update_fields = []
     params = {}
@@ -354,6 +407,10 @@ def update_todo(
     if data.tags is not None:
         update_fields.append("tags = :tags")
         params['tags'] = data.tags
+
+    if new_scope != todo['scope'] or data.scope is not None:
+        update_fields.append("is_dept_approved = :is_dept_approved")
+        params['is_dept_approved'] = is_dept_approved
 
     if update_fields:
         update_fields.append("updated_at = CURRENT_TIMESTAMP")
@@ -441,3 +498,41 @@ def delete_todo(
 
     events.publish("todo_deleted", {"id": todo_id})
     return {"status": "success", "message": "Đã xóa công việc"}
+
+
+@router.patch("/{todo_id}/approve")
+def approve_department_todo(
+    todo_id: int,
+    x_user_code: str = Header(None, alias="X-User-Code"),
+    x_user_role: str = Header(None, alias="X-User-Role"),
+    x_user_dept: str = Header(None, alias="X-User-Dept"),
+    x_user_token: str = Header(None, alias="X-User-Token")
+):
+    user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
+    u_role = user["user_role"]
+    u_dept = user["department"]
+
+    # 1. Kiểm tra quyền
+    if u_role not in ('admin', 'head'):
+        raise HTTPException(status_code=403, detail="Chỉ trưởng phòng hoặc Admin mới có quyền duyệt")
+
+    todo = fetchone("SELECT * FROM todos WHERE id = :todo_id", {"todo_id": todo_id})
+    if not todo:
+        raise HTTPException(status_code=404, detail="Không tìm thấy công việc")
+
+    if todo['scope'] != 'department':
+        raise HTTPException(status_code=400, detail="Chỉ có thể duyệt công việc của phòng ban")
+
+    if u_role == 'head' and todo['department'] != u_dept:
+        raise HTTPException(status_code=403, detail="Bạn chỉ có thể duyệt công việc của phòng ban mình")
+
+    # 2. Cập nhật trạng thái
+    execute(
+        "UPDATE todos SET is_dept_approved = 1, updated_at = CURRENT_TIMESTAMP WHERE id = :todo_id",
+        {"todo_id": todo_id}
+    )
+
+    # 3. Bắn event realtime (SSE) cho cả phòng ban biết để load lại bảng
+    events.publish("todo_updated", {"id": todo_id, "status": todo['status']})
+
+    return {"status": "success", "message": "Đã phê duyệt công việc thành công"}

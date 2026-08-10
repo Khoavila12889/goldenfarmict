@@ -48,8 +48,12 @@ app.include_router(chat.router)
 
 
 @app.on_event("startup")
-def on_startup():
+async def on_startup():
     events.init(asyncio.get_event_loop())
+
+    # Chat realtime runtime: heartbeat, persist queue, Redis bridge (optional)
+    from app.routers.chat import start_chat_runtime
+    await start_chat_runtime()
 
     from app.models import Base
     from app.core.session import engine, SessionLocal
@@ -264,7 +268,12 @@ def _ensure_permission_constraints(engine):
 
 
 @app.on_event("shutdown")
-def on_shutdown():
+async def on_shutdown():
+    from app.routers.chat import stop_chat_runtime
+    try:
+        await stop_chat_runtime()
+    except Exception as e:
+        print(f"  → chat runtime shutdown: {e}")
     from app.core.session import engine
     engine.dispose()
 

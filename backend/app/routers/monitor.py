@@ -16,6 +16,41 @@ router = APIRouter(prefix="/api/monitor", tags=["monitor"])
 _START_TIME = time.time()
 
 
+def _chat_manager():
+    """Import ConnectionManager của chat (tránh vòng lặp import tại module top-level)."""
+    try:
+        from .chat import manager as chat_manager
+        return chat_manager
+    except Exception:
+        return None
+
+
+def _online_users() -> list:
+    """Danh sách nhân viên đang online (kèm thông tin từ bảng employees)."""
+    mgr = _chat_manager()
+    if mgr is None:
+        return []
+    codes = mgr.active_connections()
+    if not codes:
+        return []
+    try:
+        rows = fetchall(
+            "SELECT employee_code, full_name, department, position FROM employees WHERE status = 'active' OR status = ''"
+        )
+        info = {r["employee_code"]: r for r in rows}
+        return [
+            {
+                "employee_code": code,
+                "full_name": info.get(code, {}).get("full_name") or code,
+                "department": info.get(code, {}).get("department") or "",
+                "position": info.get(code, {}).get("position") or "",
+            }
+            for code in codes
+        ]
+    except Exception:
+        return [{"employee_code": c, "full_name": c, "department": "", "position": ""} for c in codes]
+
+
 def _db_healthy() -> bool:
     try:
         fetchone("SELECT 1 AS ok")
@@ -85,4 +120,5 @@ def monitor_stats():
         "db": db,
         "modules": module_counts,
         "activity": recent_activity,
+        "online_users": _online_users(),
     }

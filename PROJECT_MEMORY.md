@@ -589,6 +589,23 @@ Thứ tự ưu tiên: user > department > role.
 
 ---
 
-**Last Updated**: 2026-08-08  
+## 9. Realtime Chat & WebSocket Maintenance
+
+### 9.1 Cơ chế ConnectionManager (chat_ws.py)
+- **Tối ưu RAM:** Sử dụng `dict` để map `employee_code` với danh sách các connection `ConnectionMeta`. `ConnectionMeta` là một `@dataclass(slots=True, eq=False)` sử dụng object identity hash (khắc phục lỗi unhashable).
+- **Tránh block Event Loop:** Sử dụng `asyncio.gather` thay vì gửi tin nhắn đồng bộ trong vòng lặp. Điều này giúp không làm trễ event loop với số lượng tin nhắn và người dùng lớn.
+- **Xử lý ngắt kết nối (Dead connections):** Tự động phát hiện rớt mạng đột ngột (half-open) thông qua ping/pong và `sweep_loop`. Dọn dẹp connection đúng cách không rác bộ nhớ.
+- **Tính năng Multi-tab:** Cho phép 1 user (1 `employee_code`) kết nối từ nhiều tab.
+
+### 9.2 Hướng dẫn Test & Mở rộng (Scale-out)
+- **Test tải:** Script test tải nằm tại `ws_load_test.py`. Khi test chạy mô phỏng >100 client cùng lúc thì nên dùng chung `token` và `employee_code=admin` để bypass bước xác thực (tránh lỗi 403 Forbidden).
+- **Scale-out (Nhiều uvicorn workers):**
+  - Hiện tại WebSocket Manager lưu state trực tiếp trên RAM (trong scope của worker hiện tại).
+  - Nếu deploy với nhiều worker (như `--workers 4`), các user kết nối vào worker khác nhau sẽ không nhìn thấy nhau.
+  - **Giải pháp nâng cấp sau này:** Áp dụng mô hình Publish/Subscribe sử dụng **Redis Pub/Sub**. Mỗi worker sẽ publish các tin nhắn nhận được lên Redis và lắng nghe (subscribe) các tin nhắn từ worker khác để gửi đi cho các kết nối cục bộ của mình (đã có hook `set_cluster_publish`).
+
+---
+
+**Last Updated**: 2026-08-10  
 **Maintained by**: GoldenFarm ICT Team  
 **Status**: ✅ Production Ready

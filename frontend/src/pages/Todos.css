@@ -634,6 +634,46 @@ select.form-control:disabled {
   cursor: default;
 }
 
+.todos-form-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.badge-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fcd34d;
+  white-space: nowrap;
+}
+
+.todo-approve-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border: none;
+  border-radius: 6px;
+  background: #10b981;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.todo-approve-btn:hover {
+  background: #059669;
+}
+
 .form-control.is-error {
   border-color: #ef4444;
   box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
@@ -987,6 +1027,330 @@ select.form-control:hover {
   .badge-scope {
     font-size: 0.62rem;
     padding: 1px 6px;
+  }
+}
+
+/* ============================================================
+   Todo Detail & Chat Modal (Trello/Jira Style)
+   ============================================================ */
+.todo-detail-modal-content {
+  background: var(--todo-card-bg);
+  width: 900px;
+  max-width: 95vw;
+  height: 85vh;
+  border-radius: var(--todo-radius-lg);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--todo-shadow-lg);
+  animation: modalFadeIn 0.2s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; transform: scale(0.98) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.todo-detail-layout {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* --- Left Column: Details --- */
+.todo-detail-left {
+  flex: 3;
+  padding: 1.5rem 1.8rem;
+  overflow-y: auto;
+  border-right: 1px solid var(--todo-border);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.todo-detail-header h2 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--todo-text-primary);
+  margin: 0.5rem 0;
+  line-height: 1.4;
+}
+
+.todo-meta-row {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--todo-text-secondary);
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--todo-border);
+  flex-wrap: wrap;
+}
+
+.todo-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.todo-detail-section h3 {
+  font-size: 1rem;
+  color: var(--todo-text-primary);
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.todo-desc-text {
+  font-size: 0.9rem;
+  color: var(--todo-text-secondary);
+  line-height: 1.6;
+  background: #f8fafc;
+  padding: 1rem;
+  border-radius: 8px;
+  white-space: pre-wrap;
+  border: 1px solid var(--todo-border);
+}
+
+/* --- Attachments --- */
+.section-header-flex {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.attach-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.attach-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--todo-card-bg);
+  border: 1px solid var(--todo-border);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--todo-text-secondary);
+  transition: all 0.2s ease;
+}
+
+.attach-btn:hover {
+  background: var(--todo-bg);
+  border-color: var(--todo-accent);
+  color: var(--todo-accent);
+}
+
+.attachments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.attachment-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--todo-border);
+  border-radius: 8px;
+  background: var(--todo-card-bg);
+  transition: all 0.2s ease;
+}
+
+.attachment-item:hover {
+  border-color: var(--todo-border-hover);
+  box-shadow: var(--todo-shadow-sm);
+}
+
+.att-icon {
+  color: var(--todo-accent);
+  display: flex;
+}
+
+.att-name {
+  font-size: 0.85rem;
+  color: var(--todo-text-primary);
+  text-decoration: none;
+  font-weight: 500;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.att-name:hover {
+  text-decoration: underline;
+  color: var(--todo-accent);
+}
+
+.att-delete-btn {
+  background: none;
+  border: none;
+  color: #f87171;
+  cursor: pointer;
+  padding: 3px;
+  display: flex;
+  border-radius: 5px;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.att-delete-btn:hover {
+  background: #fee2e2;
+}
+
+/* --- Right Column: Chat --- */
+.todo-detail-right {
+  flex: 2;
+  display: flex;
+  flex-direction: column;
+  background: #f8fafc;
+  min-width: 320px;
+}
+
+.chat-section-header {
+  padding: 1.15rem 1.5rem;
+  border-bottom: 1px solid var(--todo-border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--todo-text-primary);
+  font-weight: 600;
+  background: var(--todo-card-bg);
+}
+
+.todo-chat-messages {
+  flex: 1;
+  padding: 1.5rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.empty-chat {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--todo-text-muted);
+  margin-top: 2rem;
+}
+
+.todo-chat-msg {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 85%;
+}
+
+.todo-chat-msg.mine {
+  align-items: flex-end;
+  align-self: flex-end;
+}
+
+.todo-chat-sender {
+  font-size: 0.7rem;
+  color: var(--todo-text-muted);
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.todo-chat-bubble {
+  background: var(--todo-card-bg);
+  padding: 10px 14px;
+  border-radius: 12px;
+  border-top-left-radius: 2px;
+  font-size: 0.85rem;
+  color: var(--todo-text-primary);
+  border: 1px solid var(--todo-border);
+  word-break: break-word;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+}
+
+.todo-chat-msg.mine .todo-chat-bubble {
+  background: var(--todo-accent);
+  color: #ffffff;
+  border: none;
+  border-top-left-radius: 12px;
+  border-top-right-radius: 2px;
+}
+
+.todo-chat-input-area {
+  padding: 1rem 1.5rem;
+  background: var(--todo-card-bg);
+  border-top: 1px solid var(--todo-border);
+  display: flex;
+  gap: 10px;
+}
+
+.todo-chat-input-area input {
+  flex: 1;
+  padding: 10px 16px;
+  border: 1px solid var(--todo-border);
+  border-radius: 20px;
+  font-size: 0.85rem;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.todo-chat-input-area input:focus {
+  border-color: var(--todo-accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.todo-chat-input-area button {
+  background: var(--todo-accent);
+  color: white;
+  border: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.todo-chat-input-area button:hover:not(:disabled) {
+  background: #1d4ed8;
+  transform: scale(1.05);
+}
+
+.todo-chat-input-area button:disabled {
+  background: var(--todo-border);
+  cursor: not-allowed;
+}
+
+/* --- Mobile adjustments for Detail Modal --- */
+@media (max-width: 768px) {
+  .todo-detail-layout {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .todo-detail-left {
+    border-right: none;
+    border-bottom: 1px solid var(--todo-border);
+    padding: 1rem;
+  }
+  .todo-detail-right {
+    min-height: 450px;
+  }
+  .chat-section-header, .todo-chat-input-area {
+    padding: 1rem;
+  }
+  .todo-detail-modal-content {
+    height: 95vh;
   }
 }
 

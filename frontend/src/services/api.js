@@ -435,6 +435,21 @@ export function updateTodoStatus(id, status) {
   })
 }
 
+export function approveTodo(id) {
+  const userCode = sessionStorage.getItem('user_code') || ''
+  const userRole = sessionStorage.getItem('user_role') || ''
+  const userDept = sessionStorage.getItem('user_department') || ''
+  const userToken = sessionStorage.getItem('token') || ''
+  return api.patch(`/todos/${id}/approve`, {}, {
+    headers: {
+      'X-User-Code': userCode,
+      'X-User-Role': userRole,
+      'X-User-Dept': userDept,
+      'X-User-Token': userToken
+    }
+  })
+}
+
 export function getTodoAssignees() {
   const userCode = sessionStorage.getItem('user_code') || ''
   const userRole = sessionStorage.getItem('user_role') || ''
@@ -461,6 +476,43 @@ export function deleteTodo(id) {
       'X-User-Token': userToken
     }
   })
+}
+
+function todoAuthHeaders() {
+  return {
+    'X-User-Code': sessionStorage.getItem('user_code') || '',
+    'X-User-Role': sessionStorage.getItem('user_role') || '',
+    'X-User-Dept': sessionStorage.getItem('user_department') || '',
+    'X-User-Token': sessionStorage.getItem('token') || ''
+  }
+}
+
+export function getTodoComments(todoId) {
+  return api.get(`/todos/${todoId}/comments`, { headers: todoAuthHeaders() })
+}
+
+export function addTodoComment(todoId, content) {
+  return api.post(`/todos/${todoId}/comments`, { content }, { headers: todoAuthHeaders() })
+}
+
+export function getTodoAttachments(todoId) {
+  return api.get(`/todos/${todoId}/attachments`, { headers: todoAuthHeaders() })
+}
+
+export function uploadTodoAttachment(todoId, file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return api.post(`/todos/${todoId}/attachments`, fd, {
+    headers: { ...todoAuthHeaders(), 'Content-Type': 'multipart/form-data' }
+  })
+}
+
+export function addTodoUrl(todoId, url, title = '') {
+  return api.post(`/todos/${todoId}/links`, { url, title }, { headers: todoAuthHeaders() })
+}
+
+export function deleteTodoAttachment(attachmentId) {
+  return api.delete(`/attachments/${attachmentId}`, { headers: todoAuthHeaders() })
 }
 
 // ─── Documents / Storage ──────────────────────────────────────
@@ -792,6 +844,10 @@ export function uploadChatFile(file) {
 
 export function getChatContacts(q = '') {
   return api.get('/chat/contacts', { params: { q }, headers: chatAuthHeaders() })
+}
+
+export function getChatOnline() {
+  return api.get('/chat/online', { headers: chatAuthHeaders() })
 }
 
 export function getChatRoomMembers(roomId) {

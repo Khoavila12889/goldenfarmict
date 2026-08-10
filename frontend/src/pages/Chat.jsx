@@ -203,6 +203,16 @@ export default function Chat() {
     let msg
     try { msg = JSON.parse(raw) } catch (_) { return }
     if (!msg) return
+    // Server heartbeat — reply pong để dead-connection sweeper không xoá nhầm.
+    if (msg.event === 'ping') {
+      try {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ event: 'pong', ts: msg.ts || Date.now() }))
+        }
+      } catch (_) {}
+      return
+    }
+    if (msg.event === 'pong') return
     if (msg.event === 'pin_updated') {
       if (msg.room_id === activeRoomIdRef.current) {
         setPinnedMessages(msg.pinned || [])

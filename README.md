@@ -945,6 +945,11 @@ Effective Permission = Role_Perm || Department_Perm || Individual_Override_Perm
 - **Frontend build**: `npm run build` → output `frontend/dist/`
 - **DB reset**: Xoá volume `postgres-data` của docker-compose → backend tự seed lại khi khởi động
 - **Realtime**: SSE qua `/api/events`, tự động update tickets, bookings, equipment, approvals
-- **Chat nội bộ**: WebSocket qua `/api/chat/ws` — độc lập với SSE, xác thực bằng `token` + `employee_code` trong query param, tin nhắn lưu vào `chat_messages` trước khi broadcast
+- **Chat nội bộ**: WebSocket qua `/api/chat/ws` — độc lập với SSE, xác thực bằng `token` + `employee_code` trong query param.
+  - Sử dụng cấu trúc `Dict[str, Set[ConnectionMeta]]` tối ưu tra cứu đa tab (Multi-tab support).
+  - Khắc phục `unhashable type` bằng cách set `eq=False` cho `@dataclass ConnectionMeta`.
+  - Hỗ trợ broadcast song song với `asyncio.gather` để tránh block event loop.
+  - Test tải tại `ws_load_test.py` (chạy với `employee_code=admin` để bypass HTTP 403 khi gen 100+ clients).
+  - Để scale-out multi-worker: Sử dụng Redis Pub/Sub kết hợp hàm hook `set_cluster_publish`.
 - **SSE filterRef**: Dùng `useRef` tránh reconnect khi filter thay đổi
 - **Booking status update**: Cập nhật mỗi 30s qua `useCurrentTime` hook (vạch đỏ + trạng thái)

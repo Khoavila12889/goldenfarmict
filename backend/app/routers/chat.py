@@ -5,16 +5,32 @@ Hoạt động ĐỘC LẬP với hệ thống SSE (`core/events.py`).
 - Realtime:   WS `/api/chat/ws?token=...&employee_code=...`
 - REST:       `GET /api/chat/rooms`, `GET /api/chat/messages/{room_id}`,
               `POST /api/chat/rooms`
+
+Performance path (WS message):
+  1. Validate membership (TTL cache)
+  2. Sinh UUID + payload optimistic
+  3. Broadcast song song (ConnectionManager) — không chờ DB
+  4. Enqueue persist background (MessagePersistQueue / bulk insert)
+  5. (Optional) Redis Pub/Sub fan-out multi-worker
 """
+import asyncio
 import os
+import time
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException, Header, Query, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.core.auth import verify_session, verify_token
+from app.core.chat_persist import (
+    PendingMessage,
+    build_optimistic_payload,
+    new_message_id,
+    persist_queue,
+)
+from app.core.chat_redis import ChatRedisBridge
 from app.core.chat_ws import ConnectionManager
 from app.core.session import SessionLocal
 from app.models import ChatRoom, ChatRoomMember, ChatMessage, Employee, User
@@ -38,8 +54,43 @@ class MemberUpdate(BaseModel):
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 manager = ConnectionManager()
+redis_bridge = ChatRedisBridge(manager)
 
 _CLOSE_CODE_UNAUTHORIZED = 1008
+
+# Room-member cache: room_id → (expires_monotonic, codes)
+# Tránh query DB mỗi tin nhắn khi group spam.
+_ROOM_MEMBER_TTL_SEC = 30.0
+_room_member_cache: Dict[str, Tuple[float, List[str]]] = {}
+# Membership check cache: (room_id, employee_code) → (expires, ok)
+_MEMBER_CHECK_TTL_SEC = 60.0
+_member_check_cache: Dict[Tuple[str, str], Tuple[float, bool]] = {}
+
+
+async def start_chat_runtime() -> None:
+    """Gọi từ main startup — heartbeat, persist worker, Redis bridge."""
+    await manager.start()
+    await persist_queue.start()
+    await redis_bridge.start()
+
+
+async def stop_chat_runtime() -> None:
+    """Gọi từ main shutdown — flush queue + huỷ background tasks."""
+    await persist_queue.stop()
+    await redis_bridge.stop()
+    await manager.stop()
+
+
+def invalidate_room_member_cache(room_id: Optional[str] = None) -> None:
+    """Gọi khi thêm/bớt thành viên / đổi phòng ban."""
+    if room_id is None:
+        _room_member_cache.clear()
+        _member_check_cache.clear()
+        return
+    _room_member_cache.pop(room_id, None)
+    dead_keys = [k for k in _member_check_cache if k[0] == room_id]
+    for k in dead_keys:
+        _member_check_cache.pop(k, None)
 
 
 def _normalize_user(u: dict) -> dict:
@@ -166,18 +217,49 @@ def _sender_name(db, employee_code: Optional[str]) -> str:
     return row[0] if row else employee_code
 
 
-def _room_member_codes(room_id: str) -> List[str]:
+def _room_member_codes(room_id: str, *, use_cache: bool = True) -> List[str]:
+    """Danh sách thành viên phòng — có TTL cache để giảm DB hit khi spam."""
+    if use_cache:
+        cached = _room_member_cache.get(room_id)
+        if cached and cached[0] > time.monotonic():
+            return cached[1]
+
     db = SessionLocal()
     try:
         room = db.get(ChatRoom, room_id)
         if not room:
-            return []
-        if room.type == "department":
-            return _department_member_codes(db, room.department or "")
-        rows = db.query(ChatRoomMember.employee_code).filter(ChatRoomMember.room_id == room_id).all()
-        return [r[0] for r in rows]
+            codes: List[str] = []
+        elif room.type == "department":
+            codes = _department_member_codes(db, room.department or "")
+        else:
+            rows = (
+                db.query(ChatRoomMember.employee_code)
+                .filter(ChatRoomMember.room_id == room_id)
+                .all()
+            )
+            codes = [r[0] for r in rows]
     finally:
         db.close()
+
+    _room_member_cache[room_id] = (time.monotonic() + _ROOM_MEMBER_TTL_SEC, codes)
+    return codes
+
+
+def _cached_is_member(room_id: str, employee_code: str) -> bool:
+    """Membership check với cache ngắn — tránh DB sync mỗi tin nhắn."""
+    key = (room_id, employee_code)
+    cached = _member_check_cache.get(key)
+    if cached and cached[0] > time.monotonic():
+        return cached[1]
+
+    db = SessionLocal()
+    try:
+        room = db.get(ChatRoom, room_id)
+        ok = _is_room_member(db, room, employee_code)
+    finally:
+        db.close()
+    _member_check_cache[key] = (time.monotonic() + _MEMBER_CHECK_TTL_SEC, ok)
+    return ok
 
 
 def _online_codes() -> set:
@@ -218,10 +300,25 @@ def _resolve_ws_user(employee_code: str, token: str) -> Optional[dict]:
         db.close()
 
 
-def _handle_incoming_message(user: dict, data: dict) -> Optional[dict]:
-    """Lưu tin nhắn vào DB và trả về payload đã serialize để broadcast."""
+async def _handle_incoming_message(user: dict, data: dict) -> Optional[dict]:
+    """
+    Optimistic path — KHÔNG chờ DB commit trước khi trả payload broadcast.
+
+    1. Validate nhanh (cache membership)
+    2. Sinh UUID + created_at
+    3. Enqueue background persist (bulk insert worker)
+    4. Trả payload để fan-out realtime ngay
+
+    Fallback: nếu queue đầy → ghi DB sync trong threadpool (không block loop).
+    """
     if not isinstance(data, dict):
         return None
+
+    # Application-level heartbeat từ client
+    event = data.get("event")
+    if event in ("pong", "ping"):
+        return None
+
     room_id = (data.get("room_id") or "").strip()
     content = (data.get("content") or "").strip()
     attachment_url = (data.get("attachment_url") or "").strip() or None
@@ -234,32 +331,50 @@ def _handle_incoming_message(user: dict, data: dict) -> Optional[dict]:
     if not content and not attachment_url:
         return None
 
-    db = SessionLocal()
-    try:
-        room = db.get(ChatRoom, room_id)
-        if not room:
-            return None
-        if not _is_room_member(db, room, user["employee_code"]):
+    # Membership check — cache hit = 0 DB round-trip
+    loop = asyncio.get_running_loop()
+    is_member = await loop.run_in_executor(
+        None, _cached_is_member, room_id, user["employee_code"]
+    )
+    if not is_member:
+        return None
+
+    msg_id = (data.get("client_msg_id") or "").strip() or new_message_id()
+    created_at = datetime.utcnow()
+
+    pending = PendingMessage(
+        id=msg_id,
+        room_id=room_id,
+        sender_id=user["employee_code"],
+        content=content,
+        attachment_url=attachment_url,
+        attachment_name=attachment_name,
+        attachment_type=attachment_type,
+        attachment_size=attachment_size,
+        created_at=created_at,
+    )
+
+    ok = await persist_queue.enqueue(pending)
+    if not ok:
+        # Back-pressure: ghi sync trong threadpool thay vì drop im lặng.
+        try:
+            await loop.run_in_executor(None, persist_queue._bulk_insert_sync, [pending])
+        except Exception as exc:
+            print(f"Chat persist fallback failed: {exc}")
             return None
 
-        msg = ChatMessage(
-            room_id=room_id,
-            sender_id=user["employee_code"],
-            content=content,
-            attachment_url=attachment_url,
-            attachment_name=attachment_name,
-            attachment_type=attachment_type,
-            attachment_size=attachment_size,
-        )
-        db.add(msg)
-        db.commit()
-        db.refresh(msg)
-        return _serialize_message(msg, user["full_name"])
-    except Exception:
-        db.rollback()
-        return None
-    finally:
-        db.close()
+    return build_optimistic_payload(
+        msg_id=msg_id,
+        room_id=room_id,
+        sender_id=user["employee_code"],
+        sender_name=user.get("full_name") or user["employee_code"],
+        content=content,
+        attachment_url=attachment_url,
+        attachment_name=attachment_name,
+        attachment_type=attachment_type,
+        attachment_size=attachment_size,
+        created_at=created_at,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -271,26 +386,75 @@ async def chat_ws(
     token: str = Query(default=""),
     employee_code: str = Query(default=""),
 ):
-    user = _resolve_ws_user(employee_code.strip(), token.strip())
+    # Auth sync — chỉ 1 lần lúc connect; chạy executor để không block loop.
+    loop = asyncio.get_running_loop()
+    user = await loop.run_in_executor(
+        None, _resolve_ws_user, employee_code.strip(), token.strip()
+    )
     if user is None:
-        await websocket.close(code=_CLOSE_CODE_UNAUTHORIZED)
+        # accept rồi close, hoặc close trước accept tuỳ Starlette version.
+        try:
+            await websocket.close(code=_CLOSE_CODE_UNAUTHORIZED)
+        except Exception:
+            pass
         return
 
     await manager.connect(websocket, user["employee_code"])
+    code = user["employee_code"]
     try:
-        await _broadcast_presence(user["employee_code"], True)
+        await _broadcast_presence(code, True)
         while True:
             data = await websocket.receive_json()
-            message = _handle_incoming_message(user, data)
+            manager.touch(websocket)
+
+            # Client pong / ignore control frames
+            if isinstance(data, dict) and data.get("event") in ("pong", "ping"):
+                if data.get("event") == "ping":
+                    try:
+                        await websocket.send_json({"event": "pong", "ts": data.get("ts")})
+                    except Exception:
+                        break
+                continue
+
+            message = await _handle_incoming_message(user, data)
             if message:
-                await manager.broadcast_to_room(message, _room_member_codes(message["room_id"]))
+                # Lấy member codes (cache) trong executor nếu cache miss có DB.
+                members = await loop.run_in_executor(
+                    None, _room_member_codes, message["room_id"]
+                )
+                # Fan-out song song — không block event loop theo từng user.
+                await manager.broadcast_to_room(message, members)
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        print(f"Chat WS error ({user['employee_code']}): {e}")
+        print(f"Chat WS error ({code}): {e}")
     finally:
-        await manager.disconnect(user["employee_code"])
-        await _broadcast_presence(user["employee_code"], False)
+        # Chỉ disconnect *socket này* — multi-tab an toàn.
+        fully_offline = await manager.disconnect(websocket, code)
+        if fully_offline:
+            await _broadcast_presence(code, False)
+
+
+@router.get("/perf-stats")
+def chat_perf_stats(
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token"),
+):
+    """Metrics ConnectionManager / persist queue / Redis (admin)."""
+    user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
+    if (user.get("user_role") or user.get("role")) != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    return {
+        "status": "success",
+        "data": {
+            "connections": manager.stats(),
+            "persist": persist_queue.stats(),
+            "redis": redis_bridge.stats(),
+            "room_cache_entries": len(_room_member_cache),
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -684,6 +848,7 @@ def delete_room(
 
         db.delete(room)
         db.commit()
+        invalidate_room_member_cache(room_id)
         return {"status": "success", "message": "Đã xoá phòng chat"}
     finally:
         db.close()
@@ -736,10 +901,11 @@ def add_room_members(
             db.add(ChatRoomMember(room_id=room.id, employee_code=code))
             added += 1
         db.commit()
+        invalidate_room_member_cache(room_id)
         return {
             "status": "success",
             "message": f"Đã thêm {added} thành viên",
-            "member_codes": _room_member_codes(room.id),
+            "member_codes": _room_member_codes(room.id, use_cache=False),
         }
     finally:
         db.close()
@@ -774,10 +940,11 @@ def remove_room_member(
             ChatRoomMember.employee_code == employee_code,
         ).delete()
         db.commit()
+        invalidate_room_member_cache(room_id)
         return {
             "status": "success",
             "message": "Đã xoá thành viên",
-            "member_codes": _room_member_codes(room.id),
+            "member_codes": _room_member_codes(room.id, use_cache=False),
         }
     finally:
         db.close()

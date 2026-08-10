@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import {
   Activity, Database, Server, Clock, Layers, Ticket, CheckSquare,
-  Calendar, ShieldCheck, Monitor as MonitorIcon, AlertTriangle, RefreshCw, Key as KeyIcon
+  Calendar, ShieldCheck, Monitor as MonitorIcon, AlertTriangle, RefreshCw, Key as KeyIcon, UserCheck
 } from 'lucide-react'
 import { formatDate } from '../utils/date'
 import './MonitorPage.css'
@@ -77,6 +77,8 @@ export default function MonitorPage() {
   const uptime = fmtUptime(stats?.api?.uptime_sec || 0)
 
   const modules = stats?.modules || {}
+  const onlineUsers = stats?.online_users || []
+  const onlineCount = onlineUsers.length
   const moduleCards = [
     { key: 'tickets', label: 'Tickets', icon: Ticket, color: '#fbbf24' },
     { key: 'tickets_pending', label: 'Tickets chờ xử lý', icon: AlertTriangle, color: '#f87171' },
@@ -86,6 +88,7 @@ export default function MonitorPage() {
     { key: 'approvals_pending', label: 'Duyệt chờ xử lý', icon: ShieldCheck, color: '#4ade80' },
     { key: 'equipment', label: 'Thiết bị', icon: MonitorIcon, color: '#f472b6' },
     { key: 'licenses', label: 'License', icon: KeyIcon, color: '#34d399' },
+    { key: 'online_users', label: 'Người đang online', icon: UserCheck, color: '#22c55e' },
   ]
 
   return (
@@ -172,12 +175,37 @@ export default function MonitorPage() {
                 <IconComp size={18} />
               </div>
               <div className="monitor-card-info">
-                <div className="monitor-card-val">{modules[card.key] ?? '--'}</div>
+                <div className="monitor-card-val">{modules[card.key] ?? (card.key === 'online_users' ? onlineCount : '--')}</div>
                 <div className="monitor-card-lbl">{card.label}</div>
               </div>
             </div>
           )
         })}
+      </div>
+
+      {/* ── Người dùng trực tuyến (chẩn đoán user đang online) ── */}
+      <div className="monitor-log-section">
+        <div className="monitor-log-header">
+          <UserCheck size={15} />
+          <span>Người dùng trực tuyến</span>
+          <span className="monitor-log-updated">{onlineCount} người · cập nhật mỗi {POLL_INTERVAL / 1000}s</span>
+        </div>
+        <div className="monitor-online-body">
+          {onlineCount === 0 && <div className="monitor-log-empty">Không có ai đang trực tuyến.</div>}
+          {onlineUsers.map(u => (
+            <div key={u.employee_code} className="monitor-online-item">
+              <span className="monitor-online-dot" title="Đang trực tuyến" />
+              <div className="monitor-online-info">
+                <span className="monitor-online-name">{u.full_name || u.employee_code}</span>
+                <span className="monitor-online-meta">
+                  {u.employee_code}
+                  {u.department ? ` · ${u.department}` : ''}
+                  {u.position ? ` · ${u.position}` : ''}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="monitor-log-section">
