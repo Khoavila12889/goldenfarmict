@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { User, Lock, Eye, EyeOff, CheckCircle, AlertCircle, Phone, Mail, Save } from 'lucide-react'
-import { changePassword, getProfile, updateProfile } from '../services/api'
+import { User, Lock, Eye, EyeOff, CheckCircle, AlertCircle, Phone, Mail, Save, AtSign } from 'lucide-react'
+import { changePassword, getProfile, updateProfile, updateUsername } from '../services/api'
 import './Profile.css'
 
 export default function Profile() {
@@ -12,6 +12,7 @@ export default function Profile() {
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
   const [personalEmail, setPersonalEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [profileMsg, setProfileMsg] = useState('')
   const [profileOk, setProfileOk] = useState(false)
   const [profileLoading, setProfileLoading] = useState(false)
@@ -34,6 +35,7 @@ export default function Profile() {
         setFullName(d.full_name || '')
         setPhone(d.phone || '')
         setPersonalEmail(d.personal_email || '')
+        setUsername(d.username || '')
         sessionStorage.setItem('user_name', d.full_name || '')
         window.dispatchEvent(new Event('profileUpdated'))
       }
@@ -55,6 +57,20 @@ export default function Profile() {
     } catch (err) {
       const d = err.response?.data?.detail
       setProfileMsg(typeof d === 'string' ? d : 'Lỗi cập nhật')
+      setProfileOk(false)
+    } finally { setProfileLoading(false) }
+  }
+
+  async function handleSaveUsername() {
+    setProfileMsg('')
+    setProfileLoading(true)
+    try {
+      const res = await updateUsername(userCode, username)
+      setProfileMsg(res.data.message || 'Đã lưu tên đăng nhập')
+      setProfileOk(true)
+    } catch (err) {
+      const d = err.response?.data?.detail
+      setProfileMsg(typeof d === 'string' ? d : 'Lỗi lưu tên đăng nhập')
       setProfileOk(false)
     } finally { setProfileLoading(false) }
   }
@@ -99,6 +115,14 @@ export default function Profile() {
               <span className="pf-label">Mã NV</span>
               <span className="pf-value">{userCode}</span>
             </div>
+            <div className="pf-field">
+              <label><AtSign size={14} /> Tên đăng nhập</label>
+              <input value={username} onChange={e => setUsername(e.target.value)}
+                placeholder="VD: an.nguyen (dùng để đăng nhập)" />
+            </div>
+            <button type="button" className="pf-submit" onClick={handleSaveUsername} disabled={profileLoading}>
+              {profileLoading ? 'Đang lưu...' : 'Lưu tên đăng nhập'}
+            </button>
             <div className="pf-info-row">
               <span className="pf-label">Vai trò</span>
               <span className="pf-value">{userRole === 'admin' ? 'Quản trị viên' : userRole === 'head' ? 'Trưởng phòng' : 'Nhân viên'}</span>

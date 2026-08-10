@@ -2,7 +2,7 @@
 
 > **Single Source of Truth** — Mọi thông tin quan trọng về dự án đều được tập hợp trong file này.
 > AI Assistant PHẢI đọc file này trước khi thực hiện bất kỳ thay đổi nào.
-> Cập nhật lần cuối: **2026-08-03**
+> Cập nhật lần cuối: **2026-08-08**
 
 ---
 
@@ -20,6 +20,7 @@ Hệ thống quản lý ICT nội bộ cho doanh nghiệp, bao gồm:
 - **Hồ sơ cá nhân** (Profile — cập nhật thông tin + đổi mật khẩu)
 - **Công việc** (Todos — Kanban board, subtasks, phân quyền scope)
 - **Phần mềm tổ chức** (Software — quản lý phần mềm/license theo tab)
+- **Chat nội bộ** (Chat — WebSocket realtime, phòng 1-1/nhóm, ĐỘC LẬP với SSE)
 - **Phân quyền truy cập module** (Permissions — user/role/department permission matrix)
 
 ### 1.2 Tech Stack
@@ -30,7 +31,7 @@ Hệ thống quản lý ICT nội bộ cho doanh nghiệp, bao gồm:
 | Backend | FastAPI (Python 3.11+) | RESTful API |
 | Database | PostgreSQL 16 | PostgreSQL server required (no SQLite) |
 | ORM | SQLAlchemy | 30+ tables, no FK constraints |
-| Realtime | Server-Sent Events (SSE) | endpoint `/api/events` |
+| Realtime | Server-Sent Events (SSE) + WebSocket | SSE `/api/events` · Chat WS `/api/chat/ws` |
 | Auth | SHA-256 hash + Session token | session-based, 16-char token |
 | Icons | lucide-react ^1.24 | |
 | HTTP | axios ^1.7 | |
@@ -48,13 +49,14 @@ goldenfarm-ict-web/
 ├── backend/
 │   ├── app/
 │   │   ├── core/
-│   │   │   ├── database.py        # DB init, schema (30 tables), migrations, indexes
+│   │   │   ├── database.py        # DB init, schema (33 tables), migrations, indexes
 │   │   │   ├── db.py              # DB abstraction layer
 │   │   │   ├── auth.py            # SHA-256 hash, session token, seed_users
 │   │   │   ├── events.py          # SSE pub/sub (async Queue)
+│   │   │   ├── chat_ws.py         # WebSocket ConnectionManager (chat nội bộ)
 │   │   │   └── session.py         # PostgreSQL connection configuration
-│   │   ├── models.py              # SQLAlchemy ORM models (30 tables)
-│   │   ├── routers/               # API endpoints (14 modules)
+│   │   ├── models.py              # SQLAlchemy ORM models (33 tables — gồm 3 bảng chat)
+│   │   ├── routers/               # API endpoints (15 modules, gồm chat.py)
 │   │   ├── utils/
 │   │   │   ├── pdf_generator.py   # Salary PDF generation
 │   │   │   └── ftp_utils.py       # FTP/SMB upload utility
@@ -284,9 +286,128 @@ ONLYOFFICE_ENABLED=true
 
 ---
 
-## 5. Lịch sử Nhật ký & Sửa lỗi (Changelog & Debug Memory)
+## 5. Module Chat Nội bộ — Kiến trúc & Công nghệ (WebSocket)
 
-### 5.1 Recent Changes (2026-08-03)
+### 5.1 Tổng quan
+
+Chat Nội bộ là kênh nhắn tin realtime dành cho toàn bộ nhân viên. Nó hoạt động **ĐỘC LẬP hoàn toàn với hệ thống SSE** (`/api/events`) — realtime của chat dùng **WebSocket riêng** (`/api/chat/ws`), không dùng `publish_sync()`.
+
+**Phân quyền theo vai trò (role-based) từ 2026-08-10:**
+- **user**: tạo phòng 1-1/nhóm, chat; tự tham gia phòng phòng ban của mình; không quản lý phòng.
+- **head (trưởng phòng)**: như user + quản lý (đổi tên/xoá) phòng **phòng ban của mình**; chủ nhóm quản lý nhóm mình tạo.
+- **admin**: quản lý MỌI phòng (đổi tên, thêm/bớt thành viên group, xoá); tạo phòng phòng ban cho bất kỳ phòng ban nào.
+- **group (chủ nhóm)**: `owner_code` lưu người tạo nhóm — chỉ chủ nhóm/admin mới thêm/bớt thành viên, đổi tên, xoá nhóm.
+
+**Files liên quan:**
+
+| Layer | File | Vai trò |
+|-------|------|---------|
+| Backend | `app/models.py` | 3 model mới: `ChatRoom`, `ChatRoomMember`, `ChatMessage` |
+| Backend | `app/core/chat_ws.py` | `ConnectionManager` — quản lý kết nối theo `employee_code` |
+| Backend | `app/routers/chat.py` | WS endpoint + REST (`/rooms`, `/messages/{room_id}`, `POST /rooms`) |
+| Backend | `main.py` | `Base.metadata.create_all` tự tạo bảng chat khi startup |
+| Frontend | `src/pages/Chat.jsx` | UI chat (danh sách phòng + cửa sổ chat + modal tạo phòng) |
+| Frontend | `src/pages/Chat.css` | Styles (CSS class, tuân thủ D8) |
+| Frontend | `src/services/api.js` | `getChatRooms()`, `getChatMessages()`, `createChatRoom()`, `chatWebSocketUrl()` |
+| Docs | `docs/HDSD_Chat.md` + `frontend/src/docs/HDSD_Chat.md` | Hướng dẫn sử dụng (2 bản giống nhau — HelpPage import từ `frontend/src/docs`) |
+
+### 5.2 Database (3 bảng mới)
+
+| Bảng | Cột quan trọng | FK / ondelete |
+|------|----------------|---------------|
+| `chat_rooms` | `id` UUID (String 36), `type` (`direct`/`group`/`department`), `name` (nullable — direct để NULL, group/department là tên), `department` (phòng ban — chỉ type=department), `owner_code` (người tạo nhóm — quản lý group), `created_at` DateTime | — |
+| `chat_room_members` | `room_id`, `employee_code` (UNIQUE `room_id`+`employee_code`) | `room_id` → `chat_rooms.id` **CASCADE** · `employee_code` → `users.employee_code` CASCADE |
+| `chat_messages` | `id` UUID, `room_id`, `sender_id` (nullable), `content` Text, `attachment_url` (nullable), `is_pinned` (1=đang ghim), `pinned_by`, `pinned_at`, `created_at` DateTime | `room_id` → `chat_rooms.id` **CASCADE** · `sender_id` → `users.employee_code` **SET NULL** (D3) |
+
+> ⚠️ **D3**: Xoá User → tin nhắn KHÔNG bị xoá, `sender_id` tự chuyển NULL nhờ FK `ondelete="SET NULL"`. Xoá phòng → cascade xoá tin nhắn + thành viên.
+
+### 5.3 Luồng dữ liệu (Data Flow)
+
+```
+Browser (Chat.jsx)
+  ├─ REST:  GET  /api/chat/rooms                      → danh sách phòng của user
+  │         GET  /api/chat/messages/{room_id}?limit&offset  → lịch sử (phân trang)
+  │         POST /api/chat/rooms                      → tạo phòng direct/group
+  └─ WS:    ws://<host>/api/chat/ws?token=...&employee_code=...
+       │
+Backend (FastAPI)
+  ├─ routers/chat.py
+  │    ├─ xác thực: verify_token(employee_code, token, role) — sai → close(1008)
+  │    ├─ nhận JSON {room_id, content, attachment_url}
+  │    ├─ kiểm tra thành viên → lưu ChatMessage qua SQLAlchemy ORM
+  │    └─ manager.broadcast_to_room(payload, _room_member_codes(room_id))
+  ├─ core/chat_ws.py  → send_json tới mọi WebSocket của từng employee_code
+  └─ PostgreSQL (chat_rooms / chat_room_members / chat_messages)
+```
+
+### 5.4 Công nghệ & Quyết định thiết kế
+
+- **WebSocket**: dùng Starlette (qua FastAPI) `@router.websocket` — prefix `/api/chat` → WS path `/api/chat/ws`.
+- **Xác thực WS**: WebSocket không gửi Header Authorization → đọc `token` + `employee_code` từ **query param** (D6 — không hard-code), xác minh bằng `verify_token()` trong `app/core/auth.py`. Token sai → `websocket.close(code=1008)` ngay lập tức.
+- **ConnectionManager** (`chat_ws.py`): `Dict[str, Set[WebSocket]]` — lưu theo `employee_code`, hỗ trợ **multi-tab**; dùng `asyncio.Lock` chống race; tự dọn socket chết khi gửi lỗi; `broadcast_to_room(message, list_employee_codes)`.
+- **Lưu trước, gửi sau**: tin nhắn được insert vào `chat_messages` (ORM) **trước** khi broadcast — mọi thành viên phòng (kể cả người gửi) nhận qua WS echo, nên frontend không cần append tay.
+- **Frontend reconnect**: `Chat.jsx` tự kết nối lại sau 3s khi socket đóng; trạng thái hiển thị "Trực tuyến / Đang kết nối".
+- **Proxy**: dev — `vite.config.js` `ws: true` cho `/api` → `127.0.0.1:8080`; prod — `frontend/nginx.conf` đã có `proxy_set_header Upgrade $http_upgrade` + `Connection "upgrade"`.
+- **Không thêm dependency**: chỉ dùng FastAPI + SQLAlchemy + PostgreSQL sẵn có (tuân thủ D10).
+
+### 5.5 API Endpoints (prefix `/api/chat`)
+
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `WS` | `/api/chat/ws?token=...&employee_code=...` | Realtime — xác thực token, close 1008 nếu sai; nhận & lưu tin nhắn, broadcast tới mọi thành viên phòng |
+| `GET` | `/api/chat/rooms` | Phòng chat của user đang đăng nhập (headers `X-User-*`) — tự tạo phòng phòng ban nếu chưa có; trả `department`, `owner_code`, `can_manage` |
+| `GET` | `/api/chat/messages/{room_id}` | Lịch sử tin nhắn (`limit` 1–200 mặc định 50, `offset`) — chỉ thành viên phòng (403 nếu không phải) |
+| `POST` | `/api/chat/rooms` | Tạo phòng (`type` direct/group/department, `name` cho group, `department` cho phòng ban, `member_codes`) — tự thêm user đăng nhập làm thành viên; phòng ban chỉ admin/head |
+| `GET` | `/api/chat/rooms/{room_id}/members` | Danh sách thành viên kèm `is_owner` — phòng ban lấy động theo `employees.department` |
+| `PUT` | `/api/chat/rooms/{room_id}` | Đổi tên phòng group/department — chỉ ai có `can_manage` |
+| `DELETE` | `/api/chat/rooms/{room_id}` | Xoá phòng (cascade tin nhắn + thành viên) — chỉ ai có `can_manage` |
+| `POST` | `/api/chat/rooms/{room_id}/members` | Thêm thành viên vào nhóm (body `{employee_codes}`) — chỉ chủ nhóm/admin |
+| `DELETE` | `/api/chat/rooms/{room_id}/members/{employee_code}` | Xoá thành viên khỏi nhóm (không xoá được chủ nhóm) — chỉ chủ nhóm/admin |
+| `GET` | `/api/chat/rooms/{room_id}/pinned` | Danh sách tin nhắn đang ghim (mới ghim trước, tối đa 50) |
+| `PUT` | `/api/chat/messages/{message_id}/pin` | Ghim tin nhắn (thành viên phòng đều ghim được) — broadcast `{event:"pin_updated", pinned:[...]}` qua WS |
+| `DELETE` | `/api/chat/messages/{message_id}/pin` | Bỏ ghim — chỉ người ghim hoặc người quản lý phòng; broadcast `pin_updated` |
+
+**Headers REST**: `X-User-Code`, `X-User-Role`, `X-User-Dept`, `X-User-Token` (qua `verify_session`). Người dùng WS dùng `_normalize_user()` để thống nhất `employee_code`/`role`/`department`.
+
+**Thành viên phòng ban**: KHÔNG lưu trong `chat_room_members` — tính động qua `employees.department == chat_rooms.department` (`_is_room_member`, `_department_member_codes`), nhân viên mới vào phòng ban tự có quyền truy cập, nghỉ việc (đổi phòng) tự bị tách khỏi phòng phòng ban cũ.
+
+### 5.6 Bảo trì (Maintenance)
+
+- **Bảng mới**: tự tạo qua `Base.metadata.create_all(bind=engine)` ở startup (`main.py`) — không cần migration tay cho bảng mới. Khi **thêm cột** vào bảng chat đã tồn tại → thêm `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` trong `on_startup` của `main.py` (tuân thủ D4).
+- **Thêm endpoint mới**: follow pattern `routers/chat.py` — dùng `SessionLocal` + try/finally, trả `{"status": "success", "data": ...}`.
+- **Xoá User**: FK `sender_id ... ondelete="SET NULL"` đã lo cascade, nhưng nếu handler xoá user chạy raw SQL, đảm bảo **không** thêm `DELETE FROM chat_messages WHERE sender_id=...` (D3).
+- **Hướng dẫn user**: sửa `docs/HDSD_Chat.md` (và mirror `frontend/src/docs/HDSD_Chat.md`) + `HelpPage.jsx` (import + GUIDES entry).
+- **Menu**: thêm/bớt quyền menu chat ở `Layout.jsx` (`allNavItems`, `iconMap`, `MODULE_MAP`, `hasModuleAccess`).
+
+---
+
+## 6. Lịch sử Nhật ký & Sửa lỗi (Changelog & Debug Memory)
+
+### 6.1 Recent Changes (2026-08-08) — Module Chat Nội bộ (WebSocket)
+
+#### Feature: Chat Nội bộ (Internal Chat)
+- **Backend**: 3 model mới (`ChatRoom`, `ChatRoomMember`, `ChatMessage`) trong `models.py` — `sender_id` FK `ondelete="SET NULL"` (D3); `ConnectionManager` trong `core/chat_ws.py`; router `routers/chat.py` (WS `/api/chat/ws` + REST rooms/messages) đã đăng ký trong `main.py`.
+- **Frontend**: trang `Chat.jsx` / `Chat.css`, route `/chat` trong `App.jsx`, menu "Chat" trong `Layout.jsx`, service functions trong `api.js`.
+- **Docs**: `docs/HDSD_Chat.md` + `frontend/src/docs/HDSD_Chat.md` (Hướng dẫn sử dụng), thêm vào `HelpPage.jsx`, README.md.
+- **Chi tiết kiến trúc**: xem Section 5 — Module Chat Nội bộ.
+
+### 6.1b Recent Changes (2026-08-10) — Phân quyền Chat (admin / trưởng phòng / phòng ban / nhóm)
+
+#### Feature: Phân quyền Chat theo vai trò + Phòng ban
+- **Backend**: `chat_rooms` thêm cột `department`, `owner_code` (migration trong `main.py`); `chat.py` thêm: loại phòng `department`, `_normalize_user()`, `_is_room_member()`/`_department_member_codes()` (thành viên phòng ban tính động theo `employees.department`), `_ensure_department_room()` (tự tạo phòng phòng ban khi mở Chat), `_can_manage_room()`; endpoints mới: `GET/PUT/DELETE /rooms/{room_id}` + `GET/POST /rooms/{id}/members` + `DELETE /rooms/{id}/members/{code}`.
+- **Frontend**: `Chat.jsx` viết lại logic theo vai trò (`user`/`head`/`admin` + chủ nhóm) — modal quản lý phòng (thành viên + cài đặt + xoá), tab tạo phòng phòng ban (admin chọn phòng ban, head cố định phòng ban mình), nhóm phòng theo mục "Phòng ban / Nhóm / Nhắn riêng"; `api.js` thêm 5 hàm chat mới; `Chat.css` thêm styles quản lý phòng.
+- **Docs**: `docs/HDSD_Chat.md` + mirror `frontend/src/docs/HDSD_Chat.md` cập nhật bảng phân quyền.
+- **Chi tiết kiến trúc**: xem Section 5 — Module Chat Nội bộ.
+
+### 6.1c Recent Changes (2026-08-10) — Ghim tin nhắn quan trọng
+
+#### Feature: Pin tin nhắn lên header box chat
+- **Backend**: `chat_messages` thêm cột `is_pinned`/`pinned_by`/`pinned_at` (migration `main.py`); endpoints `GET /rooms/{room_id}/pinned`, `PUT/DELETE /messages/{id}/pin`; sau khi ghim/bỏ ghim broadcast WS `{event:"pin_updated", room_id, pinned:[...]}` để cập nhật realtime cho mọi client.
+- **Frontend**: `Chat.jsx` — thanh ghim dưới header (hiện tối đa 3 tin, dư thì nút **"+n nữa"** mở modal danh sách ghim), nút **📌 ghim/bỏ ghim** trên từng tin nhắn (hover), xử lý sự kiện WS `pin_updated`; `api.js` thêm `getChatPinnedMessages/pinChatMessage/unpinChatMessage`; `Chat.css` thêm styles thanh ghim.
+- **Quy tắc**: mọi thành viên phòng ghim được; chỉ người ghim hoặc người quản lý phòng (`_can_manage_room`) mới bỏ ghim.
+- **Docs**: `docs/HDSD_Chat.md` + mirror — Bước 4: Ghim tin nhắn quan trọng.
+
+### 6.2 Recent Changes (2026-08-03)
 
 #### Fix: Google Drive image/lightbox broken
 - **Issue**: Thumbnail và lightbox bị vỡ khi browse Google Drive
@@ -318,7 +439,7 @@ ONLYOFFICE_ENABLED=true
 - **Solution**: Thêm `poster` attribute cho video element
 - **Files**: `frontend/src/components/FileViewer.jsx`
 
-### 5.2 PostgreSQL Migration (Version 2.0)
+### 6.3 PostgreSQL Migration (Version 2.0)
 
 - **Removed SQLite support** - PostgreSQL 14+ là database duy nhất được hỗ trợ
 - **Updated database architecture** - SQLAlchemy ORM với PostgreSQL optimization
@@ -329,7 +450,7 @@ ONLYOFFICE_ENABLED=true
   - `backend/app/core/db.py` - PostgreSQL-optimized
   - All routers updated to use PostgreSQL-compatible date/time syntax
 
-### 5.3 OnlyOffice Integration Complete
+### 6.4 OnlyOffice Integration Complete
 
 - OnlyOffice container configured in docker-compose.yml (port 8080)
 - Backend config: `BACKEND_PUBLIC_URL`, `ONLYOFFICE_URL`, `ONLYOFFICE_PUBLIC_URL`
@@ -337,7 +458,7 @@ ONLYOFFICE_ENABLED=true
 - OnlyOfficeViewer.jsx with debug logs
 - CSS in shared.css (`.oov-close-btn-floating`)
 
-### 5.4 Salary Module Integration
+### 6.5 Salary Module Integration
 
 - **Migrated from**: `web_simple` project
 - **Integration Date**: December 2024
@@ -350,7 +471,7 @@ ONLYOFFICE_ENABLED=true
 
 ---
 
-## 6. AI Core Directives — MỆNH LỆNH TỐI THƯỢNG
+## 7. AI Core Directives — MỆNH LỆNH TỐI THƯỢNG
 
 > ⚠️ **CÁC MỆNH LỆNH SAU LÀ BẮT BUỘC. AI VI PHẠM SẼ BỊ REJECT.**
 
@@ -407,20 +528,20 @@ Thứ tự ưu tiên: user > department > role.
 
 ### D16 — ❌ CẤM TỰ Ý TẠO FILE `.md` MỚI
 - ❌ KHÔNG tạo file: `SUMMARY_*.md`, `DEBUG_*.md`, `CHECKLIST_*.md`
-- ✅ Mọi cập nhật PHẢI append vào `PROJECT_MEMORY.md` (Mục 5)
+- ✅ Mọi cập nhật PHẢI append vào `PROJECT_MEMORY.md` (Mục 6 — Changelog)
 
 ---
 
-## 7. Quick Reference
+## 8. Quick Reference
 
-### 7.1 Default Login
+### 8.1 Default Login
 
 | Mã NV | Vai trò | Mật khẩu |
 |-------|---------|----------|
 | `admin` | admin | `admin` |
 | `administrator` | admin | `administrator` |
 
-### 7.2 Ports
+### 8.2 Ports
 
 | Service | Internal | External | Access URL |
 |---------|----------|----------|------------|
@@ -429,7 +550,7 @@ Thứ tự ưu tiên: user > department > role.
 | OnlyOffice | 80 | 8080 | http://10.0.0.9:8080 |
 | PostgreSQL | 5432 | 5432 | 10.0.0.9:5432 |
 
-### 7.3 Database (30 tables)
+### 8.3 Database (33 tables)
 
 | Table | Records | Ghi chú |
 |-------|---------|---------|
@@ -445,9 +566,14 @@ Thứ tự ưu tiên: user > department > role.
 | `storage_config` | 3 | Cấu hình storage |
 | `salary_slips` | 2 | Phiếu lương |
 | `todos` | 27 | Công việc |
+| `chat_rooms` | 0 | Phòng chat (id UUID, type direct/group) |
+| `chat_room_members` | 0 | Thành viên phòng chat (UNIQUE room_id+employee_code) |
+| `chat_messages` | 0 | Tin nhắn chat (sender_id FK users — SET NULL khi xoá user) |
 | ... | ... | Xem đầy đủ trong `backend/app/models.py` |
 
-### 7.4 SSE Events (22 events)
+### 8.4 SSE Events (22 events)
+
+> Chat Nội bộ **KHÔNG** dùng SSE — dùng WebSocket `/api/chat/ws` (xem Section 5).
 
 | Event | Khi nào |
 |-------|---------|
@@ -463,6 +589,6 @@ Thứ tự ưu tiên: user > department > role.
 
 ---
 
-**Last Updated**: 2026-08-03  
+**Last Updated**: 2026-08-08  
 **Maintained by**: GoldenFarm ICT Team  
 **Status**: ✅ Production Ready

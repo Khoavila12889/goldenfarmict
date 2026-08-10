@@ -1,13 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import QRCode from 'react-qr-code'
-import { X, Loader2, Copy, Check, Link2, Users, Building2, Globe, Trash2, AlertCircle, Eye, Download, Pencil } from 'lucide-react'
-import { getStorageDepartments, getDocumentShares, createDocumentShare, deleteDocumentShare, getShareDownloadUrl } from '../services/api'
+import { X, Loader2, Copy, Check, Link2, Users, Building2, Globe, Trash2, AlertCircle, Eye, Download, Pencil, UserRound, Search } from 'lucide-react'
+import { getStorageDepartments, getDocumentShares, createDocumentShare, deleteDocumentShare, getShareDownloadUrl, getEmployees } from '../services/api'
 import { formatDate } from '../utils/date'
 import './ShareDocument.css'
 
 const SHARE_TYPES = [
   { value: 'ALL', label: 'Tất cả nhân viên', icon: Users, desc: 'Mọi nhân viên nội bộ có thể truy cập' },
   { value: 'DEPT', label: 'Theo phòng ban', icon: Building2, desc: 'Chỉ nhân viên của phòng ban được chọn' },
+  { value: 'USER', label: 'Nhân viên cụ thể', icon: UserRound, desc: 'Chỉ những nhân viên được chọn truy cập' },
   { value: 'PUBLIC', label: 'Công khai (Link)', icon: Globe, desc: 'Bất kỳ ai có link đều truy cập được' },
 ]
 
@@ -21,6 +22,10 @@ export default function ShareDocument({ file, isOpen, onClose }) {
   const [shareType, setShareType] = useState('ALL')
   const [departmentId, setDepartmentId] = useState('')
   const [departments, setDepartments] = useState([])
+  const [employees, setEmployees] = useState([])
+  const [employeeSearch, setEmployeeSearch] = useState('')
+  const [selectedEmployees, setSelectedEmployees] = useState([])
+  const [empOpen, setEmpOpen] = useState(false)
   const [expiresAt, setExpiresAt] = useState('')
   const [permissions, setPermissions] = useState(['view', 'download'])
   const [saving, setSaving] = useState(false)
@@ -45,6 +50,9 @@ export default function ShareDocument({ file, isOpen, onClose }) {
   const reset = useCallback(() => {
     setShareType('ALL')
     setDepartmentId('')
+    setEmployeeSearch('')
+    setSelectedEmployees([])
+    setEmpOpen(false)
     setExpiresAt('')
     setPermissions(['view', 'download'])
     setSavedToken('')
@@ -60,6 +68,9 @@ export default function ShareDocument({ file, isOpen, onClose }) {
     }
     getStorageDepartments()
       .then(r => setDepartments(r.data?.data || []))
+      .catch(() => {})
+    getEmployees()
+      .then(r => setEmployees(r.data?.data || []))
       .catch(() => {})
     if (file) {
       setLoadingShares(true)
@@ -117,6 +128,10 @@ export default function ShareDocument({ file, isOpen, onClose }) {
       setError('Vui lòng chọn phòng ban cho hình thức chia sẻ này')
       return
     }
+    if (shareType === 'USER' && selectedEmployees.length === 0) {
+      setError('Vui lòng chọn ít nhất một nhân viên cho hình thức chia sẻ này')
+      return
+    }
     setSaving(true)
     try {
       const payload = {
@@ -127,6 +142,7 @@ export default function ShareDocument({ file, isOpen, onClose }) {
         item_type: file.itemType === 'folder' ? 'folder' : 'file',
         share_type: shareType,
         department_id: shareType === 'DEPT' ? Number(departmentId) : null,
+        employee_code: shareType === 'USER' ? selectedEmployees.join(',') : '',
         expires_at: expiresAt || '',
         permissions: permissions.join(','),
       }
@@ -174,6 +190,18 @@ export default function ShareDocument({ file, isOpen, onClose }) {
       setPermissions(prev => prev.filter(p => p !== 'edit'))
     }
   }
+
+  function toggleEmployee(code) {
+    setSelectedEmployees(prev =>
+      prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]
+    )
+  }
+
+  const filteredEmployees = employees.filter(e => {
+    const q = employeeSearch.trim().toLowerCase()
+    if (!q) return true
+    return (e.full_name || '').toLowerCase().includes(q) || (e.employee_code || '').toLowerCase().includes(q)
+  })
 
   return (
     <div className="shd-overlay" onClick={onClose}>
@@ -225,6 +253,62 @@ export default function ShareDocument({ file, isOpen, onClose }) {
                 <option value="">-- Chọn phòng ban --</option>
                 {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
+            </div>
+          )}
+
+          {/* ─── Employee picker (USER) ─── */}
+          {shareType === 'USER' && (
+            <div className="shd-field">
+              <label className="shd-field-label">Chọn nhân viên (có thể chọn nhiều)</label>
+              {selectedEmployees.length > 0 && (
+                <div className="shd-emp-chips">
+                  {selectedEmployees.map(code => {
+                    const emp = employees.find(e => e.employee_code === code)
+                    return (
+                      <span key={code} className="shd-emp-chip">
+                        {emp ? emp.full_name : code}
+                        <button type="button" onClick={() => toggleEmployee(code)} aria-label="Bỏ chọn">
+                          <X size={12} />
+                        </button>
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
+              <div className="shd-emp-picker">
+                <div className="shd-emp-search">
+                  <Search size={14} />
+                  <input
+                    value={employeeSearch}
+                    onChange={e => setEmployeeSearch(e.target.value)}
+                    onFocus={() => setEmpOpen(true)}
+                    placeholder="Tìm theo tên hoặc mã nhân viên..."
+                  />
+                </div>
+                {empOpen && (
+                  <div className="shd-emp-list">
+                    {filteredEmployees.length === 0 ? (
+                      <div className="shd-emp-empty">Không tìm thấy nhân viên</div>
+                    ) : (
+                      filteredEmployees.map(emp => {
+                        const active = selectedEmployees.includes(emp.employee_code)
+                        return (
+                          <label key={emp.employee_code} className={`shd-emp-item${active ? ' active' : ''}`}>
+                            <input
+                              type="checkbox"
+                              checked={active}
+                              onChange={() => toggleEmployee(emp.employee_code)}
+                            />
+                            <span className="shd-emp-name">{emp.full_name}</span>
+                            <span className="shd-emp-code">{emp.employee_code}</span>
+                            {emp.department && <span className="shd-emp-dept">{emp.department}</span>}
+                          </label>
+                        )
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -289,6 +373,9 @@ export default function ShareDocument({ file, isOpen, onClose }) {
                     <SIcon size={15} />
                     <div className="shd-share-info">
                       <div className="shd-share-type">{sType?.label || s.share_type} {s.department_name ? `· ${s.department_name}` : ''}</div>
+                      {s.share_type === 'USER' && s.employee_name && (
+                        <div className="shd-share-targets">{s.employee_name}</div>
+                      )}
                       <div className="shd-share-meta">
                         {s.expires_at ? `Hết hạn: ${s.expires_at.slice(0, 10)}` : 'Không hết hạn'}
                         {s.expired ? ' · Đã hết hạn' : ''}

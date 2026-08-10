@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
+import re
 from ..core.auth import authenticate, hash_password, verify_stored_password, verify_token
 from ..core.db import fetchall, fetchone, execute
 
@@ -9,6 +10,9 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 class LoginRequest(BaseModel):
     employee_code: str
     password: str
+
+    class Config:
+        json_schema_extra = {"examples": [{"employee_code": "GV001 hoặc username", "password": "..."}]}
 
 
 class LoginResponse(BaseModel):
@@ -126,7 +130,7 @@ def login(req: LoginRequest):
             message="Đăng nhập thành công!",
             permissions=perms,
         )
-    return LoginResponse(success=False, message="Sai mã NV/Email hoặc mật khẩu")
+    return LoginResponse(success=False, message="Sai mã NV/Username/Email hoặc mật khẩu")
 
 
 @router.post("/change-password")
@@ -157,8 +161,9 @@ def get_profile(employee_code: str = Query("")):
     )
     if not emp:
         raise HTTPException(404, "Employee not found")
+    user = fetchone("SELECT username FROM users WHERE employee_code = :code", {"code": code})
     perms = _get_effective_permissions(code)
-    return {"success": True, "data": {**emp, "permissions": perms}}
+    return {"success": True, "data": {**emp, "username": (user or {}).get("username", ""), "permissions": perms}}
 
 
 @router.put("/profile")
@@ -182,6 +187,34 @@ def update_profile(employee_code: str, body: UpdateProfileRequest):
             updates
         )
     return {"success": True, "message": "Cập nhật thông tin thành công"}
+
+
+class UpdateUsernameRequest(BaseModel):
+    username: str
+
+
+@router.put("/profile/username")
+def update_username(employee_code: str, body: UpdateUsernameRequest):
+    code = employee_code.strip()
+    username = body.username.strip()
+    if not username:
+        raise HTTPException(400, "Tên đăng nhập không được để trống")
+    if not re.fullmatch(r"[A-Za-z0-9._-]{3,50}", username):
+        raise HTTPException(400, "Tên đăng nhập chỉ gồm chữ, số, dấu . _ - (3-50 ký tự)")
+    user = fetchone("SELECT id FROM users WHERE employee_code = :code", {"code": code})
+    if not user:
+        raise HTTPException(404, "Tài khoản không tồn tại")
+    dup = fetchone(
+        "SELECT employee_code FROM users WHERE username = :username AND employee_code != :code",
+        {"username": username, "code": code}
+    )
+    if dup:
+        raise HTTPException(409, "Tên đăng nhập này đã được sử dụng")
+    execute(
+        "UPDATE users SET username = :username, updated_at = CURRENT_TIMESTAMP WHERE employee_code = :code",
+        {"username": username, "code": code}
+    )
+    return {"success": True, "message": "Đã lưu tên đăng nhập. Bạn có thể đăng nhập bằng username này."}
 
 
 @router.post("/forgot-password")

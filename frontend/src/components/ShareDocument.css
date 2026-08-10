@@ -85,8 +85,14 @@
 
 .shd-type-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 0.5rem;
+}
+
+@media (min-width: 480px) {
+  .shd-type-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
 }
 
 .shd-type-card {
@@ -125,6 +131,112 @@
 }
 
 .shd-field { display: flex; flex-direction: column; }
+
+/* ─── Employee multi-select picker (USER) ─── */
+.shd-emp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.shd-emp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #00468C;
+  background: #eef4fc;
+  border: 1px solid #c7d9f0;
+  border-radius: 999px;
+  padding: 3px 6px 3px 10px;
+}
+
+.shd-emp-chip button {
+  border: none;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  display: inline-flex;
+  padding: 1px;
+  border-radius: 50%;
+}
+.shd-emp-chip button:hover { color: #dc2626; background: #fff; }
+
+.shd-emp-picker {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.shd-emp-search {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 9px;
+  padding: 0.45rem 0.6rem;
+  color: #64748b;
+  background: #fff;
+}
+
+.shd-emp-search:focus-within { border-color: #00468C; }
+
+.shd-emp-search input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 0.78rem;
+  color: #0f172a;
+  background: transparent;
+}
+
+.shd-emp-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.15);
+  z-index: 20;
+  padding: 0.25rem;
+}
+
+.shd-emp-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.78rem;
+}
+
+.shd-emp-item:hover { background: #f1f5f9; }
+.shd-emp-item.active { background: #eef4fc; }
+.shd-emp-item input { accent-color: #00468C; }
+
+.shd-emp-name { font-weight: 600; color: #0f172a; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shd-emp-code { font-size: 0.68rem; color: #64748b; }
+.shd-emp-dept { font-size: 0.66rem; color: #94a3b8; background: #f1f5f9; border-radius: 6px; padding: 1px 6px; }
+
+.shd-emp-empty {
+  padding: 0.75rem;
+  font-size: 0.75rem;
+  color: #64748b;
+  text-align: center;
+}
+
+.shd-share-targets {
+  font-size: 0.7rem;
+  color: #00468C;
+  margin: 2px 0 3px;
+}
 
 /* ─── Permission picker ─── */
 .shd-perm-grid {

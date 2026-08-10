@@ -48,7 +48,10 @@ def make_session_token(user_code: str, role: str) -> str:
 
 def resolve_login(login_id: str):
     code = login_id.strip()
-    user = fetchone("SELECT employee_code FROM users WHERE employee_code = :code", {"code": code})
+    user = fetchone(
+        "SELECT employee_code FROM users WHERE employee_code = :code OR username = :code",
+        {"code": code}
+    )
     if user:
         return user["employee_code"]
     emp = fetchone(

@@ -8,7 +8,10 @@ Project dùng PostgreSQL 16.
   - `server_default` dùng text() để không phụ thuộc dialect.
 """
 
-from sqlalchemy import Column, Integer, String, Float, Text, Boolean, UniqueConstraint
+import uuid
+from datetime import datetime
+
+from sqlalchemy import Column, Integer, String, Float, Text, Boolean, UniqueConstraint, ForeignKey, DateTime
 from .core.session import Base
 
 
@@ -100,6 +103,7 @@ class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True, autoincrement=True)
     employee_code = Column(String, unique=True, nullable=False, index=True)
+    username = Column(String, unique=True, nullable=True, default='')
     password_hash = Column(String, nullable=False)
     role = Column(String, default='user')
     is_first_login = Column(Boolean, default=True)
@@ -438,9 +442,10 @@ class DocumentShare(Base):
       - item_type: 'file' | 'folder' — when 'folder', file_path is the shared
         folder (absolute storage path for SMB/FTP, folder id for GDrive) and
         access is inherited by every file/folder nested inside it.
-    share_type: ALL | DEPT | PUBLIC
+    share_type: ALL | DEPT | USER | PUBLIC
       - ALL    -> every authenticated internal user may access
       - DEPT   -> authenticated users whose department matches department_id
+      - USER   -> only the employees listed in employee_code (comma list) may access
       - PUBLIC -> anyone with the share_token may access (no login needed)
     share_token is always generated (used as the stable public link identifier).
     """
@@ -453,9 +458,68 @@ class DocumentShare(Base):
     file_name = Column(String, default='')
     share_type = Column(String, nullable=False, default='ALL', index=True)
     department_id = Column(Integer, nullable=True, index=True)
+    employee_code = Column(String, default='', index=True)
     share_token = Column(String, default='', unique=True, index=True)
     permissions = Column(String, nullable=False, default='view,download')
     created_by = Column(String, default='')
     created_at = Column(String, default='')
     updated_at = Column(String, default='')
     expires_at = Column(String, default='')
+
+
+class ChatRoom(Base):
+    """Phòng chat nội bộ (direct / group / department).
+
+    `id` là UUID (String(36)) tự sinh.
+    `type`: 'direct' (nhắn riêng 1-1), 'group' (nhóm) hoặc 'department' (phòng ban).
+    `name`: None cho direct, tên nhóm cho group, tên phòng ban cho department.
+    `department`: tên phòng ban (chỉ dùng khi type='department').
+    `owner_code`: mã nhân viên tạo/quản lý phòng (group). Admin/trưởng phòng
+                  quản lý phòng phòng ban, admin quản lý mọi phòng.
+    """
+    __tablename__ = 'chat_rooms'
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    type = Column(String, nullable=False, default='direct', index=True)
+    name = Column(String, nullable=True)
+    department = Column(String, nullable=True, index=True)
+    owner_code = Column(String, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ChatRoomMember(Base):
+    """Thành viên của phòng chat (bảng join 2 phía).
+
+    Cần thiết để xác định "người nhận" khi broadcast tin nhắn qua
+    ConnectionManager. Xoá phòng chat → cascade xoá thành viên.
+    """
+    __tablename__ = 'chat_room_members'
+    __table_args__ = (UniqueConstraint('room_id', 'employee_code', name='uq_chat_room_member'),)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    room_id = Column(String(36), ForeignKey('chat_rooms.id', ondelete='CASCADE'), nullable=False, index=True)
+    employee_code = Column(String, ForeignKey('users.employee_code', ondelete='CASCADE'), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ChatMessage(Base):
+    """Tin nhắn chat nội bộ.
+
+    `sender_id` FK tới `users.employee_code` với `ondelete='SET NULL'`
+    (QUY TẮC D3): khi xoá User, tin nhắn của họ KHÔNG bị xoá, chỉ đặt
+    `sender_id` về NULL.
+
+    `is_pinned`/`pinned_by`/`pinned_at`: tin nhắn được ghim lên header
+    box chat (bất kỳ thành viên nào cũng ghim được).
+    """
+    __tablename__ = 'chat_messages'
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    room_id = Column(String(36), ForeignKey('chat_rooms.id', ondelete='CASCADE'), nullable=False, index=True)
+    sender_id = Column(String, ForeignKey('users.employee_code', ondelete='SET NULL'), nullable=True, index=True)
+    content = Column(Text, nullable=False, default='')
+    attachment_url = Column(String, nullable=True)
+    attachment_name = Column(String, nullable=True)
+    attachment_type = Column(String, nullable=True)
+    attachment_size = Column(Integer, nullable=True)
+    is_pinned = Column(Integer, default=0, index=True)
+    pinned_by = Column(String, nullable=True)
+    pinned_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

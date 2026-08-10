@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { X, Search, BookOpen, CheckSquare, Ticket, Calendar, Users, Monitor, Key, CheckCircle, Folder, Receipt, Shield, User, Briefcase } from 'lucide-react'
+import { X, Search, BookOpen, CheckSquare, Ticket, Calendar, Users, Monitor, Key, CheckCircle, Folder, Receipt, Shield, User, Briefcase, MessageSquare } from 'lucide-react'
 import todosMd from '../docs/HDSD_Todos.md?raw'
 import ticketsMd from '../docs/HDSD_Tickets.md?raw'
 import bookingsMd from '../docs/HDSD_Bookings.md?raw'
@@ -13,10 +13,13 @@ import salaryMd from '../docs/HDSD_SalarySlips.md?raw'
 import permissionsMd from '../docs/HDSD_Permissions.md?raw'
 import dashboardMd from '../docs/HDSD_Dashboard.md?raw'
 import profileMd from '../docs/HDSD_Profile.md?raw'
+import chatMd from '../docs/HDSD_Chat.md?raw'
 
 const GUIDES = [
   { key: 'Todos', icon: CheckSquare, color: '#2563eb', bg: '#eff6ff',
     desc: 'Quản lý công việc & Task Kanban — tạo, phân công, theo dõi tiến độ', content: todosMd },
+  { key: 'Chat', icon: MessageSquare, color: '#0891b2', bg: '#cffafe',
+    desc: 'Chat nội bộ — nhắn tin realtime 1-1 & nhóm với đồng nghiệp', content: chatMd },
   { key: 'Tickets', icon: Ticket, color: '#dc2626', bg: '#fef2f2',
     desc: 'Yêu cầu hỗ trợ IT — gửi & theo dõi ticket xử lý', content: ticketsMd },
   { key: 'Bookings', icon: Calendar, color: '#d97706', bg: '#fef3c7',

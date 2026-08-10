@@ -3,7 +3,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { 
   LayoutDashboard, Users, Monitor, Key, Ticket, CheckCircle, 
   Settings, Calendar, Receipt, Folder, Shield, Menu, X, User, 
-  Lock, Eye, EyeOff, CheckSquare, HelpCircle, Activity 
+  Lock, Eye, EyeOff, CheckSquare, HelpCircle, Activity, MessageSquare 
 } from 'lucide-react'
 import { changePassword } from '../services/api'
 import { driver } from 'driver.js'
@@ -12,6 +12,7 @@ import 'driver.js/dist/driver.css'
 const iconMap = {
   dashboard: LayoutDashboard,
   todos: CheckSquare,
+  chat: MessageSquare,
   employees: Users,
   equipment: Monitor,
   licenses: Key,
@@ -31,6 +32,7 @@ const iconMap = {
 const allNavItems = [
   { path: '/', label: 'Dashboard', icon: 'dashboard', roles: ['user', 'head', 'admin'] },
   { path: '/todos', label: 'Công việc (Todos)', icon: 'todos', roles: ['user', 'head', 'admin'] },
+  { path: '/chat', label: 'Chat', icon: 'chat', roles: ['user', 'head', 'admin'] },
   { path: '/employees', label: 'Nhân viên', icon: 'employees', roles: ['head', 'admin'] },
   { path: '/equipment', label: 'Thiết bị', icon: 'equipment', roles: ['head', 'admin'] },
   { path: '/licenses', label: 'License Keys', icon: 'licenses', roles: ['head', 'admin'] },
@@ -49,6 +51,7 @@ const allNavItems = [
 const MODULE_MAP = {
   '/': 'dashboard',
   '/todos': 'todos',
+  '/chat': 'chat',
   '/employees': 'employees',
   '/equipment': 'equipment',
   '/licenses': 'licenses',
@@ -243,7 +246,7 @@ export default function Layout() {
 
   // ─── HÀM KIỂM TRA QUYỀN TRUY CẬP MODULE CHUẨN RBAC ──────────────────
   function hasModuleAccess(path) {
-    if (path === '/' || path === '/help') return true
+    if (path === '/' || path === '/help' || path === '/chat') return true
     if (userRole === 'admin') return true
     if (path === '/permissions') return false
 

@@ -12,7 +12,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from app.core.auth import hash_password
 from app.core import events
-from app.routers import auth, employees, equipment, tickets, bookings, dashboard, licenses, software, approvals, business_trips, departments, salary_slips, salary_user, documents, todos, comments, attachments, monitor, shares
+from app.routers import auth, employees, equipment, tickets, bookings, dashboard, licenses, software, approvals, business_trips, departments, salary_slips, salary_user, documents, todos, comments, attachments, monitor, shares, chat
 
 app = FastAPI(title="GOLDENFARM ICT API", version="1.0.0")
 
@@ -44,6 +44,7 @@ app.include_router(todos.router)
 app.include_router(comments.router)
 app.include_router(attachments.router)
 app.include_router(monitor.router)
+app.include_router(chat.router)
 
 
 @app.on_event("startup")
@@ -77,6 +78,21 @@ def on_startup():
             sess.rollback()
             print(f"  → employees.start_date migration: {e}")
 
+    # users.username — tên đăng nhập dễ nhớ (login bằng username hoặc mã NV)
+    with SessionLocal() as sess:
+        try:
+            sess.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT DEFAULT ''"))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → users.username migration: {e}")
+        try:
+            sess.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_users_username ON users (username) WHERE username <> ''"))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → users.username unique index: {e}")
+
     # document_shares.item_type — distinguishes file vs folder shares
     with SessionLocal() as sess:
         try:
@@ -101,6 +117,84 @@ def on_startup():
         except Exception as e:
             sess.rollback()
             print(f"  → document_shares.permissions migration: {e}")
+
+    # chat_messages.attachment_* — metadata file đính kèm (ảnh / pdf / xlsx)
+    with SessionLocal() as sess:
+        try:
+            sess.execute(text(
+                "ALTER TABLE chat_messages "
+                "ADD COLUMN IF NOT EXISTS attachment_name TEXT DEFAULT ''"
+            ))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → chat_messages.attachment_name migration: {e}")
+        try:
+            sess.execute(text(
+                "ALTER TABLE chat_messages "
+                "ADD COLUMN IF NOT EXISTS attachment_type VARCHAR(20) DEFAULT ''"
+            ))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → chat_messages.attachment_type migration: {e}")
+        try:
+            sess.execute(text(
+                "ALTER TABLE chat_messages "
+                "ADD COLUMN IF NOT EXISTS attachment_size BIGINT DEFAULT NULL"
+            ))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → chat_messages.attachment_size migration: {e}")
+        try:
+            sess.execute(text(
+                "ALTER TABLE chat_messages "
+                "ADD COLUMN IF NOT EXISTS is_pinned INTEGER DEFAULT 0"
+            ))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → chat_messages.is_pinned migration: {e}")
+        try:
+            sess.execute(text(
+                "ALTER TABLE chat_messages "
+                "ADD COLUMN IF NOT EXISTS pinned_by VARCHAR(50) DEFAULT NULL"
+            ))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → chat_messages.pinned_by migration: {e}")
+        try:
+            sess.execute(text(
+                "ALTER TABLE chat_messages "
+                "ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMP DEFAULT NULL"
+            ))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → chat_messages.pinned_at migration: {e}")
+
+    # chat_rooms.department — phòng chat phòng ban (type='department')
+    with SessionLocal() as sess:
+        try:
+            sess.execute(text(
+                "ALTER TABLE chat_rooms "
+                "ADD COLUMN IF NOT EXISTS department VARCHAR(255) DEFAULT NULL"
+            ))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → chat_rooms.department migration: {e}")
+        try:
+            sess.execute(text(
+                "ALTER TABLE chat_rooms "
+                "ADD COLUMN IF NOT EXISTS owner_code VARCHAR(50) DEFAULT NULL"
+            ))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → chat_rooms.owner_code migration: {e}")
 
     # Seed default admin user if not exists
     session = SessionLocal()

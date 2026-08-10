@@ -259,9 +259,9 @@ def browse(config_id: int, path: str = Query('/'), user_code: str = Query(''), u
                         sp.target_type='EVERYONE'
                         OR (sp.target_type='DEPARTMENT' AND sp.department=:dept AND :dept != '')
                         OR (sp.target_type='' AND sp.role=:role AND sp.role != '')
-                        OR (sp.target_type='' AND sp.employee_code=:code AND sp.employee_code != '')
+                        OR (sp.target_type IN ('', 'USER', 'INDIVIDUAL') AND sp.employee_code=:code AND sp.employee_code != '')
                       )
-                      AND sp.can_read = 1
+                      AND (sp.can_read::int) = 1
                     LIMIT 1
                 """, {"sid": config_id, "role": user_role or '', "code": user_code or '', "dept": user_dept})
                 
@@ -921,7 +921,7 @@ def _check_folder_permission(storage_id, folder_path, user_code, user_role):
             target_type = 'EVERYONE'
             OR (target_type = 'DEPARTMENT' AND department = :dept AND :dept != '')
             OR (target_type = '' AND role = :role AND :role != '')
-            OR (target_type = '' AND employee_code = :code AND :code != '')
+            OR (target_type IN ('', 'USER', 'INDIVIDUAL') AND employee_code = :code AND :code != '')
             OR (target_type = '' AND department = '' AND role = '' AND employee_code = '')
           )
           AND (:fp = folder_path OR LOWER(:fp2) LIKE LOWER(folder_path || '/%') OR folder_path = '/')
@@ -960,6 +960,7 @@ def _check_share_access(config_id, file_path, user_code, user_role):
 
     ALL  -> any authenticated user.
     DEPT -> authenticated user whose department matches the share's department.
+    USER -> authenticated user whose employee_code is listed in the share.
     PUBLIC -> handled separately via token, not here.
 
     Folder shares (item_type='folder') grant access to every file nested inside
@@ -972,7 +973,7 @@ def _check_share_access(config_id, file_path, user_code, user_role):
     now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     shares = fetchall("""
         SELECT * FROM document_shares
-        WHERE config_id=:sid AND share_type IN ('ALL','DEPT')
+        WHERE config_id=:sid AND share_type IN ('ALL','DEPT','USER')
           AND (expires_at IS NULL OR expires_at = '' OR expires_at > :now)
         ORDER BY expires_at DESC
     """, {"sid": config_id, "now": now_str})
@@ -995,6 +996,10 @@ def _check_share_access(config_id, file_path, user_code, user_role):
             user_dept = (emp['department'] or '') if emp else ''
             dept = fetchone("SELECT name FROM departments WHERE id=:id", {"id": s['department_id']})
             if dept and dept['name'] == user_dept:
+                return s
+        if s['share_type'] == 'USER':
+            granted = {c.strip() for c in (s.get('employee_code') or '').split(',') if c.strip()}
+            if user_code in granted:
                 return s
     return None
 
@@ -1957,7 +1962,7 @@ def _check_can_upload(storage_id, folder_path, user_code, user_role):
             target_type='EVERYONE'
             OR (target_type='DEPARTMENT' AND department=:dept AND :dept != '')
             OR (target_type='' AND role=:role AND role != '')
-            OR (target_type='' AND employee_code=:code AND employee_code != '')
+            OR (target_type IN ('', 'USER', 'INDIVIDUAL') AND employee_code=:code AND employee_code != '')
           )
           AND (:fp = folder_path OR LOWER(:fp2) LIKE LOWER(folder_path || '/%') OR folder_path = '/')
           AND (expires_at IS NULL OR CAST(expires_at AS TEXT) = '' OR CAST(expires_at AS TIMESTAMP) > CAST(:now AS TIMESTAMP))
@@ -2441,7 +2446,7 @@ def _check_can_delete(storage_id, folder_path, user_code, user_role):
             target_type='EVERYONE'
             OR (target_type='DEPARTMENT' AND department=:dept AND :dept != '')
             OR (target_type='' AND role=:role AND role != '')
-            OR (target_type='' AND employee_code=:code AND employee_code != '')
+            OR (target_type IN ('', 'USER', 'INDIVIDUAL') AND employee_code=:code AND employee_code != '')
           )
           AND (:fp = folder_path OR LOWER(:fp2) LIKE LOWER(folder_path || '/%') OR folder_path = '/')
           AND (expires_at IS NULL OR CAST(expires_at AS TEXT) = '' OR CAST(expires_at AS TIMESTAMP) > CAST(:now AS TIMESTAMP))

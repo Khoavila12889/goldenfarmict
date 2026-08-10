@@ -17,6 +17,7 @@ import Permissions from './pages/Permissions'
 import Todos from './pages/Todos'
 import HelpPage from './pages/HelpPage'
 import MonitorPage from './pages/MonitorPage'
+import Chat from './pages/Chat'
 import PublicSharePage from './pages/PublicSharePage'
 import Layout from './components/Layout'
 
@@ -68,6 +69,7 @@ export default function App() {
         <Route path="permissions" element={<AdminRoute><Permissions /></AdminRoute>} />
         <Route path="monitor" element={<AdminRoute><MonitorPage /></AdminRoute>} />
         <Route path="help" element={<HelpPage />} />
+        <Route path="chat" element={<Chat />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

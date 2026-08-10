@@ -4,13 +4,14 @@ File Sharing module — share files from any storage (SMB/FTP/Google Drive).
 Access model:
   - ALL    -> every authenticated internal user
   - DEPT   -> authenticated users of the chosen department
+  - USER   -> only the employees listed in employee_code (comma list)
   - PUBLIC -> anyone holding the share_token (no login needed)
 
 Security:
   - share_token is a high-entropy random string, used only in public URLs.
   - Management endpoints require a valid session token.
   - Every public access re-checks `expires_at` before piping the stream.
-  - For ALL/DEPT shares, OnlyOffice gets a short-lived signed download token
+  - For ALL/DEPT/USER shares, OnlyOffice gets a short-lived signed download token
     so the Document Server can fetch the file server-to-server without the
     user's session.
 """
@@ -48,13 +49,13 @@ from .documents import (
 
 router = APIRouter(prefix="/api", tags=["shares"])
 
-_ALLOWED_TYPES = ('ALL', 'DEPT', 'PUBLIC')
+_ALLOWED_TYPES = ('ALL', 'DEPT', 'USER', 'PUBLIC')
 _ALLOWED_ITEMS = ('file', 'folder')
 
 # Permissions stored as a comma list in document_shares.permissions:
 #   view     — open/preview (always granted; baseline of sharing)
 #   download — allow downloading the file / zipping the folder
-#   edit     — OnlyOffice edit mode (internal ALL/DEPT only, never PUBLIC)
+#   edit     — OnlyOffice edit mode (internal ALL/DEPT/USER only, never PUBLIC)
 _ALLOWED_PERMISSIONS = ('view', 'download', 'edit')
 
 
@@ -140,6 +141,41 @@ def _is_expired(expires_at: str) -> bool:
     return expires_at <= _now_str()
 
 
+def _split_employee_codes(raw: str) -> set:
+    """Return the set of employee codes a USER share is granted to."""
+    return {c.strip() for c in (raw or '').split(',') if c.strip()}
+
+
+def _resolve_employee_names(employee_code: str) -> str:
+    """Return a comma-joined 'name (code)' list for display in the UI."""
+    codes = sorted(_split_employee_codes(employee_code))
+    if not codes:
+        return ''
+    names = []
+    for c in codes:
+        emp = fetchone("SELECT full_name FROM employees WHERE employee_code=:code", {"code": c})
+        names.append(f"{emp['full_name']} ({c})" if emp and emp['full_name'] else c)
+    return ', '.join(names)
+
+
+def _share_matches_user(share: dict, user: dict) -> bool:
+    """True when an authenticated user may access a non-PUBLIC share.
+
+    ALL  -> any authenticated user.
+    DEPT -> user's department matches the share department.
+    USER -> user's employee code is listed in share.employee_code.
+    """
+    if share['share_type'] == 'ALL':
+        return True
+    if share['share_type'] == 'DEPT':
+        d = fetchone("SELECT name FROM departments WHERE id=:id", {"id": share.get('department_id')})
+        dept_name = d['name'] if d else ''
+        return bool(dept_name and user.get('department') == dept_name)
+    if share['share_type'] == 'USER':
+        return user.get('user_code') in _split_employee_codes(share.get('employee_code', ''))
+    return False
+
+
 def _resolve_file_meta(cfg, file_path: str) -> str:
     """Return the base filename for display purposes."""
     return os.path.basename(file_path)
@@ -213,6 +249,7 @@ class ShareIn(BaseModel):
     item_type: str = 'file'
     share_type: str = 'ALL'
     department_id: int | None = None
+    employee_code: str = ''
     expires_at: str = ''
     permissions: str = 'view,download'
 
@@ -235,6 +272,7 @@ def list_shares(
     """, {"sid": config_id, "fp": file_path})
     for r in rows:
         r['expired'] = _is_expired(r.get('expires_at', ''))
+        r['employee_name'] = _resolve_employee_names(r.get('employee_code', ''))
     return {"data": rows}
 
 
@@ -248,11 +286,15 @@ def create_share(
     user = _require_user(user_code, token, user_role)
 
     if body.share_type not in _ALLOWED_TYPES:
-        raise HTTPException(400, "share_type phải là ALL, DEPT hoặc PUBLIC")
+        raise HTTPException(400, "share_type phải là ALL, DEPT, USER hoặc PUBLIC")
     if body.item_type not in _ALLOWED_ITEMS:
         raise HTTPException(400, "item_type phải là 'file' hoặc 'folder'")
     if body.share_type == 'DEPT' and not body.department_id:
         raise HTTPException(400, "Vui lòng chọn phòng ban cho chia sẻ theo phòng ban")
+
+    employee_codes = _split_employee_codes(body.employee_code)
+    if body.share_type == 'USER' and not employee_codes:
+        raise HTTPException(400, "Vui lòng chọn ít nhất một nhân viên cho chia sẻ cá nhân")
 
     cfg = fetchone("SELECT * FROM storage_config WHERE id=:id", {"id": body.config_id})
     if not cfg:
@@ -262,6 +304,7 @@ def create_share(
     permissions = _normalize_permissions(body.permissions, body.share_type)
     filename = body.file_name or _resolve_file_meta(cfg, body.file_path)
     department_id = body.department_id if body.share_type == 'DEPT' else None
+    employee_code = ','.join(sorted(employee_codes)) if body.share_type == 'USER' else ''
 
     # Reuse an existing share for the same item+target+creator, else create new.
     existing = fetchone("""
@@ -269,9 +312,10 @@ def create_share(
         WHERE config_id=:sid AND item_type=:it AND file_path=:fp
           AND share_type=:st
           AND COALESCE(department_id, 0) = COALESCE(:did, 0)
+          AND COALESCE(employee_code, '') = :ec
           AND created_by=:by
         ORDER BY id DESC LIMIT 1
-    """, {"sid": body.config_id, "it": body.item_type, "fp": body.file_path, "st": body.share_type, "did": department_id, "by": user_code})
+    """, {"sid": body.config_id, "it": body.item_type, "fp": body.file_path, "st": body.share_type, "did": department_id, "ec": employee_code, "by": user_code})
 
     now = _now_str()
     share_token = secrets.token_urlsafe(32)
@@ -283,6 +327,7 @@ def create_share(
         "file_name": filename,
         "share_type": body.share_type,
         "department_id": department_id,
+        "employee_code": employee_code,
         "share_token": share_token,
         "permissions": permissions,
         "created_by": user_code,
@@ -295,7 +340,8 @@ def create_share(
         execute("""
             UPDATE document_shares SET
                 file_id=:file_id, file_name=:file_name, department_id=:department_id,
-                permissions=:permissions, expires_at=:expires_at, updated_at=:updated_at
+                employee_code=:employee_code, permissions=:permissions,
+                expires_at=:expires_at, updated_at=:updated_at
             WHERE id=:id
         """, {**params, "id": existing['id']})
         row = fetchone("SELECT * FROM document_shares WHERE id=:id", {"id": existing['id']})
@@ -303,14 +349,15 @@ def create_share(
         new_id = insert("""
             INSERT INTO document_shares
                 (config_id, item_type, file_path, file_id, file_name, share_type,
-                 department_id, share_token, permissions, created_by, created_at, updated_at, expires_at)
+                 department_id, employee_code, share_token, permissions, created_by, created_at, updated_at, expires_at)
             VALUES
                 (:config_id, :item_type, :file_path, :file_id, :file_name, :share_type,
-                 :department_id, :share_token, :permissions, :created_by, :created_at, :updated_at, :expires_at)
+                 :department_id, :employee_code, :share_token, :permissions, :created_by, :created_at, :updated_at, :expires_at)
             RETURNING id
         """, params)
         row = fetchone("SELECT * FROM document_shares WHERE id=:id", {"id": new_id})
 
+    row['employee_name'] = _resolve_employee_names(row.get('employee_code', ''))
     return {"success": True, "data": row}
 
 
@@ -345,12 +392,14 @@ def share_info(
     share = _get_share_by_token(share_token)
     expired = _is_expired(share.get('expires_at', ''))
 
-    # ALL/DEPT require a valid login; PUBLIC is open.
+    # ALL/DEPT/USER require a valid login; PUBLIC is open.
     if share['share_type'] != 'PUBLIC':
         try:
-            _require_user(user_code, token, user_role)
+            user = _require_user(user_code, token, user_role)
         except HTTPException:
             raise HTTPException(401, "Chia sẻ này chỉ dành cho nhân viên nội bộ. Vui lòng đăng nhập.")
+        if not _share_matches_user(share, user):
+            raise HTTPException(403, "Bạn không được phép truy cập link chia sẻ này")
 
     dept_name = ''
     if share['share_type'] == 'DEPT':
@@ -366,6 +415,8 @@ def share_info(
             "share_type": share['share_type'],
             "department_id": share.get('department_id'),
             "department_name": dept_name,
+            "employee_code": share.get('employee_code', ''),
+            "employee_name": _resolve_employee_names(share.get('employee_code', '')),
             "permissions": _parse_permissions(share),
             "expires_at": share.get('expires_at', ''),
             "expired": expired,
@@ -397,9 +448,11 @@ def share_contents(
 
     if share['share_type'] != 'PUBLIC':
         try:
-            _require_user(user_code, token, user_role)
+            user = _require_user(user_code, token, user_role)
         except HTTPException:
             raise HTTPException(401, "Chia sẻ này chỉ dành cho nhân viên nội bộ. Vui lòng đăng nhập.")
+        if not _share_matches_user(share, user):
+            raise HTTPException(403, "Bạn không được phép truy cập link chia sẻ này")
 
     cfg = fetchone("SELECT * FROM storage_config WHERE id=:id", {"id": share['config_id']})
     if not cfg:
@@ -512,7 +565,7 @@ def share_archive(
     if 'download' not in _parse_permissions(share):
         raise HTTPException(403, "Link chia sẻ này không cho phép tải xuống")
 
-    # Same authorization model as /download: PUBLIC open, ALL/DEPT via
+    # Same authorization model as /download: PUBLIC open, ALL/DEPT/USER via
     # session or signed token.
     if share['share_type'] != 'PUBLIC':
         authorized = False
@@ -523,12 +576,7 @@ def share_archive(
                 authorized = (exp is None) or (int(exp) >= int(_time_now()))
         if not authorized:
             user = _require_user(user_code, token, user_role)
-            authorized = True
-            if share['share_type'] == 'DEPT':
-                d = fetchone("SELECT name FROM departments WHERE id=:id", {"id": share.get('department_id')})
-                dept_name = d['name'] if d else ''
-                if not dept_name or dept_name != user['department']:
-                    authorized = False
+            authorized = _share_matches_user(share, user)
         if not authorized:
             raise HTTPException(403, "Bạn không được phép truy cập link chia sẻ này")
 
@@ -627,7 +675,7 @@ def share_download(
 
     payload = _verify_doc_token(token) if token else None
 
-    # PUBLIC -> anyone. ALL/DEPT -> valid session OR valid signed download token
+    # PUBLIC -> anyone. ALL/DEPT/USER -> valid session OR valid signed download token
     # (the signed token lets OnlyOffice Document Server fetch server-to-server).
     if share['share_type'] != 'PUBLIC':
         authorized = False
@@ -636,12 +684,7 @@ def share_download(
             authorized = (exp is None) or (int(exp) >= int(_time_now()))
         if not authorized:
             user = _require_user(user_code, token, user_role)
-            authorized = True
-            if share['share_type'] == 'DEPT':
-                d = fetchone("SELECT name FROM departments WHERE id=:id", {"id": share.get('department_id')})
-                dept_name = d['name'] if d else ''
-                if not dept_name or dept_name != user['department']:
-                    authorized = False
+            authorized = _share_matches_user(share, user)
         if not authorized:
             raise HTTPException(403, "Bạn không được phép truy cập link chia sẻ này")
 
@@ -687,7 +730,9 @@ def share_onlyoffice_config(
 
     is_public = share['share_type'] == 'PUBLIC'
     if not is_public:
-        _require_user(user_code, token, user_role)
+        user = _require_user(user_code, token, user_role)
+        if not _share_matches_user(share, user):
+            raise HTTPException(403, "Bạn không được phép truy cập link chia sẻ này")
 
     perms = _parse_permissions(share)
     # PUBLIC shares are always read-only; 'edit' is only honoured for

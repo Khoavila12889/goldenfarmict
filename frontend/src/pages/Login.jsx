@@ -29,7 +29,7 @@ export default function Login() {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if (!code || !password) { setError('Vui lòng nhập mã NV và mật khẩu'); return }
+    if (!code || !password) { setError('Vui lòng nhập mã NV/username và mật khẩu'); return }
     setLoading(true); setError('')
     try {
       const res = await login(code, password)
@@ -118,7 +118,7 @@ export default function Login() {
                 <div className="login-field">
                   <input
                     type="text"
-                    placeholder="Mã NV hoặc Email..."
+                    placeholder="Mã NV, username hoặc Email..."
                     value={code}
                     onChange={e => setCode(e.target.value)}
                     autoFocus

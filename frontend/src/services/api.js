@@ -21,6 +21,10 @@ export function updateProfile(employee_code, data) {
   return api.put(`/auth/profile?employee_code=${encodeURIComponent(employee_code)}`, data)
 }
 
+export function updateUsername(employee_code, username) {
+  return api.put(`/auth/profile/username?employee_code=${encodeURIComponent(employee_code)}`, { username })
+}
+
 export function getDashboardStats() {
   return api.get('/dashboard/stats')
 }
@@ -751,6 +755,82 @@ export function getPermissionModules() {
 // ─── Document Permissions ────────────────────────────────────────
 export function createDepartmentPermission(data, adminCode, token, role) {
   return api.post('/documents/permissions/department', data, { params: { admin_code: adminCode, token, role } })
+}
+
+// ─── Chat Nội bộ ─────────────────────────────────────────────────
+function chatAuthHeaders() {
+  return {
+    'X-User-Code': sessionStorage.getItem('user_code') || '',
+    'X-User-Role': sessionStorage.getItem('user_role') || '',
+    'X-User-Dept': sessionStorage.getItem('user_department') || '',
+    'X-User-Token': sessionStorage.getItem('token') || '',
+  }
+}
+
+export function getChatRooms() {
+  return api.get('/chat/rooms', { headers: chatAuthHeaders() })
+}
+
+export function getChatMessages(roomId, limit = 50, offset = 0) {
+  return api.get(`/chat/messages/${roomId}`, {
+    params: { limit, offset },
+    headers: chatAuthHeaders(),
+  })
+}
+
+export function createChatRoom(data) {
+  return api.post('/chat/rooms', data, { headers: chatAuthHeaders() })
+}
+
+export function uploadChatFile(file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return api.post('/chat/upload', fd, {
+    headers: { ...chatAuthHeaders(), 'Content-Type': 'multipart/form-data' },
+  })
+}
+
+export function getChatContacts(q = '') {
+  return api.get('/chat/contacts', { params: { q }, headers: chatAuthHeaders() })
+}
+
+export function getChatRoomMembers(roomId) {
+  return api.get(`/chat/rooms/${roomId}/members`, { headers: chatAuthHeaders() })
+}
+
+export function renameChatRoom(roomId, name) {
+  return api.put(`/chat/rooms/${roomId}`, { name }, { headers: chatAuthHeaders() })
+}
+
+export function deleteChatRoom(roomId) {
+  return api.delete(`/chat/rooms/${roomId}`, { headers: chatAuthHeaders() })
+}
+
+export function addChatRoomMembers(roomId, employeeCodes) {
+  return api.post(`/chat/rooms/${roomId}/members`, { employee_codes: employeeCodes }, { headers: chatAuthHeaders() })
+}
+
+export function removeChatRoomMember(roomId, employeeCode) {
+  return api.delete(`/chat/rooms/${roomId}/members/${encodeURIComponent(employeeCode)}`, { headers: chatAuthHeaders() })
+}
+
+export function getChatPinnedMessages(roomId) {
+  return api.get(`/chat/rooms/${roomId}/pinned`, { headers: chatAuthHeaders() })
+}
+
+export function pinChatMessage(messageId) {
+  return api.put(`/chat/messages/${messageId}/pin`, {}, { headers: chatAuthHeaders() })
+}
+
+export function unpinChatMessage(messageId) {
+  return api.delete(`/chat/messages/${messageId}/pin`, { headers: chatAuthHeaders() })
+}
+
+export function chatWebSocketUrl() {
+  const code = sessionStorage.getItem('user_code') || ''
+  const token = sessionStorage.getItem('token') || ''
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.host}/api/chat/ws?token=${encodeURIComponent(token)}&employee_code=${encodeURIComponent(code)}`
 }
 
 export default api

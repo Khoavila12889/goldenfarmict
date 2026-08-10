@@ -1,6 +1,6 @@
 # GOLDENFARM ICT Management System
 
-Hệ thống quản lý ICT nội bộ — Quản lý nhân viên, thiết bị, license phần mềm, ticket hỗ trợ IT và đặt lịch xe/phòng họp.
+Hệ thống quản lý ICT nội bộ — Quản lý nhân viên, thiết bị, license phần mềm, ticket hỗ trợ IT, đặt lịch xe/phòng họp và chat nội bộ realtime.
 
 ## Tech Stack
 
@@ -9,7 +9,7 @@ Hệ thống quản lý ICT nội bộ — Quản lý nhân viên, thiết bị,
 | **Backend** | FastAPI (Python 3.11+) + PostgreSQL 16 |
 | **Frontend** | React 19 + Vite 6 + React Router 7 |
 | **HTTP Client** | Axios 1.7 |
-| **Realtime** | Server-Sent Events (SSE) |
+| **Realtime** | Server-Sent Events (SSE) + WebSocket (Chat nội bộ) |
 | **Icons** | lucide-react (50+ icons) |
 | **CSS** | Thuần CSS (CSS Custom Properties — dark/light mode) + `shared.css` cho pattern dùng chung |
 | **Storage** | SMB (`pysmb`), FTP (`ftplib`), Google Drive (`google-api-python-client`, `google-auth`) |
@@ -33,6 +33,7 @@ Hệ thống quản lý ICT nội bộ — Quản lý nhân viên, thiết bị,
 └────────────────────────┼────────────────────────────────────┘
                          │ HTTP (proxy /api → :8080)
                          │ SSE  (/api/events)
+                         │ WS   (/api/chat/ws) — chat nội bộ
 ┌────────────────────────┼────────────────────────────────────┐
 │              Backend (FastAPI)                               │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────────┐ │
@@ -166,6 +167,15 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 - **Quyền User**: Được tạo, chỉnh sửa, chuyển trạng thái công việc do mình tạo/được giao, và **xóa công việc do chính mình tạo** (frontend + backend enforce).
 - **Realtime SSE Sync**: Tự động cập nhật Kanban realtime giữa các thành viên cùng phòng ban khi có thay đổi.
 
+### 💬 Chat Nội bộ (WebSocket — ĐỘC LẬP với SSE)
+
+- **Realtime 2 chiều**: Nhắn tin trực tuyến qua WebSocket `WS /api/chat/ws` — hoạt động **độc lập** với hệ thống SSE `/api/events`.
+- **Xác thực qua query param**: WebSocket không gửi được Header Authorization → đọc `token` + `employee_code` từ query string, xác minh bằng `verify_token()` trong `app/core/auth` (D6 — không hard-code user id). Token sai → đóng kết nối ngay với close code **1008**.
+- **Direct & Group**: Phòng chat `direct` (1-1, không cần tên) hoặc `group` (theo tên nhóm); thành viên quản lý qua bảng `chat_room_members` (UNIQUE room_id + employee_code).
+- **Lưu tin nhắn**: Mỗi tin nhắn được lưu vào `chat_messages` qua **SQLAlchemy ORM** trước khi broadcast tới mọi thành viên phòng.
+- **History**: REST `GET /api/chat/messages/{room_id}` phân trang `limit`/`offset`, kèm tên người gửi (LEFT JOIN `employees`), chỉ thành viên phòng mới xem được.
+- **ConnectionManager** (`core/chat_ws.py`): Quản lý kết nối theo `employee_code` (hỗ trợ multi-tab), tự dọn socket chết, broadcast theo danh sách thành viên phòng.
+- **Cascade (D3)**: Xoá User → tin nhắn giữ nguyên, `sender_id` set NULL (`ondelete="SET NULL"`); xoá phòng chat → cascade xoá tin nhắn + thành viên.
 
 ### 📅 Đặt lịch — Scheduler Grid (Xe & Phòng họp)
 - **Grid scheduling**: Trục dọc time slots 07:00→19:00 (bước 30 phút), trục ngang resources
@@ -429,7 +439,8 @@ goldenfarm-ict-web/
 │   │   │   ├── __init__.py
 │   │   │   ├── database.py        # DB init, schema, indexes, seed resources
 │   │   │   ├── auth.py            # Xác thực (simple token), seed users
-│   │   │   └── events.py          # SSE event bus (async generator)
+│   │   │   ├── events.py          # SSE event bus (async generator)
+│   │   │   └── chat_ws.py         # WebSocket Connection Manager (chat nội bộ)
 │   │   ├── routers/
 │   │   │   ├── __init__.py
 │   │   │   ├── auth.py            # Login, password, profile, user/permission admin
@@ -445,7 +456,8 @@ goldenfarm-ict-web/
 │   │   │   ├── approvals.py       # Workflows + steps + requests + approve/reject + SSE
 │   │   │   ├── documents.py       # Storage CRUD + browse/download + granular permissions
 │   │   │   ├── salary_slips.py    # Admin salary CRUD + Excel + PDF (single/batch)
-│   │   │   └── salary_user.py     # Employee salary view + PDF download
+│   │   │   ├── salary_user.py     # Employee salary view + PDF download
+│   │   │   └── chat.py            # Chat nội bộ: WebSocket + rooms/messages REST
 │   │   ├── utils/
 │   │   │   ├── pdf_generator.py    # Salary slip PDF generation
 │   │   │   └── ftp_utils.py        # FTP/SMB upload utility
@@ -675,6 +687,14 @@ goldenfarm-ict-web/
 | `GET` | `/api/events` | SSE global event stream |
 | `GET` | `/api/health` | Health check |
 
+### Chat Nội bộ (`/api/chat`)
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `WS` | `/api/chat/ws?token=...&employee_code=...` | WebSocket realtime — xác thực token session, đóng code **1008** nếu sai; nhận & lưu tin nhắn qua SQLAlchemy rồi broadcast tới mọi thành viên phòng |
+| `GET` | `/api/chat/rooms` | Danh sách phòng chat của user đang đăng nhập (kèm `member_codes`, `last_message`) |
+| `GET` | `/api/chat/messages/{room_id}` | Lịch sử tin nhắn của phòng (`limit` 1–200 mặc định 50, `offset`) — chỉ thành viên phòng |
+| `POST` | `/api/chat/rooms` | Tạo phòng chat (direct/group) — tự thêm user đang đăng nhập làm thành viên |
+
 ### Documents / Storage
 | Method | Endpoint | Mô tả |
 |--------|----------|-------|
@@ -745,8 +765,11 @@ goldenfarm-ict-web/
 | `software_items` | 0 | Mục phần mềm |
 | `todos` | 27 | Công việc theo phòng ban / cá nhân |
 | `todo_subtasks` | 32 | Checklist con của todo |
+| `chat_rooms` | 0 | Phòng chat nội bộ — id UUID (String 36), type (direct/group), name (nullable), created_at |
+| `chat_room_members` | 0 | Thành viên phòng chat — room_id + employee_code (UNIQUE), ondelete CASCADE theo phòng |
+| `chat_messages` | 0 | Tin nhắn chat — sender_id FK `users.employee_code` (**SET NULL** khi xoá user, D3), attachment_url nullable |
 
-> Schema không dùng FOREIGN KEY constraints — xử lý integrity ở application layer.
+> Schema chung không dùng FOREIGN KEY constraints — xử lý integrity ở application layer. **Ngoại lệ**: các bảng chat (`chat_rooms`, `chat_room_members`, `chat_messages`) dùng FK với `ondelete` (CASCADE / SET NULL) để đảm bảo đúng quy tắc xoá.
 
 ### Indexes
 
@@ -819,6 +842,46 @@ Booking module dùng `--bk-*` CSS custom properties, hỗ trợ dark mode qua cl
 
 ---
 
+## 💬 Chat Nội bộ — Chi tiết kỹ thuật (WebSocket)
+
+> Chat realtime hoạt động **ĐỘC LẬP với SSE** (`/api/events`) — dùng WebSocket riêng `/api/chat/ws`, không dùng `publish_sync()`.
+
+### Luồng dữ liệu
+
+```
+Browser (Chat.jsx)
+  ├─ REST: GET /api/chat/rooms · GET /api/chat/messages/{room_id}?limit&offset · POST /api/chat/rooms
+  └─ WS:   ws://<host>/api/chat/ws?token=...&employee_code=...
+       │
+Backend
+  ├─ routers/chat.py      — xác thực token (sai → close 1008) → lưu ChatMessage (SQLAlchemy ORM) → broadcast
+  ├─ core/chat_ws.py      — ConnectionManager: Dict[employee_code, Set[WebSocket]] (multi-tab, asyncio.Lock)
+  └─ PostgreSQL: chat_rooms / chat_room_members / chat_messages
+```
+
+### Công nghệ
+
+- **WS**: Starlette/FastAPI `@router.websocket`, prefix `/api/chat`.
+- **Xác thực WS**: token + employee_code trong **query param** (WS không gửi header) → `verify_token()` từ `app/core/auth.py` (D6 — không hard-code user id).
+- **DB**: 3 bảng mới (FK thật sự — ngoại lệ của quy tắc "no FK"):
+  - `chat_rooms`: id UUID, `type` (direct/group), `name` nullable, `created_at`
+  - `chat_room_members`: `room_id` + `employee_code` (UNIQUE)
+  - `chat_messages`: `sender_id` FK `users.employee_code` **`ondelete="SET NULL"`** (D3 — xoá user giữ tin nhắn), `room_id` FK **CASCADE**
+- **Lưu trước, gửi sau**: tin nhắn insert vào DB trước khi broadcast; mọi thành viên phòng (kể cả người gửi) nhận qua WS echo → frontend không append tay.
+- **Reconnect**: `Chat.jsx` tự kết nối lại sau 3s khi socket đóng; hiển thị trạng thái Trực tuyến / Đang kết nối.
+- **Proxy WS**: dev — vite `ws: true` cho `/api` → `127.0.0.1:8080`; prod — `frontend/nginx.conf` đã có `Upgrade` + `Connection: upgrade`.
+- **Không thêm dependency**: chỉ FastAPI + SQLAlchemy + PostgreSQL (D10).
+
+### Bảo trì
+
+- **Bảng mới** tự tạo qua `Base.metadata.create_all()` ở startup (`backend/main.py`) — thêm **cột** mới thì dùng `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` trong `on_startup` (D4).
+- **Thêm endpoint**: theo pattern `routers/chat.py` (`SessionLocal` + try/finally, trả `{"status":"success","data":...}`).
+- **Xoá User**: không được `DELETE FROM chat_messages WHERE sender_id=...` — FK SET NULL đã xử lý (D3).
+- **HDSD**: `docs/HDSD_Chat.md` (mirror `frontend/src/docs/HDSD_Chat.md`) + đăng ký trong `HelpPage.jsx`.
+- **Menu**: `Layout.jsx` (`allNavItems`, `iconMap`, `MODULE_MAP`, `hasModuleAccess`).
+
+---
+
 ## 🛡️ RBAC Permission System (3-Tier)
 
 Hệ thống phân quyền module sử dụng mô hình **3-Tier Role-Based Access Control với User Overrides**.
@@ -882,5 +945,6 @@ Effective Permission = Role_Perm || Department_Perm || Individual_Override_Perm
 - **Frontend build**: `npm run build` → output `frontend/dist/`
 - **DB reset**: Xoá volume `postgres-data` của docker-compose → backend tự seed lại khi khởi động
 - **Realtime**: SSE qua `/api/events`, tự động update tickets, bookings, equipment, approvals
+- **Chat nội bộ**: WebSocket qua `/api/chat/ws` — độc lập với SSE, xác thực bằng `token` + `employee_code` trong query param, tin nhắn lưu vào `chat_messages` trước khi broadcast
 - **SSE filterRef**: Dùng `useRef` tránh reconnect khi filter thay đổi
 - **Booking status update**: Cập nhật mỗi 30s qua `useCurrentTime` hook (vạch đỏ + trạng thái)
