@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/ios": "^8.5.0",
     "axios": "^1.7.0",
     "driver.js": "^1.8.0",
     "lucide-react": "^1.24.0",
