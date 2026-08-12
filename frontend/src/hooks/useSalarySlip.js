@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import api from '../services/api'
+import api, { apiUrl } from '../services/api'
 
 export default function useSalarySlip() {
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -59,7 +59,7 @@ export default function useSalarySlip() {
     const role = sessionStorage.getItem('user_role') || 'user'
     setMonthsLoading(true)
     try {
-      const res = await fetch(`/api/salary/available-months?employee_code=${userCode}&token=${token}&role=${role}`)
+      const res = await fetch(apiUrl('/salary/available-months') + `?employee_code=${userCode}&token=${token}&role=${role}`)
       const data = await res.json()
       if (res.ok) setAvailableMonths(data.data || [])
     } catch (_) {} finally {
@@ -73,7 +73,7 @@ export default function useSalarySlip() {
     const role = sessionStorage.getItem('user_role') || 'user'
     setPdfExporting(true)
     try {
-      const res = await fetch('/api/salary/export-pdf', {
+      const res = await fetch(apiUrl('/salary/export-pdf'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -4,6 +4,7 @@ import {
   Calendar, ShieldCheck, Monitor as MonitorIcon, AlertTriangle, RefreshCw, Key as KeyIcon, UserCheck
 } from 'lucide-react'
 import { formatDate } from '../utils/date'
+import { apiUrl } from '../services/api'
 import './MonitorPage.css'
 
 const POLL_INTERVAL = 5000
@@ -44,7 +45,7 @@ export default function MonitorPage() {
 
   const fetchStats = async () => {
     try {
-      const res = await fetch('/api/monitor/stats')
+      const res = await fetch(apiUrl('/monitor/stats'))
       if (!res.ok) throw new Error('HTTP ' + res.status)
       const data = await res.json()
       setStats(data)

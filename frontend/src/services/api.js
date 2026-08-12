@@ -1,9 +1,67 @@
 import axios from 'axios'
 
+// URL backend được cấu hình lúc build cho Web (mặc định '/api')
+const BUILTIN_API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
+
+// ─── Cấu hình server động cho APK ─────────────────────────────────
+// User nhập IP/tên miền ngay trên màn hình đăng nhập (lưu vào localStorage),
+// fallback về URL build sẵn cho web.
+function normalizeOrigin(url) {
+  let s = (url || '').trim().replace(/\/+$/, '')
+  if (s.endsWith('/api')) s = s.slice(0, -4)
+  s = s.replace(/\/+$/, '')
+  if (s && !/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) {
+    s = 'http://' + s
+  }
+  return s
+}
+
+export function getServerOrigin() {
+  const saved = localStorage.getItem('server_url')
+  return normalizeOrigin(saved || BUILTIN_API_URL)
+}
+
+export function currentServerLabel() {
+  return getServerOrigin() || 'mặc định'
+}
+
+export function setServerUrl(url) {
+  const clean = normalizeOrigin(url)
+  if (!clean) return ''
+  localStorage.setItem('server_url', clean)
+  return clean
+}
+
+export function getApiBase() {
+  const origin = getServerOrigin()
+  return origin ? `${origin}/api` : '/api'
+}
+
+// URL đầy đủ đến 1 endpoint của backend (theo server đang cấu hình)
+export function apiUrl(path) {
+  const p = String(path || '').startsWith('/') ? path : `/${path}`
+  return `${getApiBase()}${p}`
+}
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: getApiBase(),
   headers: { 'Content-Type': 'application/json' },
 })
+
+// Luôn dùng URL server đang lưu (đổi được lúc login, không cần rebuild APK)
+api.interceptors.request.use(config => {
+  config.baseURL = getApiBase()
+  return config
+})
+
+export function apiErrorMessage(err) {
+  if (err.response?.data?.message) return err.response.data.message
+  if (err.response?.data?.detail) return err.response.data.detail
+  if (err.response) return `Lỗi server: ${err.response.status}`
+  if (err.code === 'ERR_NETWORK') return 'Không thể kết nối máy chủ. Kiểm tra IP/tên miền và mạng.'
+  return err.message || 'Lỗi kết nối đến server'
+}
+
 
 export function login(employee_code, password) {
   return api.post('/auth/login', { employee_code, password })
@@ -621,7 +679,7 @@ export function getShareDownloadUrl(token, filePath = '', fileId = '', dispositi
   const userToken = sessionStorage.getItem('token') || ''
   const role = sessionStorage.getItem('user_role') || 'user'
   const auth = `user_code=${encodeURIComponent(userCode)}&user_role=${encodeURIComponent(role)}&token=${encodeURIComponent(userToken)}`
-  let url = `/api/shares/${token}/download?${auth}`
+  let url = `${getApiBase()}/shares/${token}/download?${auth}`
   if (filePath) url += `&file_path=${encodeURIComponent(filePath)}`
   if (fileId) url += `&file_id=${encodeURIComponent(fileId)}`
   if (disposition === 'attachment') url += '&disposition=attachment'
@@ -633,7 +691,7 @@ export function getShareArchiveUrl(token, path = '') {
   const userToken = sessionStorage.getItem('token') || ''
   const role = sessionStorage.getItem('user_role') || 'user'
   const auth = `user_code=${encodeURIComponent(userCode)}&user_role=${encodeURIComponent(role)}&token=${encodeURIComponent(userToken)}`
-  let url = `/api/shares/${token}/archive?${auth}`
+  let url = `${getApiBase()}/shares/${token}/archive?${auth}`
   if (path) url += `&path=${encodeURIComponent(path)}`
   return url
 }
@@ -885,8 +943,56 @@ export function unpinChatMessage(messageId) {
 export function chatWebSocketUrl() {
   const code = sessionStorage.getItem('user_code') || ''
   const token = sessionStorage.getItem('token') || ''
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}/api/chat/ws?token=${encodeURIComponent(token)}&employee_code=${encodeURIComponent(code)}`
+  const origin = getServerOrigin()
+  // origin luôn dạng http(s)://host[:port] (đã được normalize bỏ '/api' + trailing slash).
+  const originHttps = origin && origin.startsWith('https')
+  const pageHttps = window.location.protocol === 'https:'
+  const protocol = (originHttps || pageHttps) ? 'wss:' : 'ws:'
+  // Lấy host KHÔNG bao gồm scheme — tránh tạo URL sai kiểu 'ws://http://host'.
+  const host = origin ? origin.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '') : window.location.host
+  return `${protocol}//${host}/api/chat/ws?token=${encodeURIComponent(token)}&employee_code=${encodeURIComponent(code)}`
+}
+
+// ─── Forum — Thông báo nội bộ (forum-like) ──────────────────────────
+function forumAuthHeaders() {
+  return {
+    'X-User-Code': sessionStorage.getItem('user_code') || '',
+    'X-User-Role': sessionStorage.getItem('user_role') || '',
+    'X-User-Dept': sessionStorage.getItem('user_department') || '',
+    'X-User-Token': sessionStorage.getItem('token') || '',
+  }
+}
+
+export function getForumPosts() {
+  return api.get('/forum/posts', { headers: forumAuthHeaders() })
+}
+
+export function createForumPost(data) {
+  return api.post('/forum/posts', data, { headers: forumAuthHeaders() })
+}
+
+export function updateForumPost(id, data) {
+  return api.put(`/forum/posts/${id}`, data, { headers: forumAuthHeaders() })
+}
+
+export function deleteForumPost(id) {
+  return api.delete(`/forum/posts/${id}`, { headers: forumAuthHeaders() })
+}
+
+export function getForumReplies(postId) {
+  return api.get(`/forum/posts/${postId}/replies`, { headers: forumAuthHeaders() })
+}
+
+export function createForumReply(postId, content) {
+  return api.post(`/forum/posts/${postId}/replies`, { content }, { headers: forumAuthHeaders() })
+}
+
+export function uploadForumFile(file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return api.post('/forum/upload', fd, {
+    headers: { ...forumAuthHeaders(), 'Content-Type': 'multipart/form-data' },
+  })
 }
 
 export default api

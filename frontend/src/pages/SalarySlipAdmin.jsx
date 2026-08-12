@@ -8,7 +8,7 @@ import { formatDate } from '../utils/date'
 import {
   getSalaryEmployees, getSalaryView, updateSalaryFields,
   exportSalaryPdf, batchExportSalaryPdf, uploadSalaryExcel,
-  getSalaryUploadHistory, deleteSalarySlip, downloadSalaryTemplate,
+  getSalaryUploadHistory, deleteSalarySlip, downloadSalaryTemplate, getApiBase,
 } from '../services/api'
 import '../styles/booking.css'
 import './SalarySlip.css'
@@ -103,7 +103,7 @@ export default function SalarySlipAdmin() {
   const token = sessionStorage.getItem('token') || ''
   const role = sessionStorage.getItem('user_role') || 'admin'
 
-  const apiBase = '/api/salary-slips/admin'
+  const apiBase = `${getApiBase()}/salary-slips/admin`
 
   const now = new Date()
   // Ngày 5 tháng sau mới trả lương tháng trước (VD: 5/9 trả lương tháng 8)

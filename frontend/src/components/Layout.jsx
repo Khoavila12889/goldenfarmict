@@ -5,7 +5,7 @@ import {
   Settings, Calendar, Receipt, Folder, Shield, Menu, X, User, 
   Lock, Eye, EyeOff, CheckSquare, HelpCircle, Activity, MessageSquare 
 } from 'lucide-react'
-import { changePassword } from '../services/api'
+import { changePassword, getProfile, apiUrl } from '../services/api'
 import { driver } from 'driver.js'
 import 'driver.js/dist/driver.css'
 
@@ -85,6 +85,7 @@ export default function Layout() {
   const [pwdOk, setPwdOk] = useState(false)
   const [pwdLoading, setPwdLoading] = useState(false)
   const [userPerms, setUserPerms] = useState(null)
+  const [profileData, setProfileData] = useState(null)
   
   const navigate = useNavigate()
   const userCode = sessionStorage.getItem('user_code')
@@ -146,7 +147,7 @@ export default function Layout() {
     if (stored) {
       try { setUserPerms(JSON.parse(stored)) } catch (_) {}
     }
-    fetch(`/api/auth/permissions?employee_code=${userCode}`)
+    fetch(apiUrl(`/auth/permissions?employee_code=${userCode}`))
       .then(r => r.json())
       .then(d => {
         const perms = d.data || {}
@@ -281,6 +282,16 @@ export default function Layout() {
   function toggleUserPopup() {
     setShowUserPopup(s => !s)
     setOldPwd(''); setNewPwd(''); setConfirmPwd(''); setPwdMsg('')
+    if (!showUserPopup) {
+      getProfile(userCode).then(r => {
+        const d = r.data?.data
+        if (d) {
+          setProfileData(d)
+          setUserName(d.full_name || userName)
+          sessionStorage.setItem('user_name', d.full_name || '')
+        }
+      }).catch(() => {})
+    }
   }
 
   async function handleChangePwd(e) {
@@ -488,6 +499,14 @@ export default function Layout() {
         }
         .user-popup-msg.ok { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
         .user-popup-msg.err { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+        .user-popup-info { margin-bottom: 1rem; }
+        .user-popup-info-row {
+          display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;
+          padding: 0.5rem 0; border-bottom: 1px dashed #e2e8f0; font-size: 0.82rem;
+        }
+        .user-popup-info-row:last-child { border-bottom: none; }
+        .user-popup-info-row span { color: #64748b; font-weight: 500; flex-shrink: 0; }
+        .user-popup-info-row strong { color: #0f172a; font-weight: 600; text-align: right; word-break: break-all; }
         .user-popup-field { margin-bottom: 0.65rem; }
         .user-popup-field label {
           display: block; font-size: 0.75rem; font-weight: 600; color: #475569; margin-bottom: 0.2rem;
@@ -585,6 +604,48 @@ export default function Layout() {
             </div>
 
             <div className="user-popup-section">
+              <h4><User size={14} /> Thông tin cá nhân</h4>
+
+              <div className="user-popup-info">
+                <div className="user-popup-info-row">
+                  <span>Mã NV</span><strong>{userCode}</strong>
+                </div>
+                {profileData?.username && (
+                  <div className="user-popup-info-row">
+                    <span>Tên đăng nhập</span><strong>{profileData.username}</strong>
+                  </div>
+                )}
+                <div className="user-popup-info-row">
+                  <span>Vai trò</span>
+                  <strong>{userRole === 'admin' ? 'Quản trị viên' : userRole === 'head' ? 'Trưởng phòng' : 'Nhân viên'}</strong>
+                </div>
+                {profileData?.department && (
+                  <div className="user-popup-info-row">
+                    <span>Phòng ban</span><strong>{profileData.department}</strong>
+                  </div>
+                )}
+                {profileData?.full_name && (
+                  <div className="user-popup-info-row">
+                    <span>Họ tên</span><strong>{profileData.full_name}</strong>
+                  </div>
+                )}
+                {profileData?.phone && (
+                  <div className="user-popup-info-row">
+                    <span>Số điện thoại</span><strong>{profileData.phone}</strong>
+                  </div>
+                )}
+                {profileData?.personal_email && (
+                  <div className="user-popup-info-row">
+                    <span>Email cá nhân</span><strong>{profileData.personal_email}</strong>
+                  </div>
+                )}
+                {profileData?.email && (
+                  <div className="user-popup-info-row">
+                    <span>Email công ty</span><strong>{profileData.email}</strong>
+                  </div>
+                )}
+              </div>
+
               <h4><Lock size={14} /> Đổi mật khẩu</h4>
 
               {pwdMsg && (

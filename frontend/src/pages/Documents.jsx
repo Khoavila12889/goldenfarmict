@@ -13,7 +13,7 @@ import FileViewer from '../components/FileViewer'
 import OnlyOfficeViewer from '../components/OnlyOfficeViewer'
 import ShareDocument from '../components/ShareDocument'
 import ImageLightbox from '../components/ImageLightbox'
-import { getStorageConfigs, browseStorage, getStoragePermissions, createStoragePermission, deleteStoragePermission, createStorageConfig, updateStorageConfig, deleteStorageConfig, exportStorageConfig, testStorageConnection, testStorageConnectionDirect, getStorageDepartments } from '../services/api'
+import { getStorageConfigs, browseStorage, getStoragePermissions, createStoragePermission, deleteStoragePermission, createStorageConfig, updateStorageConfig, deleteStorageConfig, exportStorageConfig, testStorageConnection, testStorageConnectionDirect, getStorageDepartments, apiUrl } from '../services/api'
 import { formatDate } from '../utils/date'
 const INITIAL_CONFIG = { name: '', type: 'smb', host: '', port: 445, username: '', password: '', remote_path: '', domain: '' }
 
@@ -35,9 +35,9 @@ function buildThumbnailUrl(cfg, entry, currentPath, userCode, userRole) {
     if (entry.thumbnailLink) {
       return entry.thumbnailLink.replace(/=s\d+(-c)?$/, '=s800')
     }
-    return `/api/documents/thumbnail?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}&file_id=${encodeURIComponent(entry.id)}&user_code=${userCode}&user_role=${userRole}&size=800`
+    return apiUrl(`/documents/thumbnail?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}&file_id=${encodeURIComponent(entry.id)}&user_code=${userCode}&user_role=${userRole}&size=800`)
   }
-  return `/api/documents/thumbnail?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}&user_code=${userCode}&user_role=${userRole}&size=400`
+  return apiUrl(`/documents/thumbnail?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}&user_code=${userCode}&user_role=${userRole}&size=400`)
 }
 
 function getFileIcon(name, isDir) {
@@ -91,7 +91,7 @@ function buildFileDownloadUrl(cfg, entry, currentPath, userCode, userRole, inlin
   const normalizedPath = currentPath === '/'
     ? entry.name
     : `${currentPath.replace(/\/$/, '')}/${entry.name}`
-  let url = `/api/documents/download?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}`
+  let url = apiUrl(`/documents/download?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}`)
   if (isGdrive && entry.id) url += `&file_id=${encodeURIComponent(entry.id)}`
   url += `&user_code=${userCode}&user_role=${userRole}`
   if (inline) url += '&inline=true'
@@ -481,7 +481,7 @@ export default function Documents() {
           formData.append('file', file)
 
           const xhr = new XMLHttpRequest()
-          xhr.open('POST', `/api/documents/upload?config_id=${activeConfig.id}&folder_path=${encodeURIComponent(currentPath)}&user_code=${userCode}&user_role=${userRole}`)
+          xhr.open('POST', apiUrl(`/documents/upload?config_id=${activeConfig.id}&folder_path=${encodeURIComponent(currentPath)}&user_code=${userCode}&user_role=${userRole}`))
           xhr.setRequestHeader('Authorization', 'Bearer ' + sessionStorage.getItem('token'))
 
           xhr.upload.onprogress = (e) => {
@@ -577,7 +577,7 @@ export default function Documents() {
     setUploadError('')
     try {
       const response = await fetch(
-        `/api/documents/create-folder?config_id=${activeConfig.id}&parent_path=${encodeURIComponent(currentPath)}&user_code=${userCode}&user_role=${userRole}`,
+        apiUrl(`/documents/create-folder?config_id=${activeConfig.id}&parent_path=${encodeURIComponent(currentPath)}&user_code=${userCode}&user_role=${userRole}`),
         {
           method: 'POST',
           headers: {
@@ -618,7 +618,7 @@ export default function Documents() {
         file_id = entry.id || ''
       }
       const response = await fetch(
-        `/api/documents/delete?config_id=${activeConfig.id}&item_path=${encodeURIComponent(fullPath)}&is_dir=${entry.is_dir}&file_id=${encodeURIComponent(file_id)}&user_code=${userCode}&user_role=${userRole}`,
+        apiUrl(`/documents/delete?config_id=${activeConfig.id}&item_path=${encodeURIComponent(fullPath)}&is_dir=${entry.is_dir}&file_id=${encodeURIComponent(file_id)}&user_code=${userCode}&user_role=${userRole}`),
         {
           method: 'DELETE',
           headers: { 'Authorization': 'Bearer ' + sessionStorage.getItem('token') }
@@ -690,7 +690,7 @@ export default function Documents() {
   function loadPerms(storageId) {
     setLoadingFolders(true)
     Promise.all([
-      fetch(`/api/documents/folders?config_id=${storageId}&user_code=${userCode}&user_role=${userRole}`).then(r => r.json()),
+      fetch(apiUrl(`/documents/folders?config_id=${storageId}&user_code=${userCode}&user_role=${userRole}`)).then(r => r.json()),
       getStoragePermissions(storageId)
     ]).then(([foldersRes, permsRes]) => {
       setFoldersList(foldersRes.data?.data || [])

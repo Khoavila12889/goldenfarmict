@@ -9,6 +9,7 @@ _BACKEND_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 
 UPLOAD_BASE = os.path.join(_BACKEND_ROOT, 'uploads', 'todos')
 CHAT_UPLOAD_BASE = os.path.join(_BACKEND_ROOT, 'uploads', 'chat')
+FORUM_UPLOAD_BASE = os.path.join(_BACKEND_ROOT, 'uploads', 'forum')
 
 
 def _ensure_dir(base_dir: str):
@@ -61,6 +62,10 @@ async def save_upload(file: UploadFile) -> dict:
 
 async def save_chat_upload(file: UploadFile) -> dict:
     return await _store(file, CHAT_UPLOAD_BASE, "/api/chat/uploads")
+
+
+async def save_forum_upload(file: UploadFile) -> dict:
+    return await _store(file, FORUM_UPLOAD_BASE, "/api/forum/uploads")
 
 
 def delete_stored_file(stored_name: str) -> bool:

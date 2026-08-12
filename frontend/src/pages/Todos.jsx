@@ -10,7 +10,8 @@ import {
   getTodos, getTodoStats, createTodo, updateTodo, updateTodoStatus, 
   deleteTodo, getTodoAssignees, getDepartments, approveTodo,
   getTodoComments, addTodoComment, getTodoAttachments,
-  uploadTodoAttachment, addTodoUrl, deleteTodoAttachment
+  uploadTodoAttachment, addTodoUrl, deleteTodoAttachment,
+  apiUrl,
 } from '../services/api'
 import { formatDate } from '../utils/date'
 import './Todos.css'
@@ -140,7 +141,7 @@ export default function Todos() {
     let sse = null
     function connectSSE() {
       try {
-        sse = new EventSource('/api/events')
+        sse = new EventSource(apiUrl('/events'))
         sse.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data)

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">GoldenFarm ICT</string>
+    <string name="title_activity_main">GoldenFarm ICT</string>
+    <string name="package_name">com.goldenfarm.ict</string>
+    <string name="custom_url_scheme">com.goldenfarm.ict</string>
+</resources>

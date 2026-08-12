@@ -6,6 +6,7 @@ import {
 import '../styles/booking.css'
 import './Permissions.css'
 import { PERM_KEYS, PERM_LABELS, EXTRA_PERMS, ALL_PERM_INFO, toPermObject, resolveEffectivePermissions } from '../utils/permission'
+import { getApiBase } from '../services/api'
 
 const MODULES = [
   { key: 'employees', label: 'Nhân viên', group: 'admin', desc: 'Quản lý thông tin nhân viên' },
@@ -31,7 +32,7 @@ export default function Permissions() {
   const adminCode = sessionStorage.getItem('user_code') || ''
   const token = sessionStorage.getItem('token') || ''
   const userRole = sessionStorage.getItem('user_role') || ''
-  const apiBase = '/api/auth'
+  const apiBase = `${getApiBase()}/auth`
 
   function apiUrl(path, extra = {}) {
     const p = new URLSearchParams({ admin_code: adminCode, token, role: userRole, ...extra })
@@ -107,7 +108,7 @@ function ModulePermissionsTab({ apiBase, apiUrl, saveMsg, setSaveMsg }) {
     try {
       const [uRes, dRes] = await Promise.all([
         fetch(apiUrl('/users')),
-        fetch('/api/employees/departments/list'),
+        fetch(`${getApiBase()}/employees/departments/list`),
       ])
       const uData = await uRes.json()
       const dData = await dRes.json()
@@ -693,9 +694,9 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
 
   useEffect(() => {
     Promise.all([
-      fetch(`/api/documents/config?user_code=${userCode}&user_role=${role}`).then(r => r.json()),
-      fetch('/api/documents/departments').then(r => r.json()),
-      fetch(`/api/auth/users?${apiParams()}`).then(r => r.json()),
+      fetch(`${getApiBase()}/documents/config?user_code=${userCode}&user_role=${role}`).then(r => r.json()),
+      fetch(`${getApiBase()}/documents/departments`).then(r => r.json()),
+      fetch(`${getApiBase()}/auth/users?${apiParams()}`).then(r => r.json()),
     ]).then(([sRes, dRes, uRes]) => {
       if (sRes.data) setStorages(sRes.data)
       if (dRes.data) setDepartments(dRes.data)
@@ -706,7 +707,7 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
   async function loadPermissions(storageId) {
     setPermLoading(true)
     try {
-      const res = await fetch(`/api/documents/permissions/${storageId}?${apiParams()}`)
+      const res = await fetch(`${getApiBase()}/documents/permissions/${storageId}?${apiParams()}`)
       const data = await res.json()
       setPermissions(data.data || [])
     } catch (_) { setPermissions([]) }
@@ -773,7 +774,7 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
         can_reshare: Boolean(everyonePerms.can_reshare),
         can_upload: Boolean(everyonePerms.can_upload),
       }
-      const res = await fetch(`/api/documents/permissions/share?${apiParams()}`, {
+      const res = await fetch(`${getApiBase()}/documents/permissions/share?${apiParams()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -800,7 +801,7 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
         department: newDept,
         ...deptPerms,
       }
-      const res = await fetch(`/api/documents/permissions/share?${apiParams()}`, {
+      const res = await fetch(`${getApiBase()}/documents/permissions/share?${apiParams()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -830,7 +831,7 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
         employee_code: selectedEmployee,
         ...userPerms,
       }
-      const res = await fetch(`/api/documents/permissions/share?${apiParams()}`, {
+      const res = await fetch(`${getApiBase()}/documents/permissions/share?${apiParams()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -853,7 +854,7 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
   async function updateDeptPerm(perm, field) {
     const newVal = !perm[field]
     try {
-      const res = await fetch(`/api/documents/permissions/${perm.id}?${apiParams()}`, {
+      const res = await fetch(`${getApiBase()}/documents/permissions/${perm.id}?${apiParams()}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ [field]: newVal }),
@@ -869,7 +870,7 @@ function DocumentPermissionsTab({ saveMsg, setSaveMsg }) {
   async function removePerm(permId) {
     if (!window.confirm('Xóa quyền này?')) return
     try {
-      const res = await fetch(`/api/documents/permissions/${permId}?${apiParams()}`, { method: 'DELETE' })
+      const res = await fetch(`${getApiBase()}/documents/permissions/${permId}?${apiParams()}`, { method: 'DELETE' })
       if (!res.ok) {
         const d = await res.json().catch(() => ({}))
         setSaveMsg({ type: 'error', text: d.detail || d.message || 'Lỗi xóa quyền' })

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
-  getEmployeeByCode, getResources, getBookingDates,
+  getEmployeeByCode, getResources, getBookingDates, apiUrl,
 } from '../services/api'
 import { today } from '../utils/timeUtils'
 import useBookings from './useBookings'
@@ -55,7 +55,7 @@ export default function useScheduler() {
     
     function setupSSE() {
       try {
-        es = new EventSource('/api/events')
+        es = new EventSource(apiUrl('/events'))
         
         function reload() {
           const f = filterRef.current

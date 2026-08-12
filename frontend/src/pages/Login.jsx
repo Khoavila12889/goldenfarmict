@@ -1,12 +1,13 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, ArrowRight, ArrowLeft, Check, Mail, Lock, KeyRound } from 'lucide-react'
-import { login, forgotPassword, verifyReset } from '../services/api'
+import { login, forgotPassword, verifyReset, setServerUrl, getServerOrigin, apiErrorMessage } from '../services/api'
 import logoSrc from '../assets/logo.png'
 import bgSrc from '../assets/backgroud .webp'
 import './Login.css'
 
 export default function Login() {
+  const [server, setServer] = useState(getServerOrigin() || '')
   const [code, setCode] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -29,9 +30,12 @@ export default function Login() {
 
   async function handleSubmit(e) {
     e.preventDefault()
+    if (!server.trim()) { setError('Vui lòng nhập IP hoặc tên miền máy chủ'); return }
     if (!code || !password) { setError('Vui lòng nhập mã NV/username và mật khẩu'); return }
     setLoading(true); setError('')
     try {
+      const saved = setServerUrl(server)
+      if (saved) setServer(saved)
       const res = await login(code, password)
       if (res.data.success) {
         sessionStorage.setItem('token', res.data.token)
@@ -44,8 +48,8 @@ export default function Login() {
       } else {
         setError(res.data.message)
       }
-    } catch {
-      setError('Lỗi kết nối đến server')
+    } catch (err) {
+      setError(apiErrorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -115,6 +119,17 @@ export default function Login() {
             )}
 
             <form onSubmit={handleSubmit}>
+                <label className="login-server-label">Máy chủ (IP hoặc tên miền)</label>
+                <div className="login-field">
+                  <input
+                    type="text"
+                    inputMode="url"
+                    placeholder="VD: http://192.168.1.10:8088 hoặc https://api.domain.com"
+                    value={server}
+                    onChange={e => setServer(e.target.value)}
+                  />
+                </div>
+
                 <div className="login-field">
                   <input
                     type="text"

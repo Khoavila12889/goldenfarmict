@@ -7,6 +7,7 @@ import {
   getEmployees, getEmployeeEquipment,
   getSoftwareCategories, createSoftwareCategory, updateSoftwareCategory, deleteSoftwareCategory,
   getSoftwareItems, createSoftwareItem, updateSoftwareItem, deleteSoftwareItem, uploadSoftwareContract,
+  apiUrl,
 } from '../services/api'
 import { formatDate } from '../utils/date'
 
@@ -363,7 +364,7 @@ export default function Licenses() {
               <tbody>
                 {loading ? (
                   [1,2,3,4,5].map(i => (
-                    <tr key={`s-${i}`}>
+                    <tr key={`s-${i}`} className="sw-loading">
                       {[1,2,3,4,5,6,7,8,9].map(j => (
                         <td key={`c-${j}`}><div className="bk-skeleton-bar" style={{ height: 12, width: '75%' }} /></td>
                       ))}
@@ -375,15 +376,15 @@ export default function Licenses() {
                   const sel = selectedLic?.id === lic.id
                   return (
                     <tr key={lic.id} className={sel ? 'selected' : ''} onClick={() => selectLicense(lic)}>
-                      <td><span className="ticket-badge license-key">{lic.license_key}</span></td>
-                      <td style={{ fontWeight: 500 }}>{lic.product_name || <span className="sw-cell-muted">—</span>}</td>
-                      <td>{lic.full_name || <span className="sw-cell-muted">—</span>}</td>
-                      <td style={{ fontSize: '0.78rem' }}>{lic.department || <span className="sw-cell-muted">—</span>}</td>
-                      <td style={{ fontSize: '0.78rem' }}>{lic.equipment_type || <span className="sw-cell-muted">—</span>}</td>
-                      <td style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{lic.serial_number || <span className="sw-cell-muted">—</span>}</td>
-                      <td style={{ fontSize: '0.78rem' }}>{lic.activated || <span className="sw-cell-muted">—</span>}</td>
-                      <td style={{ fontSize: '0.78rem' }}>{formatDate(lic.expiry_date) || <span className="sw-cell-muted">—</span>}</td>
-                      <td className="sw-cell-action">{sel ? '◀' : '▶'}</td>
+                      <td data-label="License Key"><span className="ticket-badge license-key">{lic.license_key}</span></td>
+                      <td data-label="Product" style={{ fontWeight: 500 }}>{lic.product_name || <span className="sw-cell-muted">—</span>}</td>
+                      <td data-label="Người sử dụng">{lic.full_name || <span className="sw-cell-muted">—</span>}</td>
+                      <td data-label="Bộ phận" style={{ fontSize: '0.78rem' }}>{lic.department || <span className="sw-cell-muted">—</span>}</td>
+                      <td data-label="Thiết bị" style={{ fontSize: '0.78rem' }}>{lic.equipment_type || <span className="sw-cell-muted">—</span>}</td>
+                      <td data-label="S/N" style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{lic.serial_number || <span className="sw-cell-muted">—</span>}</td>
+                      <td data-label="Kích hoạt" style={{ fontSize: '0.78rem' }}>{lic.activated || <span className="sw-cell-muted">—</span>}</td>
+                      <td data-label="Hết hạn" style={{ fontSize: '0.78rem' }}>{formatDate(lic.expiry_date) || <span className="sw-cell-muted">—</span>}</td>
+                      <td data-label="" className="sw-cell-action">{sel ? '◀' : '▶'}</td>
                     </tr>
                   )
                 })}
@@ -468,7 +469,7 @@ export default function Licenses() {
               <tbody>
                 {itemsLoading ? (
                   [1,2,3].map(i => (
-                    <tr key={`s-${i}`}>
+                    <tr key={`s-${i}`} className="sw-loading">
                       {[1,2,3,4,5,6].map(j => <td key={`c-${j}`}><div className="bk-skeleton-bar" style={{ height: 12, width: '75%' }} /></td>)}
                     </tr>
                   ))
@@ -478,32 +479,32 @@ export default function Licenses() {
                   const expInfo = getExpiryInfo(item.expiration_date)
                   return (
                     <tr key={item.id}>
-                      <td className="sw-item-name">
+                      <td data-label="Tên" className="sw-item-name">
                         {item.name}
                         {expInfo.badge && (
                           <span className={`sw-badge ${expInfo.badge}`}>{expInfo.label}</span>
                         )}
                       </td>
-                      <td className={item.registered_date ? '' : 'sw-cell-muted'} style={{ fontSize: '0.78rem' }}>
+                      <td data-label="Ngày đăng ký" className={item.registered_date ? '' : 'sw-cell-muted'} style={{ fontSize: '0.78rem' }}>
                         {formatDate(item.registered_date) || <span className="sw-cell-muted">—</span>}
                       </td>
-                      <td style={{ fontSize: '0.78rem' }}>
+                      <td data-label="Ngày hết hạn" style={{ fontSize: '0.78rem' }}>
                         {item.expiration_date ? (
                           <span className={expInfo.class}>{formatDate(item.expiration_date)}</span>
                         ) : <span className="sw-cell-muted">—</span>}
                       </td>
-                      <td>
+                      <td data-label="Hợp đồng">
                         {item.contract_info ? (
-                          <a href={`/api/software/contracts/${item.contract_info}`} target="_blank" rel="noopener noreferrer"
+                          <a href={apiUrl(`/software/contracts/${item.contract_info}`)} target="_blank" rel="noopener noreferrer"
                             style={{ color: 'var(--bk-primary, #00468C)', fontSize: '0.78rem', fontWeight: 500, textDecoration: 'none' }}>
                             Xem PDF
                           </a>
                         ) : <span className="sw-cell-muted" style={{ fontSize: '0.75rem' }}>—</span>}
                       </td>
-                      <td style={{ fontSize: '0.78rem', color: 'var(--bk-text-secondary, #64748b)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <td data-label="Ghi chú" style={{ fontSize: '0.78rem', color: 'var(--bk-text-secondary, #64748b)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {item.notes || <span className="sw-cell-muted">—</span>}
                       </td>
-                      <td className="sw-cell-action">
+                      <td data-label="" className="sw-cell-action">
                         <div className="sw-action-group">
                           <button className="sw-action-btn" onClick={() => openItemEdit(item)}>✏️</button>
                           <button className="sw-action-btn sw-action-btn-danger" onClick={() => handleDeleteItem(item.id)}>🗑️</button>

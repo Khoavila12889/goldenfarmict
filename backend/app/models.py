@@ -500,6 +500,42 @@ class ChatRoomMember(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class ForumPost(Base):
+    """Thông báo nội bộ / forum post.
+
+    `target_type`: 'all' (mọi người), 'dept' (một phòng ban) hoặc 'user'
+                  (danh sách mã nhân viên cụ thể, phân biệt bằng dấu phẩy).
+    `target_value`: '' khi 'all', tên phòng ban khi 'dept', danh sách mã
+                  nhân viên (phân cách phẩy) khi 'user'.
+    """
+    __tablename__ = 'forum_posts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    title = Column(String, nullable=False, default='')
+    content = Column(Text, default='')
+    author_code = Column(String, default='', index=True)
+    author_name = Column(String, default='')
+    target_type = Column(String, default='all', index=True)
+    target_value = Column(String, default='')
+    is_pinned = Column(Integer, default=0, index=True)
+    attachment_url = Column(String, default='')
+    attachment_name = Column(String, default='')
+    attachment_type = Column(String, default='')
+    attachment_size = Column(Integer, default=0)
+    created_at = Column(String, default='')
+    updated_at = Column(String, default='')
+
+
+class ForumReply(Base):
+    """Trao đổi (hỏi–đáp) bên trong một thông báo / forum post."""
+    __tablename__ = 'forum_replies'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    post_id = Column(Integer, nullable=False, index=True)
+    user_code = Column(String, nullable=False, index=True)
+    user_name = Column(String, default='')
+    content = Column(Text, nullable=False)
+    created_at = Column(String, default='')
+
+
 class ChatMessage(Base):
     """Tin nhắn chat nội bộ.
 

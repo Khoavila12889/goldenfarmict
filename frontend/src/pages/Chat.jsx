@@ -28,27 +28,54 @@ function noAccent(s) {
     .toLowerCase()
 }
 
+// Chuỗi API trả về kiểu UTC không có 'Z' (vd "2026-08-10T06:53:00")
+// → thêm 'Z' để JS hiểu đúng giờ UTC, rồi ép hiển thị theo Asia/Ho_Chi_Minh
+const TIME_ZONE = 'Asia/Ho_Chi_Minh'
+
+function parseUtc(iso) {
+  if (!iso) return null
+  const isUTC = String(iso).endsWith('Z') ? String(iso) : `${iso}Z`
+  const d = new Date(isUTC)
+  return isNaN(d.getTime()) ? null : d
+}
+
+export function formatChatMessageTime(dateString) {
+  const d = parseUtc(dateString)
+  if (!d) return ''
+  return d.toLocaleString('vi-VN', {
+    timeZone: TIME_ZONE,
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 function formatTime(iso) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const d = parseUtc(iso)
+  if (!d) return ''
+  return d.toLocaleTimeString('vi-VN', { timeZone: TIME_ZONE, hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
 function formatDay(iso) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+  const d = parseUtc(iso)
+  if (!d) return ''
+  return d.toLocaleDateString('vi-VN', { timeZone: TIME_ZONE, day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
 function formatDayShort(iso) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`
+  const d = parseUtc(iso)
+  if (!d) return ''
+  return d.toLocaleDateString('vi-VN', { timeZone: TIME_ZONE, day: '2-digit', month: '2-digit', year: '2-digit' })
 }
 
 function isSameDay(a, b) {
   if (!a || !b) return false
-  return new Date(a).toDateString() === new Date(b).toDateString()
+  const da = parseUtc(a)
+  const db = parseUtc(b)
+  if (!da || !db) return false
+  return da.toLocaleDateString('vi-VN', { timeZone: TIME_ZONE }) === db.toLocaleDateString('vi-VN', { timeZone: TIME_ZONE })
 }
 
 function isImageType(type) {
@@ -102,11 +129,21 @@ export default function Chat() {
   const [attachment, setAttachment] = useState(null) // { url, name, type, size }
   const [uploading, setUploading] = useState(false)
   const [attachError, setAttachError] = useState('')
+  const [newMessageRooms, setNewMessageRooms] = useState(new Set())
   const [preview, setPreview] = useState(null) // { url, name, type } — lightbox xem ảnh
 
   // Pinned messages
   const [pinnedMessages, setPinnedMessages] = useState([])
-  const [showPinsList, setShowPinsList] = useState(false)
+  const [showPinsList, setShowPinsList] = useState(false);
+
+  // Play login sound on mobile when WebSocket opens
+  useEffect(() => {
+    const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+    if (isMobile && wsStatus === 'open') {
+      const audio = new Audio('https://www.soundjay.com/buttons/sounds/button-3.mp3');
+      audio.play().catch(() => {});
+    }
+  }, [wsStatus]);
   const [pinBusy, setPinBusy] = useState(null) // message id đang xử lý ghim/bỏ ghim
 
   // Create room modal
@@ -233,28 +270,55 @@ export default function Chat() {
     if (msg.room_id === activeRoomIdRef.current) {
       setMessages(prev => (prev.some(m => m.id === msg.id) ? prev : [...prev, msg]))
     }
+      // Notify user of new message in other rooms
+      if (msg.room_id !== activeRoomIdRef.current) {
+        setNewMessageRooms(prev => {
+          const newSet = new Set(prev);
+          newSet.add(msg.room_id);
+          return newSet;
+        });
+      }
   }, [])
 
+  const retryCountRef = useRef(0);
   const connectWs = useCallback(() => {
     if (!shouldReconnectRef.current) return
     setWsStatus('connecting')
+    let url
     let ws
     try {
-      ws = new WebSocket(chatWebSocketUrl())
-    } catch (_) {
+      url = chatWebSocketUrl()
+      ws = new WebSocket(url)
+    } catch (err) {
       setWsStatus('closed')
+      console.error('[Chat WS] Không thể tạo WebSocket:', err, ' | URL:', url)
+      // URL sai sẽ không bao giờ connect được → KHÔNG reconnect vô hạn.
       return
     }
+
     wsRef.current = ws
-    ws.onopen = () => setWsStatus('open')
+    ws.onopen = () => {
+      setWsStatus('open')
+      // Reset retry count on successful connection
+      retryCountRef.current = 0
+    }
     ws.onmessage = (e) => handleWsMessage(e.data)
-    ws.onclose = () => {
+    ws.onclose = (ev) => {
       setWsStatus('closed')
-      if (shouldReconnectRef.current) {
-        reconnectTimerRef.current = setTimeout(connectWs, 3000)
+      console.error('[Chat WS] Đóng kết nối:', ev.code, ev.reason, ' | URL:', url)
+      if (shouldReconnectRef.current && ev.code !== 1008) {
+        // Increment retry count and schedule reconnection with backoff
+        retryCountRef.current += 1
+        const delay = Math.min(3000 * Math.pow(2, retryCountRef.current - 1), 30000)
+        reconnectTimerRef.current = setTimeout(connectWs, delay)
+      } else {
+        console.error('[Chat WS] Dừng reconnect (mã', ev.code + ') — kiểm tra token/user_code ở backend.')
       }
     }
-    ws.onerror = () => { try { ws.close() } catch (_) {} }
+    ws.onerror = (ev) => {
+      console.error('[Chat WS] Lỗi kết nối (Connection Refused / CORS / 403):', ev && ev.message ? ev.message : ev)
+      try { ws.close() } catch (_) {}
+    }
   }, [handleWsMessage])
 
   useEffect(() => {
@@ -269,7 +333,12 @@ export default function Chat() {
 
   // ─── Chọn phòng / tải tin nhắn ────────────────────────────────
   const selectRoom = useCallback(async (roomId) => {
-    setActiveRoomId(roomId)
+    setActiveRoomId(roomId);
+    setNewMessageRooms(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(roomId);
+      return newSet;
+    });
     setMessages([])
     setHasMore(false)
     setLoadingMsgs(true)
@@ -618,6 +687,9 @@ export default function Chat() {
         <div className={`chat-avatar ${room.type === 'group' ? 'group' : room.type === 'department' ? 'dept' : ''}`}>
           {room.type === 'group' ? <Users size={17} /> : room.type === 'department' ? <Building2 size={17} /> : <UserIcon size={17} />}
         </div>
+        {newMessageRooms.has(room.id) && activeRoomId !== room.id && (
+          <span className="chat-new-bubble" title="Có tin mới"></span>
+        )}
         <div className="chat-room-meta">
           <div className="chat-room-name">
             {room.type === 'direct' && <PresenceDot online={otherOnline} />}

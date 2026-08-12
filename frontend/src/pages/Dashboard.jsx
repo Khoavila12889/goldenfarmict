@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { getDashboardStats, getEmployeeByCode, getTickets, getTicketQueuePosition } from '../services/api'
+import { getDashboardStats, getEmployeeByCode, getTickets, getTicketQueuePosition, apiUrl } from '../services/api'
 import { formatDate } from '../utils/date'
 import { Ticket, Calendar, Users, Monitor, Clock, AlertCircle, CheckCircle2, XCircle, ArrowRight } from 'lucide-react'
+import AnnouncementsBox from '../components/AnnouncementsBox'
 
 const statusOrder = ['Cho xu ly', 'Dang xu ly', 'Da xu ly', 'Da huy']
 
@@ -32,7 +33,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (isAdmin) return
     const token = sessionStorage.getItem('token')
-    fetch(`/api/auth/permissions?employee_code=${userCode}&token=${token}&role=${userRole}`)
+    fetch(apiUrl(`/auth/permissions?employee_code=${userCode}&token=${token}&role=${userRole}`))
       .then(r => r.json())
       .then(d => setUserPerms(d.data || {}))
       .catch(() => setUserPerms({}))
@@ -85,7 +86,7 @@ export default function Dashboard() {
     
     function connect() {
       try {
-        es = new EventSource('/api/events')
+        es = new EventSource(apiUrl('/events'))
         es.addEventListener('update_ticket', () => { loadAll(); loadQueuePos() })
         es.addEventListener('new_ticket', () => { loadAll(); loadQueuePos() })
         es.addEventListener('delete_ticket', () => { loadAll(); loadQueuePos() })
@@ -151,6 +152,10 @@ export default function Dashboard() {
               </div>
             </div>
           ))}
+        </div>
+
+        <div style={{ marginBottom: '1.5rem' }}>
+          <AnnouncementsBox />
         </div>
 
         <div className="grid-2">

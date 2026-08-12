@@ -12,11 +12,14 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from app.core.auth import hash_password
 from app.core import events
-from app.routers import auth, employees, equipment, tickets, bookings, dashboard, licenses, software, approvals, business_trips, departments, salary_slips, salary_user, documents, todos, comments, attachments, monitor, shares, chat
+from app.routers import auth, employees, equipment, tickets, bookings, dashboard, licenses, software, approvals, business_trips, departments, salary_slips, salary_user, documents, todos, comments, attachments, monitor, shares, chat, forum
 
 app = FastAPI(title="GOLDENFARM ICT API", version="1.0.0")
 
-_CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173').split(',')
+_CORS_ORIGINS = os.environ.get(
+    'CORS_ORIGINS',
+    'http://localhost:5173,http://127.0.0.1:5173,http://localhost,http://127.0.0.1,capacitor://localhost,https://localhost'
+).split(',')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_CORS_ORIGINS,
@@ -45,6 +48,7 @@ app.include_router(comments.router)
 app.include_router(attachments.router)
 app.include_router(monitor.router)
 app.include_router(chat.router)
+app.include_router(forum.router)
 
 
 @app.on_event("startup")
@@ -178,6 +182,45 @@ async def on_startup():
         except Exception as e:
             sess.rollback()
             print(f"  → chat_messages.pinned_at migration: {e}")
+
+    # forum_posts.attachment_* — file đính kèm trong thông báo (ảnh / pdf / url)
+    with SessionLocal() as sess:
+        try:
+            sess.execute(text(
+                "ALTER TABLE forum_posts "
+                "ADD COLUMN IF NOT EXISTS attachment_url TEXT DEFAULT ''"
+            ))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → forum_posts.attachment_url migration: {e}")
+        try:
+            sess.execute(text(
+                "ALTER TABLE forum_posts "
+                "ADD COLUMN IF NOT EXISTS attachment_name TEXT DEFAULT ''"
+            ))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → forum_posts.attachment_name migration: {e}")
+        try:
+            sess.execute(text(
+                "ALTER TABLE forum_posts "
+                "ADD COLUMN IF NOT EXISTS attachment_type VARCHAR(20) DEFAULT ''"
+            ))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → forum_posts.attachment_type migration: {e}")
+        try:
+            sess.execute(text(
+                "ALTER TABLE forum_posts "
+                "ADD COLUMN IF NOT EXISTS attachment_size BIGINT DEFAULT 0"
+            ))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → forum_posts.attachment_size migration: {e}")
 
     # chat_rooms.department — phòng chat phòng ban (type='department')
     with SessionLocal() as sess:
