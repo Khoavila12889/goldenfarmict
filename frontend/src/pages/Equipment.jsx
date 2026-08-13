@@ -1,4 +1,5 @@
 ﻿import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import './Equipment.css'
 import {
   getEquipmentList, createEquipment, updateEquipment,
   revokeEquipment, allocateEquipment, getEquipmentHistory,
@@ -415,356 +416,35 @@ export default function Equipment() {
 
   return (
     <div className="eq-page">
-      <style>{`
-        .eq-page { font-family: inherit; }
-        .eq-page * { box-sizing: border-box; }
-
-        @keyframes eqFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes eqSlideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
-        @keyframes eqSkeleton { 0% { background-position: -200px 0; } 100% { background-position: calc(200px + 100%) 0; } }
-        @keyframes eqPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
-
-        .eq-skeleton {
-          background: linear-gradient(90deg, #f1f5f9 25%, #e8ecf0 50%, #f1f5f9 75%);
-          background-size: 200px 100%;
-          animation: eqSkeleton 1.5s ease-in-out infinite;
-          border-radius: 6px;
-        }
-
-        .eq-stat-card {
-          background: #fff; border-radius: 12px; padding: 1.2rem 1.25rem;
-          border: 1px solid #e6edf5; box-shadow: 0 1px 4px rgba(0,0,0,0.04);
-          transition: all 0.2s ease; cursor: default;
-          display: flex; align-items: center; gap: 1rem;
-        }
-        .eq-stat-card:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-        }
-        .eq-stat-icon {
-          width: 44px; height: 44px; border-radius: 12px;
-          display: flex; align-items: center; justify-content: center;
-          flex-shrink: 0;
-        }
-        .eq-stat-value { font-size: 1.5rem; font-weight: 800; line-height: 1.2; }
-        .eq-stat-label { font-size: 0.78rem; color: #64748b; font-weight: 500; }
-
-        .eq-toolbar {
-          position: sticky; top: 0; z-index: 50;
-          background: #fff; border-radius: 12px; border: 1px solid #e6edf5;
-          padding: 0.65rem 1rem; box-shadow: 0 1px 4px rgba(0,0,0,0.04);
-          display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
-        }
-        .eq-toolbar.stuck { border-radius: 0; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-
-        .eq-search-wrap { position: relative; flex: 1; min-width: 200px; }
-        .eq-search-wrap .eq-search-icon {
-          position: absolute; left: 0.65rem; top: 50%; transform: translateY(-50%);
-          pointer-events: none; color: #94a3b8;
-        }
-        .eq-search-wrap input {
-          width: 100%; height: 36px; padding: 0 2rem 0 2.1rem;
-          background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
-          font-size: 0.82rem; outline: none; font-family: inherit; color: #0f172a;
-          transition: all 0.15s;
-        }
-        .eq-search-wrap input:focus {
-          border-color: #00468C; background: #fff;
-          box-shadow: 0 0 0 3px rgba(0,70,140,0.1);
-        }
-        .eq-search-wrap .eq-search-clear {
-          position: absolute; right: 0.4rem; top: 50%; transform: translateY(-50%);
-          background: none; border: none; cursor: pointer; color: #94a3b8;
-          padding: 4px; border-radius: 4px; display: flex;
-        }
-        .eq-search-wrap .eq-search-clear:hover { background: #f1f5f9; color: #64748b; }
-
-        .eq-toolbar-btn {
-          height: 36px; display: inline-flex; align-items: center; gap: 0.35rem;
-          padding: 0 0.7rem; border-radius: 8px; font-size: 0.78rem; font-weight: 500;
-          cursor: pointer; font-family: inherit; white-space: nowrap;
-          border: 1px solid #e2e8f0; background: #fff; color: #475569;
-          transition: all 0.12s;
-        }
-        .eq-toolbar-btn:hover { background: #f8fafc; border-color: #cbd5e1; }
-        .eq-toolbar-btn.primary { background: #00468C; color: #fff; border-color: #00468C; }
-        .eq-toolbar-btn.primary:hover { background: #003570; }
-
-        .eq-toolbar-select {
-          height: 36px; padding: 0 0.6rem; border: 1px solid #e2e8f0;
-          border-radius: 8px; background: #fff; font-size: 0.78rem;
-          color: #334155; cursor: pointer; font-family: inherit; outline: none;
-          min-width: 120px;
-        }
-        .eq-toolbar-select:hover { border-color: #cbd5e1; }
-
-        .eq-table-wrap {
-          background: #fff; border-radius: 12px; border: 1px solid #e6edf5;
-          overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.04);
-        }
-        .eq-table-scroll { overflow-x: auto; }
-        .eq-table {
-          width: 100%; border-collapse: separate; border-spacing: 0;
-        }
-        .eq-table thead { position: sticky; top: 0; z-index: 10; }
-        .eq-table thead th {
-          background: #f8fafc; color: #475569; font-weight: 700;
-          padding: 0.65rem 0.75rem; text-align: left; white-space: nowrap;
-          border-bottom: 1px solid #e2e8f0; font-size: 0.72rem;
-          text-transform: uppercase; letter-spacing: 0.04em;
-          user-select: none; transition: background 0.1s;
-        }
-        .eq-table thead th.sortable { cursor: pointer; }
-        .eq-table thead th.sortable:hover { background: #f1f5f9; }
-        .eq-table thead th .th-inner {
-          display: flex; align-items: center; gap: 0.25rem;
-        }
-        .eq-table tbody td {
-          padding: 0.5rem 0.75rem; border-bottom: 1px solid #f1f5f9;
-          color: #334155; vertical-align: middle; font-size: 0.82rem;
-          transition: background 0.1s;
-        }
-        .eq-table tbody tr { cursor: pointer; transition: background 0.1s; }
-        .eq-table tbody tr:hover td { background: #f8fafc; }
-        .eq-table tbody tr.eq-row-selected td { background: #eff6ff; }
-        .eq-table tbody tr.eq-row-selected td:first-child { box-shadow: inset 3px 0 0 #00468C; }
-        .eq-table tbody tr:last-child td { border-bottom: none; }
-
-        .eq-density-compact td { padding-top: 0.35rem !important; padding-bottom: 0.35rem !important; font-size: 0.78rem !important; }
-        .eq-density-comfortable td { padding-top: 0.65rem !important; padding-bottom: 0.65rem !important; font-size: 0.85rem !important; }
-
-        .eq-badge {
-          display: inline-flex; align-items: center; gap: 0.25rem;
-          padding: 0.1rem 0.5rem; border-radius: 20px;
-          font-size: 0.72rem; font-weight: 600; white-space: nowrap;
-          line-height: 1.5;
-        }
-
-        .eq-checkbox {
-          width: 16px; height: 16px; border-radius: 4px;
-          border: 1.5px solid #cbd5e1; background: #fff;
-          cursor: pointer; display: inline-flex; align-items: center;
-          justify-content: center; transition: all 0.12s;
-          flex-shrink: 0; appearance: none;
-        }
-        .eq-checkbox:checked {
-          background: #00468C; border-color: #00468C;
-        }
-
-        .eq-action-btn {
-          width: 30px; height: 30px; display: inline-flex; align-items: center;
-          justify-content: center; border-radius: 6px; border: none;
-          background: transparent; color: #94a3b8; cursor: pointer;
-          transition: all 0.12s; position: relative;
-        }
-        .eq-action-btn:hover { background: #f1f5f9; color: #475569; }
-
-        .eq-action-menu {
-          position: absolute; right: 0; top: 100%; z-index: 100;
-          background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
-          box-shadow: 0 4px 16px rgba(0,0,0,0.12); min-width: 170px;
-          padding: 0.35rem; margin-top: 2px;
-          animation: eqFadeIn 0.12s ease;
-        }
-        .eq-action-item {
-          display: flex; align-items: center; gap: 0.5rem;
-          padding: 0.45rem 0.65rem; border-radius: 6px; font-size: 0.8rem;
-          color: #334155; cursor: pointer; border: none; background: none;
-          width: 100%; font-family: inherit; text-align: left;
-          transition: background 0.1s;
-        }
-        .eq-action-item:hover { background: #f8fafc; }
-        .eq-action-item.danger { color: #dc2626; }
-        .eq-action-item.danger:hover { background: #fef2f2; }
-
-        .eq-pagination {
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 0.7rem 1rem; border-top: 1px solid #e2e8f0;
-          background: #fafbfc; font-size: 0.78rem; color: #64748b;
-          flex-wrap: wrap; gap: 0.5rem;
-        }
-        .eq-pagination .eq-page-btn {
-          display: inline-flex; align-items: center; justify-content: center;
-          width: 30px; height: 30px; border-radius: 6px; border: 1px solid #e2e8f0;
-          background: #fff; color: #475569; cursor: pointer; font-size: 0.78rem;
-          transition: all 0.12s; font-family: inherit;
-        }
-        .eq-pagination .eq-page-btn:hover { background: #f8fafc; border-color: #cbd5e1; }
-        .eq-pagination .eq-page-btn:disabled { opacity: 0.4; cursor: default; }
-        .eq-pagination .eq-page-btn.active { background: #00468C; color: #fff; border-color: #00468C; }
-
-        .eq-panel-overlay {
-          position: fixed; inset: 0; background: rgba(0,0,0,0.25);
-          z-index: 200; opacity: 0; pointer-events: none;
-          transition: opacity 0.2s ease;
-        }
-        .eq-panel-overlay.open { opacity: 1; pointer-events: auto; }
-
-        .eq-side-panel {
-          position: fixed; top: 0; right: -480px; width: 460px;
-          height: 100vh; background: #fff; z-index: 201;
-          transition: right 0.25s cubic-bezier(0.4,0,0.2,1);
-          box-shadow: -4px 0 24px rgba(0,0,0,0.1);
-          display: flex; flex-direction: column;
-        }
-        .eq-side-panel.open { right: 0; }
-
-        .eq-panel-section { margin-bottom: 1rem; }
-        .eq-panel-section-title {
-          font-size: 0.68rem; color: #94a3b8; font-weight: 600;
-          text-transform: uppercase; letter-spacing: 0.05em;
-          margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.35rem;
-        }
-
-        .eq-spec-card {
-          background: #f8fafc; border-radius: 8px; padding: 0.6rem 0.8rem;
-          margin-bottom: 0.4rem; border: 1px solid #f1f5f9;
-          display: flex; align-items: center; gap: 0.6rem;
-        }
-        .eq-spec-card .eq-spec-icon {
-          width: 28px; height: 28px; border-radius: 6px;
-          display: flex; align-items: center; justify-content: center;
-          flex-shrink: 0;
-        }
-        .eq-spec-label { font-size: 0.65rem; color: #94a3b8; font-weight: 600; text-transform: uppercase; }
-        .eq-spec-value { font-size: 0.82rem; color: #0f172a; font-weight: 500; }
-
-        .eq-detail-grid {
-          display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem 1rem;
-        }
-        .eq-detail-item-label {
-          font-size: 0.65rem; color: #94a3b8; font-weight: 600;
-          text-transform: uppercase; letter-spacing: 0.04em;
-        }
-        .eq-detail-item-value {
-          font-size: 0.82rem; color: #0f172a; font-weight: 500;
-        }
-
-        .eq-timeline-entry {
-          display: flex; gap: 0.65rem; padding: 0.5rem 0;
-          border-bottom: 1px solid #f1f5f9;
-        }
-        .eq-timeline-entry:last-child { border-bottom: none; }
-        .eq-timeline-dot {
-          width: 8px; height: 8px; border-radius: 50%;
-          margin-top: 6px; flex-shrink: 0;
-        }
-        .eq-timeline-content { font-size: 0.78rem; color: #475569; line-height: 1.4; }
-        .eq-timeline-date { font-size: 0.7rem; color: #94a3b8; margin-top: 1px; }
-
-        .eq-modal-overlay {
-          position: fixed; inset: 0; background: rgba(15,23,42,0.45);
-          display: flex; align-items: center; justify-content: center;
-          z-index: 300; backdrop-filter: blur(4px);
-          animation: eqFadeIn 0.15s ease;
-        }
-        .eq-modal {
-          background: #fff; border-radius: 16px; width: 600px;
-          max-width: 95vw; max-height: 90vh; overflow-y: auto;
-          box-shadow: 0 20px 25px -5px rgba(0,0,0,0.15);
-          animation: eqFadeIn 0.15s ease;
-        }
-        .eq-modal::-webkit-scrollbar { width: 4px; }
-        .eq-modal::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 4px; }
-
-        .eq-form-section {
-          border-bottom: 1px solid #f1f5f9; padding: 1rem 1.5rem;
-        }
-        .eq-form-section:last-child { border-bottom: none; }
-        .eq-form-section-title {
-          font-size: 0.75rem; color: #00468C; font-weight: 700;
-          text-transform: uppercase; letter-spacing: 0.04em;
-          margin-bottom: 0.65rem; display: flex; align-items: center; gap: 0.35rem;
-        }
-        .eq-form-group { margin-bottom: 0.55rem; }
-        .eq-form-group:last-child { margin-bottom: 0; }
-        .eq-form-label {
-          display: block; font-size: 0.72rem; color: #64748b;
-          margin-bottom: 0.2rem; font-weight: 500;
-        }
-        .eq-form-input, .eq-form-select, .eq-form-textarea {
-          width: 100%; padding: 0.45rem 0.65rem;
-          background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
-          font-size: 0.82rem; outline: none; font-family: inherit; color: #0f172a;
-          transition: all 0.15s;
-        }
-        .eq-form-input:focus, .eq-form-select:focus, .eq-form-textarea:focus {
-          border-color: #00468C; background: #fff;
-          box-shadow: 0 0 0 3px rgba(0,70,140,0.1);
-        }
-        .eq-form-textarea { resize: vertical; min-height: 44px; }
-
-        .eq-emp-item:hover { background: #eff6ff !important; }
-
-        .eq-col-menu {
-          position: absolute; right: 0; top: 100%; z-index: 100;
-          background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
-          box-shadow: 0 4px 16px rgba(0,0,0,0.12); min-width: 180px;
-          padding: 0.35rem; margin-top: 2px;
-          animation: eqFadeIn 0.12s ease;
-        }
-        .eq-col-item {
-          display: flex; align-items: center; gap: 0.5rem;
-          padding: 0.4rem 0.65rem; border-radius: 6px; font-size: 0.8rem;
-          color: #334155; cursor: pointer; border: none; background: none;
-          width: 100%; font-family: inherit; text-align: left;
-          transition: background 0.1s;
-        }
-        .eq-col-item:hover { background: #f8fafc; }
-        .eq-col-item .eq-col-check {
-          width: 16px; height: 16px; border-radius: 3px;
-          border: 1.5px solid #cbd5e1; display: flex; align-items: center;
-          justify-content: center; flex-shrink: 0; background: #fff;
-        }
-        .eq-col-item .eq-col-check.checked { background: #00468C; border-color: #00468C; }
-
-        .eq-raw-box {
-          background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;
-          padding: 0.5rem 0.65rem; font-size: 0.75rem; color: #64748b;
-          font-family: monospace; max-height: 64px; overflow-y: auto;
-          line-height: 1.4; white-space: pre-wrap; word-break: break-all;
-        }
-        .eq-raw-box::-webkit-scrollbar { width: 3px; }
-        .eq-raw-box::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 3px; }
-      `}</style>
+      
 
       {/* Toast */}
       {msg && (
-        <div className="eq-toast" style={{
-          position: 'fixed', top: 20, right: 20, zIndex: 9999,
-          background: msg.startsWith('Lỗi') ? '#fef2f2' : '#f0fdf4',
-          border: `1px solid ${msg.startsWith('Lỗi') ? '#fca5a5' : '#86efac'}`,
-          borderRadius: 12, padding: '0.75rem 1rem',
-          color: msg.startsWith('Lỗi') ? '#991b1b' : '#166534',
-          fontSize: '0.85rem', fontWeight: 600,
-          boxShadow: '0 10px 25px rgba(0,0,0,0.15)',
-          display: 'flex', alignItems: 'center', gap: '0.5rem',
-          animation: 'eqSlideIn 0.25s ease',
-        }}>
+        <div className={`eq-toast ${msg.startsWith('Lỗi') ? 'error' : 'success'}`}>
           {msg.startsWith('Lỗi') ? <XCircle size={18} /> : <CheckCircle size={18} />}
           {msg}
         </div>
       )}
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+      <div className="eq-header">
         <div>
-          <h1 style={{ fontSize: '1.35rem', fontWeight: 700, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <h1 className="eq-header-title">
             <Monitor size={24} style={{ color: '#00468C' }} />
             Quản lý thiết bị
           </h1>
-          <p style={{ fontSize: '0.82rem', color: '#94a3b8', margin: '0.15rem 0 0 0' }}>
+          <p className="eq-header-sub">
             Quản lý toàn bộ tài sản CNTT — máy tính, thiết bị ngoại vi và linh kiện
           </p>
         </div>
-        <button onClick={openCreate} className="eq-toolbar-btn primary" style={{ height: 40, padding: '0 1.1rem', fontSize: '0.85rem', flexShrink: 0 }}>
+        <button onClick={openCreate} className="eq-toolbar-btn primary eq-header-add">
           <Plus size={16} />
           Thêm thiết bị
         </button>
       </div>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem', marginBottom: '1.25rem' }}>
+      <div className="eq-stats-grid">
         {loading ? statCards.map(s => (
           <div key={s.key} className="eq-stat-card" style={{ opacity: 0.7 }}>
             <div className="eq-stat-icon" style={{ background: '#f1f5f9' }} />
@@ -837,7 +517,7 @@ export default function Equipment() {
           ))}
         </select>
 
-        <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center', marginLeft: 'auto' }}>
+        <div className="eq-toolbar-actions">
           <button className="eq-toolbar-btn" onClick={load} title="Làm mới">
             <RefreshCw size={15} />
           </button>
@@ -921,7 +601,7 @@ export default function Equipment() {
                 ))
               ) : paginated.length === 0 ? (
                 <tr>
-                  <td colSpan={columns.length + 2} style={{ padding: '3rem 1rem', textAlign: 'center' }}>
+                  <td colSpan={columns.length + 2} className="eq-empty-cell">
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                       <Package size={40} style={{ color: '#cbd5e1' }} />
                       <div style={{ color: '#64748b', fontSize: '0.9rem', fontWeight: 500 }}>Không có thiết bị nào</div>
@@ -941,7 +621,7 @@ export default function Equipment() {
                     className={sel ? 'eq-row-selected' : ''}
                     onClick={() => selectEquipment(eq)}
                   >
-                    <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                    <td className="eq-cell-check" onClick={e => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         className="eq-checkbox"
@@ -952,7 +632,7 @@ export default function Equipment() {
                     {columns.map(col => {
                       if (col.key === 'asset_code') {
                         return (
-                          <td key={col.key}>
+                          <td key={col.key} data-label={col.label}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                               <div style={{
                                 width: 28, height: 28, borderRadius: 6,
@@ -972,14 +652,14 @@ export default function Equipment() {
                       }
                       if (col.key === 'serial_number') {
                         return (
-                          <td key={col.key} style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: '#475569' }}>
+                          <td key={col.key} data-label={col.label} style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: '#475569' }}>
                             {eq.serial_number || <span style={{ color: '#cbd5e1' }}>—</span>}
                           </td>
                         )
                       }
                       if (col.key === 'full_name') {
                         return (
-                          <td key={col.key}>
+                          <td key={col.key} data-label={col.label}>
                             {eq.employee_id ? (
                               <div>
                                 <div style={{ fontSize: '0.82rem', fontWeight: 500, color: '#0f172a' }}>{eq.full_name}</div>
@@ -993,7 +673,7 @@ export default function Equipment() {
                       }
                       if (col.key === 'status_label') {
                         return (
-                          <td key={col.key}>
+                          <td key={col.key} data-label={col.label}>
                             {renderBadge(st.label, st.bg, st.color)}
                           </td>
                         )
@@ -1001,7 +681,7 @@ export default function Equipment() {
                       if (col.key === 'health_label') {
                         const hIcon = h.icon
                         return (
-                          <td key={col.key}>
+                          <td key={col.key} data-label={col.label}>
                             <span className="eq-badge" style={{ background: h.bg, color: h.color }}>
                               {hIcon && <hIcon size={11} />}
                               {h.label}
@@ -1009,9 +689,9 @@ export default function Equipment() {
                           </td>
                         )
                       }
-                      return <td key={col.key}>{eq[col.key] || '—'}</td>
+                      return <td key={col.key} data-label={col.label}>{eq[col.key] || '—'}</td>
                     })}
-                    <td style={{ textAlign: 'center', position: 'relative' }} onClick={e => e.stopPropagation()}>
+                    <td className="eq-cell-actions" onClick={e => e.stopPropagation()}>
                       <button
                         className="eq-action-btn"
                         onClick={() => setActionMenuId(actionMenuId === eq.id ? null : eq.id)}
@@ -1061,7 +741,7 @@ export default function Equipment() {
               </>
             )}
           </span>
-          <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+          <div className="eq-pagination-btns">
             <button className="eq-page-btn" disabled={page <= 1} onClick={() => setPage(prev => Math.max(1, prev - 1))}>
               <ChevronLeft size={14} />
             </button>
@@ -1116,10 +796,7 @@ export default function Equipment() {
               )}
             </div>
           </div>
-          <button onClick={() => setSelectedEq(null)} style={{
-            width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: '#f1f5f9', border: 'none', borderRadius: 8, cursor: 'pointer', color: '#64748b', flexShrink: 0,
-          }}>
+          <button onClick={() => setSelectedEq(null)} className="eq-close-btn">
             <X size={16} />
           </button>
         </div>
@@ -1384,10 +1061,7 @@ export default function Equipment() {
                 <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   {editId ? <><Pencil size={18} /> Chỉnh sửa thiết bị</> : <><Plus size={18} /> Thêm thiết bị mới</>}
                 </h3>
-                <button type="button" onClick={() => setShowForm(false)} style={{
-                  width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: '#f1f5f9', border: 'none', borderRadius: 8, cursor: 'pointer', color: '#64748b',
-                }}>
+                <button type="button" onClick={() => setShowForm(false)} className="eq-close-btn">
                   <X size={16} />
                 </button>
               </div>
@@ -1397,7 +1071,7 @@ export default function Equipment() {
                 <div className="eq-form-section-title">
                   <Monitor size={14} /> Thông tin chung
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 1rem' }}>
+                <div className="eq-form-grid">
                   <div className="eq-form-group">
                     <label className="eq-form-label">Mã tài sản *</label>
                     <input type="text" className="eq-form-input" value={form.asset_code}
@@ -1444,7 +1118,7 @@ export default function Equipment() {
                 <div className="eq-form-section-title">
                   <CalendarDays size={14} /> Ngày cấp
                 </div>
-                <div className="eq-form-group" style={{ maxWidth: 250 }}>
+                <div className="eq-form-group eq-form-date-group">
                   <label className="eq-form-label">Ngày cấp</label>
                   <input type="text" className="eq-form-input" placeholder="DD/MM/YYYY" value={issuedDisplay}
                     onChange={e => {
