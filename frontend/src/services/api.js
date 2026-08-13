@@ -1,6 +1,10 @@
 import axios from 'axios'
 
-// URL backend được cấu hình lúc build cho Web (mặc định '/api')
+// URL backend được cấu hình lúc build cho Web — đổi nhanh trong frontend/.env (VITE_API_URL).
+// - Khi deploy VPS/domain khác: chỉ cần sửa frontend/.env rồi npm run build.
+// - Nếu VITE_API_URL bị bỏ trống: web dùng '/api' relative (= origin hiện tại),
+//   tiện khi proxy API cùng domain với frontend (VD: https://app.domain.com/api).
+// - Trên App Native (APK): người dùng tự nhập server khi login, không phụ thuộc file này.
 const BUILTIN_API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
 
 // ─── Cấu hình server động cho APK ─────────────────────────────────
