@@ -1,12 +1,21 @@
 from typing import Optional
 import os
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException, Header, File, UploadFile
+from fastapi import APIRouter, HTTPException, Header, File, UploadFile, Request
 from fastapi.responses import FileResponse
 from app.core.db import fetchall, fetchone, execute, insert
 from app.core.auth import verify_session
 from app.core import events
 from app.services.upload_service import save_forum_upload, FORUM_UPLOAD_BASE
+from app.routers.documents import (
+    _sign_doc_token,
+    _make_doc_key,
+    _oo_document_type,
+    _ONLYOFFICE_PUBLIC_URL,
+    _ONLYOFFICE_ENABLED,
+    _OO_MIME,
+)
+from app.routers.auth import _get_effective_permissions, _has_module_capability
 
 
 class ForumPostCreate(BaseModel):
@@ -37,12 +46,29 @@ class ForumReplyCreate(BaseModel):
     content: str
 
 
+class ForumOnlyOfficeCallback(BaseModel):
+    key: str = ''
+    status: int = 0
+    url: str = ''
+
+
 router = APIRouter(prefix="/api/forum", tags=["forum"])
 
 
+def _can_manage_announcements(user: dict) -> bool:
+    """Ai được tạo/sửa/xóa thông báo nội bộ trên Dashboard?
+    Mặc định: admin + trưởng phòng.
+    Ngoài ra: user đặc biệt được cấp module 'announcements' (Xem hoặc Sửa).
+    """
+    if user["user_role"] in ("admin", "head"):
+        return True
+    perms = _get_effective_permissions(user["user_code"]) or {}
+    return _has_module_capability(perms, "announcements")
+
+
 def require_manager(user: dict):
-    if user["user_role"] not in ("admin", "head"):
-        raise HTTPException(status_code=403, detail="Chỉ admin hoặc trưởng phòng mới được dùng chức năng này")
+    if not _can_manage_announcements(user):
+        raise HTTPException(status_code=403, detail="Chỉ admin, trưởng phòng hoặc người được phân quyền mới được dùng chức năng này")
 
 
 # ─── POSTS ────────────────────────────────────────────────────────────
@@ -55,12 +81,12 @@ def list_posts(
 ):
     user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
     u_code = user["user_code"]
-    u_role = user["user_role"]
     u_dept = user["department"]
 
     params = {}
     where = "1=1"
-    if u_role not in ("admin", "head"):
+    can_manage = _can_manage_announcements(user)
+    if not can_manage:
         where = """(p.target_type = 'all'
                     OR p.author_code = :code
                     OR (p.target_type = 'dept' AND p.target_value = :dept)
@@ -76,7 +102,7 @@ def list_posts(
         ORDER BY p.is_pinned DESC, p.created_at DESC, p.id DESC
     """
     rows = fetchall(sql, params)
-    return {"data": rows}
+    return {"data": rows, "can_create": can_manage}
 
 
 @router.post("/posts", status_code=201)
@@ -212,7 +238,7 @@ def list_replies(
         raise HTTPException(status_code=404, detail="Không tìm thấy thông báo")
 
     # Kiểm tra quyền xem bài đăng với target riêng
-    if user["user_role"] not in ("admin", "head"):
+    if not _can_manage_announcements(user):
         allowed = fetchone("""
             SELECT p.id FROM forum_posts p
             WHERE p.id = :id AND (
@@ -251,7 +277,7 @@ def create_reply(
         raise HTTPException(status_code=404, detail="Không tìm thấy thông báo")
 
     # Kiểm tra quyền xem bài đăng với target riêng
-    if user["user_role"] not in ("admin", "head"):
+    if not _can_manage_announcements(user):
         allowed = fetchone("""
             SELECT p.id FROM forum_posts p
             WHERE p.id = :id AND (
@@ -287,6 +313,132 @@ def create_reply(
         WHERE r.id = :rid
     """, {"rid": reply_id})
     return {"success": True, "data": reply, "message": "Đã gửi bình luận"}
+
+
+# ─── ONLYOFFICE PREVIEW (xem PDF / Office trực tiếp) ──────────────────
+@router.get("/posts/{post_id}/onlyoffice/config")
+def forum_onlyoffice_config(
+    request: Request,
+    post_id: int,
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token")
+):
+    user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
+
+    post = fetchone("SELECT * FROM forum_posts WHERE id = :id", {"id": post_id})
+    if not post:
+        raise HTTPException(status_code=404, detail="Không tìm thấy thông báo")
+
+    # Kiểm tra quyền xem bài đăng (giống list_replies)
+    if not _can_manage_announcements(user):
+        allowed = fetchone("""
+            SELECT p.id FROM forum_posts p
+            WHERE p.id = :id AND (
+                p.target_type = 'all'
+                OR p.author_code = :code
+                OR (p.target_type = 'dept' AND p.target_value = :dept)
+                OR (p.target_type = 'user' AND (',' || p.target_value || ',') LIKE '%,' || :code || ',%')
+            )
+        """, {"id": post_id, "code": user["user_code"], "dept": user["department"]})
+        if not allowed:
+            raise HTTPException(status_code=403, detail="Bạn không có quyền xem thông báo này")
+
+    if not _ONLYOFFICE_ENABLED:
+        raise HTTPException(status_code=503, detail="OnlyOffice Document Server không được bật")
+
+    attach_url = post.get('attachment_url') or ''
+    attach_name = post.get('attachment_name') or ''
+    if not attach_url and not attach_name:
+        raise HTTPException(status_code=400, detail="Thông báo không có file đính kèm")
+
+    filename = attach_name or os.path.basename(attach_url.rstrip('/').split('?')[0])
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+    if ext not in _OO_MIME:
+        raise HTTPException(status_code=400, detail=f"Định dạng không hỗ trợ xem online: .{ext}")
+
+    # URL mà OnlyOffice Document Server dùng để tải file (server-to-server).
+    # File upload nội bộ công khai (không cần token); URL ngoài dùng trực tiếp.
+    backend_public_url = os.environ.get('BACKEND_PUBLIC_URL', '').strip()
+    if backend_public_url:
+        base_url = backend_public_url.rstrip('/')
+    else:
+        forwarded_proto = request.headers.get("x-forwarded-proto", "http")
+        forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "localhost:8000"
+        base_url = f"{forwarded_proto}://{forwarded_host}".rstrip('/')
+
+    if attach_url.startswith('/api/forum/uploads/'):
+        document_url = f"{base_url}{attach_url}"
+    elif attach_url.startswith(('http://', 'https://')):
+        document_url = attach_url
+    else:
+        raise HTTPException(status_code=400, detail="Đường dẫn file đính kèm không hợp lệ")
+
+    user_name = user.get("full_name") or user["user_code"]
+    doc_service = _ONLYOFFICE_PUBLIC_URL.rstrip('/')
+    document_type = _oo_document_type(ext)
+    doc_key = _make_doc_key(post_id, attach_url, '')
+
+    # Xem trước (read-only): thông báo nội bộ không cho chỉnh sửa file đính kèm
+    editor_config = {
+        "document": {
+            "fileType": ext,
+            "key": doc_key,
+            "title": filename,
+            "url": document_url,
+            "permissions": {
+                "edit": False,
+                "download": True,
+                "print": True,
+                "review": False,
+                "comment": False,
+                "copy": True,
+            },
+        },
+        "editorConfig": {
+            "callbackUrl": f"{base_url}/api/forum/posts/{post_id}/onlyoffice/callback",
+            "lang": "vi",
+            "mode": "view",
+            "user": {
+                "id": user["user_code"] or "anonymous",
+                "name": user_name or "User",
+            },
+            "customization": {
+                "autosave": False,
+                "forcesave": False,
+                "chat": False,
+                "compactHeader": False,
+                "compactToolbar": False,
+                "help": False,
+                "plugins": False,
+                "statusBar": True,
+                "toolbarDocked": "top",
+                "goback": {"url": "/", "text": "Quay lại"},
+            },
+        },
+        "documentType": document_type,
+        "height": "100%",
+        "width": "100%",
+        "type": "desktop",
+    }
+
+    editor_config["token"] = _sign_doc_token(editor_config)
+    editor_config["_docsApiUrl"] = f"{doc_service}/web-apps/apps/api/documents/api.js"
+    return editor_config
+
+
+@router.post("/posts/{post_id}/onlyoffice/callback")
+def forum_onlyoffice_callback(
+    post_id: int,
+    body: ForumOnlyOfficeCallback,
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token")
+):
+    # File đính kèm thông báo chỉ xem (read-only) — không lưu lại bất kỳ thay đổi nào.
+    return {"error": 0}
 
 
 # ─── UPLOAD FILE đính kèm thông báo (ảnh jpg/png/webp, pdf) ────────

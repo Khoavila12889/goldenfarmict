@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { Megaphone, Plus, Pin, MessageCircle, Send, X, Trash2, Pencil, ChevronDown, ChevronUp, Users, Building2, UserPlus, Loader2, Paperclip, Link2, FileText, File as FileIcon, Image as ImageIcon } from 'lucide-react'
-import { getForumPosts, createForumPost, updateForumPost, deleteForumPost, getForumReplies, createForumReply, getEmployees, uploadForumFile, apiUrl } from '../services/api'
+import { Megaphone, Bell, Plus, Pin, MessageCircle, Send, X, Trash2, Pencil, ChevronDown, ChevronUp, Users, Building2, UserPlus, Loader2, Paperclip, Link2, FileText, Eye, File as FileIcon, Image as ImageIcon } from 'lucide-react'
+import { getForumPosts, createForumPost, updateForumPost, deleteForumPost, getForumReplies, createForumReply, getForumOnlyOfficeConfig, getEmployees, uploadForumFile, apiUrl } from '../services/api'
 import { formatDate } from '../utils/date'
+import OnlyOfficeViewer from './OnlyOfficeViewer'
+import ImageLightbox from './ImageLightbox'
 import './AnnouncementsBox.css'
 
 const roleLabel = role =>
@@ -18,10 +20,37 @@ const targetLabel = (p) => {
   return { text: '🌐 Tất cả', cls: 'ab-target-all' }
 }
 
-export default function AnnouncementsBox() {
-  const userRole = sessionStorage.getItem('user_role') || ''
+function readCanCreateFromSession() {
+  const role = sessionStorage.getItem('user_role') || ''
+  if (role === 'admin' || role === 'head') return true
+  try {
+    const perms = JSON.parse(sessionStorage.getItem('user_permissions') || '{}')
+    const p = perms.announcements || {}
+    return !!(p.can_edit || p.can_view)
+  } catch {
+    return false
+  }
+}
+
+export default function AnnouncementsBox({ compact = false }) {
   const userCode = sessionStorage.getItem('user_code') || ''
-  const isManager = userRole === 'admin' || userRole === 'head'
+  const [canCreate, setCanCreate] = useState(readCanCreateFromSession)
+
+  // Theo dõi trạng thái "đã đọc" theo từng user (localStorage) — chỉ dùng cho chế độ compact
+  const readKey = `forum_reads_${userCode || 'anon'}`
+  const [readIds, setReadIds] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(readKey) || '[]') } catch { return [] }
+  })
+
+  const saveReads = (ids) => {
+    setReadIds(ids)
+    try { localStorage.setItem(readKey, JSON.stringify(ids)) } catch (_) {}
+  }
+
+  const markRead = (id) => {
+    if (readIds.includes(id)) return
+    saveReads([...readIds, id])
+  }
 
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -46,8 +75,17 @@ export default function AnnouncementsBox() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  // Preview file đính kèm: OnlyOffice (PDF/Office) + Lightbox (ảnh)
+  const [ooFile, setOoFile] = useState(null)
+  const [lightbox, setLightbox] = useState({ open: false, slides: [], index: 0 })
+  const ooPostId = ooFile?.postId || null
+  const fetchForumConfig = useCallback(() => getForumOnlyOfficeConfig(ooPostId), [ooPostId])
+
   const loadPosts = useCallback(() => {
-    getForumPosts().then(r => setPosts(r.data?.data || [])).catch(() => {})
+    getForumPosts().then(r => {
+      setPosts(r.data?.data || [])
+      if (r.data?.can_create !== undefined) setCanCreate(!!r.data.can_create)
+    }).catch(() => {})
       .finally(() => setLoading(false))
   }, [])
 
@@ -82,12 +120,40 @@ export default function AnnouncementsBox() {
   async function openPost(id) {
     setExpanded(expanded === id ? null : id)
     if (expanded === id) return
+    markRead(id)
     setLoadingReplies(true); setReplies([])
     try {
       const r = await getForumReplies(id)
       setReplies(r.data?.data || [])
     } catch { setReplies([]) }
     setLoadingReplies(false)
+  }
+
+  const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico']
+  const OFFICE_EXTS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'csv', 'txt', 'rtf']
+
+  function openAttachment(p) {
+    const url = resolveAttachUrl(p.attachment_url)
+    const name = p.attachment_name || String(p.attachment_url || '').split('/').pop() || 'attachment'
+    const leaf = String(url).split('?')[0].split('#')[0]
+    const ext = leaf.split('.').pop().toLowerCase()
+
+    if (IMAGE_EXTS.includes(ext)) {
+      setLightbox({
+        open: true,
+        slides: [{ src: url, downloadUrl: url, alt: name, title: name, description: p.title || '' }],
+        index: 0,
+      })
+      return
+    }
+
+    if (OFFICE_EXTS.includes(ext) && String(p.attachment_url || '').startsWith('/api/forum/uploads/')) {
+      setOoFile({ name, url, postId: p.id })
+      return
+    }
+
+    // Fallback / URL ngoài / loại file khác: mở tab mới hoặc tải về
+    window.open(url, '_blank', 'noopener,noreferrer')
   }
 
   async function submitReply(id) {
@@ -245,6 +311,8 @@ export default function AnnouncementsBox() {
     setFormTargetUsers(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code])
   }
 
+  const unreadCount = compact ? posts.filter(p => !readIds.includes(p.id)).length : 0
+
   if (loading) {
     return (
       <div className="ab-box" style={{ textAlign: 'center', color: '#94a3b8', padding: '1.5rem', fontSize: '0.85rem' }}>
@@ -257,11 +325,11 @@ export default function AnnouncementsBox() {
     <div className="ab-box">
       <div className="ab-header">
         <div className="ab-title">
-          <Megaphone size={18} color="#0a5b35" />
+          {compact ? <Bell size={18} color="#0a5b35" /> : <Megaphone size={18} color="#0a5b35" />}
           <h3>Thông báo nội bộ</h3>
-          <span className="ab-count">{posts.length}</span>
+          <span className="ab-count">{compact ? unreadCount : posts.length}</span>
         </div>
-        {isManager && (
+        {!compact && canCreate && (
           <button className="ab-new-btn" onClick={openCreate}>
             <Plus size={16} /> Tạo thông báo
           </button>
@@ -272,22 +340,28 @@ export default function AnnouncementsBox() {
 
       {posts.length === 0 ? (
         <div className="ab-empty">
-          {isManager ? 'Chưa có thông báo nào. Bấm "Tạo thông báo" để gửi tin đến toàn công ty / phòng ban / cá nhân.' : 'Chưa có thông báo mới.'}
+          {compact ? 'Chưa có thông báo nội bộ nào.' : canCreate ? 'Chưa có thông báo nào. Bấm "Tạo thông báo" để gửi tin đến toàn công ty / phòng ban / cá nhân.' : 'Chưa có thông báo mới.'}
         </div>
       ) : (
         <div className="ab-list">
           {posts.map(p => {
             const tgt = targetLabel(p)
+            const isNew = compact && !readIds.includes(p.id)
             return (
-              <div key={p.id} className={`ab-post${p.is_pinned ? ' ab-pinned' : ''}`}>
+              <div key={p.id} className={`ab-post${p.is_pinned ? ' ab-pinned' : ''}${isNew ? ' ab-unread' : ''}`}>
                 <div className="ab-post-head" onClick={() => openPost(p.id)} style={{ cursor: 'pointer' }}>
                   <div className="ab-post-title">
+                    {isNew && (
+                      <span className="ab-blink-wrap" title="Thông báo mới chưa đọc">
+                        <Bell size={16} className="ab-blink-icon" />
+                      </span>
+                    )}
                     {!!p.is_pinned && <Pin size={14} color="#d97706" />}
                     <span>{p.title}</span>
                   </div>
                   <div className="ab-post-meta">
                     <span className={`ab-target ${tgt.cls}`}>{tgt.text}</span>
-                    {isManager && (
+                    {!compact && canCreate && (
                       <>
                         <button className="ab-icon-btn" title="Sửa" onClick={(e) => { e.stopPropagation(); openEdit(p) }}>
                           <Pencil size={14} />
@@ -315,16 +389,33 @@ export default function AnnouncementsBox() {
                     {(p.attachment_url || p.attachment_name) && (
                       <div className="ab-attachment">
                         {p.attachment_type === 'url' ? (
-                          <a className="ab-attach-link" href={resolveAttachUrl(p.attachment_url)} target="_blank" rel="noopener noreferrer">
+                          <a
+                            className="ab-attach-link"
+                            href={resolveAttachUrl(p.attachment_url)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(resolveAttachUrl(p.attachment_url), '_blank', 'noopener,noreferrer') }}
+                            title="Mở liên kết"
+                          >
                             <Link2 size={16} /> <span>{p.attachment_url}</span>
+                            <Eye size={15} className="ab-eye-hint" />
                           </a>
                         ) : isAttachImage(p) ? (
-                          <a href={resolveAttachUrl(p.attachment_url)} target="_blank" rel="noopener noreferrer">
+                          <div className="ab-attach-img-wrap" onClick={(e) => { e.stopPropagation(); openAttachment(p) }}>
                             <img className="ab-attach-img" src={resolveAttachUrl(p.attachment_url)} alt={p.attachment_name || 'attachment'} />
-                          </a>
+                            <span className="ab-img-zoom-hint"><Eye size={14} /> Xem phóng to</span>
+                          </div>
                         ) : (
-                          <a className="ab-attach-link" href={resolveAttachUrl(p.attachment_url)} target="_blank" rel="noopener noreferrer" download={p.attachment_name}>
+                          <a
+                            className="ab-attach-link"
+                            href={resolveAttachUrl(p.attachment_url)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); openAttachment(p) }}
+                            title="Xem trước file"
+                          >
                             <FileText size={16} /> <span>{p.attachment_name || 'Tệp đính kèm'} {p.attachment_size ? `(${(p.attachment_size / 1024).toFixed(0)} KB)` : ''}</span>
+                            <Eye size={15} className="ab-eye-hint" />
                           </a>
                         )}
                       </div>
@@ -369,7 +460,7 @@ export default function AnnouncementsBox() {
       )}
 
       {/* ─── Modal tạo / sửa thông báo ─── */}
-      {showForm && (
+      {!compact && showForm && (
         <>
           <div className="ab-overlay" onClick={() => setShowForm(false)} />
           <div className="ab-modal">
@@ -491,6 +582,20 @@ export default function AnnouncementsBox() {
           </div>
         </>
       )}
+
+      {/* ─── Preview file đính kèm: OnlyOffice (PDF/Office) + Lightbox (ảnh) ─── */}
+      <OnlyOfficeViewer
+        file={ooFile}
+        isOpen={!!ooFile}
+        onClose={() => setOoFile(null)}
+        getConfig={ooPostId ? fetchForumConfig : undefined}
+      />
+      <ImageLightbox
+        open={lightbox.open}
+        onClose={() => setLightbox(prev => ({ ...prev, open: false }))}
+        slides={lightbox.slides}
+        index={lightbox.index}
+      />
     </div>
   )
 }

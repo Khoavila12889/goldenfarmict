@@ -26,6 +26,34 @@ class LoginResponse(BaseModel):
     permissions: dict = {}
 
 
+# Module "announcements" = quyền tạo/sửa/xóa thông báo nội bộ trên Dashboard.
+# Module "password-reset" = quyền reset mật khẩu người khác.
+# Mặc định bật cho admin và trưởng phòng; cấp thêm cho user đặc biệt qua trang Phân quyền.
+DEFAULT_ROLE_MODULE_PERMS = {
+    "admin": {
+        "announcements": {"can_view": True, "can_edit": True},
+        "password-reset": {"can_view": True, "can_edit": True},
+    },
+    "head": {
+        "announcements": {"can_view": True, "can_edit": True},
+        "password-reset": {"can_view": True, "can_edit": True},
+    },
+}
+
+
+def _fill_implicit_defaults(perms: dict, role: str) -> dict:
+    """Bổ sung quyền mặc định khi chưa có dòng trong DB (không ghi đè giá trị đã lưu)."""
+    for module, flags in DEFAULT_ROLE_MODULE_PERMS.get(role or "", {}).items():
+        if module not in perms:
+            perms[module] = dict(flags)
+    return perms
+
+
+def _has_module_capability(perms: dict, module: str) -> bool:
+    p = (perms or {}).get(module) or {}
+    return bool(p.get("can_edit") or p.get("can_view"))
+
+
 def _get_effective_permissions(code: str) -> dict:
     """Merge 3-tier permissions: User Override > Department > Role"""
     user_info = fetchone(
@@ -42,6 +70,7 @@ def _get_effective_permissions(code: str) -> dict:
         {"role": user_role}
     )
     role_perms = {r["module"]: {"can_view": bool(r["can_view"]), "can_edit": bool(r["can_edit"])} for r in role_rows}
+    _fill_implicit_defaults(role_perms, user_role)
 
     dept_perms = {}
     if user_dept:
@@ -261,8 +290,12 @@ def admin_reset_password(req: AdminResetRequest):
         "SELECT role FROM users WHERE employee_code = :code",
         {"code": req.admin_code.strip()}
     )
-    if not admin or admin["role"] not in ("admin", "head"):
-        raise HTTPException(403, "Chỉ admin mới có quyền reset mật khẩu")
+    if not admin:
+        raise HTTPException(401, "Tài khoản không tồn tại")
+    perms = _get_effective_permissions(req.admin_code.strip())
+    can_reset = admin["role"] in ("admin", "head") or _has_module_capability(perms, "password-reset")
+    if not can_reset:
+        raise HTTPException(403, "Bạn không có quyền reset mật khẩu")
     if not verify_token(req.admin_code.strip(), req.admin_token.strip(), admin["role"]):
         raise HTTPException(401, "Phiên đăng nhập không hợp lệ")
     target = fetchone(
@@ -295,7 +328,29 @@ ALL_MODULES = [
     {"key": "documents", "label": "Tài liệu", "group": "support"},
     {"key": "salary", "label": "Phiếu lương", "group": "support"},
     {"key": "salary-admin", "label": "Quản lý lương", "group": "admin"},
+    {"key": "dashboard", "label": "Dashboard", "group": "support"},
+    {"key": "announcements", "label": "Tạo thông báo Dashboard", "group": "support"},
+    {"key": "password-reset", "label": "Reset mật khẩu", "group": "support"},
 ]
+
+
+def seed_default_role_permissions():
+    """Ghi quyền mặc định cho admin + trưởng phòng (không ghi đè nếu đã có)."""
+    for role, modules in DEFAULT_ROLE_MODULE_PERMS.items():
+        for module, flags in modules.items():
+            try:
+                execute("""
+                    INSERT INTO role_permissions (role, module, can_view, can_edit)
+                    VALUES (:role, :module, :view, :edit)
+                    ON CONFLICT (role, module) DO NOTHING
+                """, {
+                    "role": role,
+                    "module": module,
+                    "view": int(bool(flags.get("can_view"))),
+                    "edit": int(bool(flags.get("can_edit"))),
+                })
+            except Exception as e:
+                print(f"  → seed perm {role}/{module}: {e}")
 
 ADMIN_MODULES = {m["key"] for m in ALL_MODULES if m["group"] == "admin"}
 
@@ -411,6 +466,7 @@ def get_role_permissions(
         {"role": role}
     )
     perms = {r["module"]: {"can_view": bool(r["can_view"]), "can_edit": bool(r["can_edit"])} for r in rows}
+    _fill_implicit_defaults(perms, role)
     return {"data": perms, "role": role}
 
 
@@ -517,6 +573,7 @@ def get_user_permissions(
         {"role": user_role}
     )
     role_perms = {r["module"]: {"can_view": bool(r["can_view"]), "can_edit": bool(r["can_edit"])} for r in role_perms_raw}
+    _fill_implicit_defaults(role_perms, user_role)
 
     dept_perms = {}
     if user_dept:

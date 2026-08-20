@@ -20,9 +20,21 @@ function normalizeOrigin(url) {
   return s
 }
 
+export function isNativeApp() {
+  try {
+    return !!((window.Capacitor?.isNativePlatform?.() && window.Capacitor.isNativePlatform()) || window.Capacitor || window.cordova)
+  } catch { return false }
+}
+
 export function getServerOrigin() {
-  const saved = localStorage.getItem('server_url')
-  return normalizeOrigin(saved || BUILTIN_API_URL)
+  // App native (APK): dùng server do người dùng nhập lúc login (localStorage).
+  // Web: luôn dùng URL build sẵn (VITE_API_URL hoặc '/api' tương đối) — tránh
+  // localStorage cũ (server_url cũ) làm mất kết nối mà web không đổi được.
+  if (isNativeApp()) {
+    const saved = localStorage.getItem('server_url')
+    return normalizeOrigin(saved || BUILTIN_API_URL)
+  }
+  return normalizeOrigin(BUILTIN_API_URL)
 }
 
 export function currentServerLabel() {
@@ -117,6 +129,10 @@ export function getEquipmentList(params = {}) {
 
 export function createEquipment(data) {
   return api.post('/equipment', data)
+}
+
+export function importEquipment(data) {
+  return api.post('/equipment/import', data)
 }
 
 export function updateEquipment(id, data) {
@@ -263,6 +279,10 @@ export function bulkImportLicenses(equipment_id, keys, product_name) {
 
 export function scanLicenses() {
   return api.post('/licenses/scan')
+}
+
+export function importLicenses(data) {
+  return api.post('/licenses/import', data)
 }
 
 // License Categories & Items
@@ -985,6 +1005,10 @@ export function deleteForumPost(id) {
 
 export function getForumReplies(postId) {
   return api.get(`/forum/posts/${postId}/replies`, { headers: forumAuthHeaders() })
+}
+
+export function getForumOnlyOfficeConfig(postId) {
+  return api.get(`/forum/posts/${postId}/onlyoffice/config`, { headers: forumAuthHeaders() })
 }
 
 export function createForumReply(postId, content) {

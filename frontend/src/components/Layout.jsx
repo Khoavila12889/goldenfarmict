@@ -8,6 +8,7 @@ import {
 import { changePassword, getProfile, apiUrl } from '../services/api'
 import { driver } from 'driver.js'
 import 'driver.js/dist/driver.css'
+import logoSrc from '../assets/logo.png'
 
 const iconMap = {
   dashboard: LayoutDashboard,
@@ -380,6 +381,13 @@ export default function Layout() {
         .bk-topbar-btn:active { background: var(--bk-primary-dark); }
         .bk-topbar-title { font-weight: 700; font-size: 0.9rem; white-space: nowrap; }
 
+        .bk-topbar-logo {
+          height: 34px;
+          width: auto;
+          display: block;
+          object-fit: contain;
+        }
+
         .bk-sidebar-overlay {
           position: fixed; inset: 0; z-index: 90;
           background: rgba(15, 23, 42, 0.4);
@@ -545,7 +553,7 @@ export default function Layout() {
         </div>
 
         <div className="bk-topbar-center">
-          <span className="bk-topbar-title">GOLDENFARM ICT</span>
+          <img src={logoSrc} alt="GOLDENFARM ICT" className="bk-topbar-logo" />
         </div>
 
         <div className="bk-topbar-right">

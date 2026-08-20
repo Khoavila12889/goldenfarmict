@@ -10,7 +10,7 @@ function cleanEditorConfig(raw) {
   return config
 }
 
-export default function OnlyOfficeViewer({ file, configId, isOpen, onClose }) {
+export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getConfig }) {
   const [editorConfig, setEditorConfig] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -34,7 +34,7 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose }) {
   }, [])
 
   useEffect(() => {
-    if (!isOpen || !file || !configId) {
+    if (!isOpen || !file || (!configId && !getConfig)) {
       destroyEditor()
       setEditorConfig(null)
       setError(null)
@@ -50,12 +50,17 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose }) {
     }
     destroyEditor()
 
-    const currentPath = file.browsePath || '/'
-    const normalizedPath = currentPath === '/'
-      ? file.name
-      : `${currentPath.replace(/\/$/, '')}/${file.name}`
+    const fetchPromise = getConfig
+      ? getConfig()
+      : (() => {
+          const currentPath = file.browsePath || '/'
+          const normalizedPath = currentPath === '/'
+            ? file.name
+            : `${currentPath.replace(/\/$/, '')}/${file.name}`
+          return getOnlyOfficeConfig(configId, normalizedPath, userCode, userRole, file.id)
+        })()
 
-    getOnlyOfficeConfig(configId, normalizedPath, userCode, userRole, file.id)
+    fetchPromise
       .then(r => {
         setEditorConfig(r.data)
         setLoading(false)
@@ -65,7 +70,7 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose }) {
         setError(typeof msg === 'string' ? msg : JSON.stringify(msg))
         setLoading(false)
       })
-  }, [isOpen, file, configId, destroyEditor, userCode, userRole])
+  }, [isOpen, file, configId, getConfig, destroyEditor, userCode, userRole])
 
   useEffect(() => {
     if (!editorConfig || !isOpen) return
@@ -200,7 +205,24 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose }) {
             <div className="oov-error oov-overlay-state">
               <AlertCircle size={32} />
               <p>{error}</p>
-              <button className="doc-btn doc-btn-secondary" onClick={onClose} type="button">Đóng</button>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                {file?.url && (
+                  <a
+                    href={file.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
+                      padding: '0.5rem 0.9rem', background: '#0a5b35', color: '#fff',
+                      borderRadius: 8, fontSize: '0.84rem', fontWeight: 600,
+                      textDecoration: 'none', cursor: 'pointer',
+                    }}
+                  >
+                    Mở trong tab mới
+                  </a>
+                )}
+                <button className="doc-btn doc-btn-secondary" onClick={onClose} type="button">Đóng</button>
+              </div>
             </div>
           )}
           <div

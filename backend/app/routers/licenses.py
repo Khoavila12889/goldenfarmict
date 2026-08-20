@@ -1,6 +1,8 @@
 import re, os, shutil
 from fastapi import APIRouter, Query, UploadFile, File
+from sqlalchemy import text
 from ..core.db import fetchall, fetchone, execute, insert
+from ..core.session import SessionLocal
 
 router = APIRouter(prefix="/api/licenses", tags=["licenses"])
 
@@ -11,7 +13,8 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 @router.get("")
 def list_licenses(search: str = ""):
     sql = """
-        SELECT lic.*, eq.equipment_type, eq.serial_number, emp.full_name, emp.department
+        SELECT lic.*, eq.equipment_type, eq.serial_number, eq.asset_code,
+               emp.full_name, emp.department, emp.employee_code
         FROM licenses lic
         JOIN equipment eq ON eq.id=lic.equipment_id
         JOIN employees emp ON emp.id=eq.employee_id
@@ -83,6 +86,73 @@ def bulk_import(body: dict):
             execute("INSERT INTO licenses (equipment_id, license_key, product_name) VALUES (:eid, :key, :product)", {"eid": equipment_id, "key": k, "product": product_name})
             added += 1
     return {"success": True, "added": added}
+
+
+@router.post("/import")
+def import_licenses(body: dict):
+    rows = body.get("licenses", []) or []
+    stats = {"total": len(rows), "created": 0, "updated": 0, "skipped": 0, "errors": []}
+
+    def _norm(v):
+        return "" if v is None else str(v).strip()
+
+    for line_no, item in enumerate(rows, start=2):
+        try:
+            lic_key = _norm(item.get("license_key"))
+            if not lic_key:
+                stats["skipped"] += 1
+                stats["errors"].append(f"Dòng {line_no}: thiếu License Key")
+                continue
+
+            product = _norm(item.get("product_name"))
+            activated = _norm(item.get("activated"))
+            expiry = _norm(item.get("expiry_date"))
+            notes = _norm(item.get("notes"))
+
+            equipment_id = item.get("equipment_id")
+            if equipment_id is None or equipment_id == "":
+                eq_ref = _norm(item.get("asset_code")) or _norm(item.get("serial_number"))
+                if eq_ref:
+                    eq = fetchone(
+                        "SELECT id FROM equipment WHERE asset_code=:c OR serial_number=:c LIMIT 1",
+                        {"c": eq_ref},
+                    )
+                    equipment_id = eq["id"] if eq else None
+            else:
+                equipment_id = int(equipment_id)
+
+            if not equipment_id:
+                stats["skipped"] += 1
+                stats["errors"].append(f"Dòng {line_no}: không xác định được thiết bị ({lic_key})")
+                continue
+
+            with SessionLocal() as sess:
+                existing = sess.execute(
+                    text("SELECT id FROM licenses WHERE equipment_id=:eid AND license_key=:key"),
+                    {"eid": equipment_id, "key": lic_key},
+                ).first()
+                if existing:
+                    sess.execute(
+                        text(
+                            "UPDATE licenses SET product_name=:p, activated=:a, expiry_date=:e, "
+                            "notes=:n, updated_at=CURRENT_TIMESTAMP::text WHERE id=:id"
+                        ),
+                        {"p": product, "a": activated, "e": expiry, "n": notes, "id": existing[0]},
+                    )
+                    stats["updated"] += 1
+                else:
+                    sess.execute(
+                        text(
+                            "INSERT INTO licenses (equipment_id, license_key, product_name, activated, expiry_date, notes, created_at) "
+                            "VALUES (:eid, :key, :p, :a, :e, :n, CURRENT_TIMESTAMP::text)"
+                        ),
+                        {"eid": equipment_id, "key": lic_key, "p": product, "a": activated, "e": expiry, "n": notes},
+                    )
+                    stats["created"] += 1
+        except Exception as e:
+            stats["errors"].append(f"Dòng {line_no}: {lic_key or ''} — {str(e)}")
+
+    return stats
 
 
 @router.post("/scan")

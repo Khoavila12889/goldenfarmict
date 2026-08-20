@@ -78,6 +78,7 @@ Hệ thống quản lý ICT nội bộ — Quản lý nhân viên, thiết bị,
 - **Column visibility**: Toggle cột, lưu vào localStorage
 - **Keyboard**: Escape đóng menu/modal
 - License gán theo thiết bị
+- **Export/Import Excel (xlsx)**: Xuất toàn bộ danh sách thiết bị ra file Excel (cột: Mã nhân viên, Tên nhân viên, Bộ phận, Mã thiết bị, Loại thiết bị, Thông số thiết bị, Windows OS, Sức khỏe, Ngày cấp, Ngày bàn giao, Ngày thu hồi, Mô tả, Ghi chú, License, License Key, Hạn dùng license, Kích hoạt) và nhập lại từ file Excel (nhận diện header tiếng Việt, upsert theo mã tài sản, tự xử lý license gắn theo thiết bị)
 
 ### ✅ Quy trình phê duyệt (Approval Workflow)
 
@@ -127,6 +128,7 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 
 ### 🔑 Quản lý License (admin)
 - **License Keys**: Bảng danh sách + search, inline edit, bulk import (chọn NV → thiết bị → paste danh sách key), auto scan từ specs/os_info (Product ID, Edition)
+- **Export/Import Excel (xlsx)**: Xuất danh sách license ra file Excel (cột: Mã nhân viên, Tên nhân viên, Bộ phận, Mã thiết bị, Loại thiết bị, S/N, License Key, Product, Kích hoạt, Hết hạn, Ghi chú, ID thiết bị) và nhập lại từ file Excel — upsert theo `equipment_id + license_key`, tự tìm thiết bị qua `asset_code`/`S/N` nếu thiếu ID
 - **License Categories & Items**: Quản lý danh mục license theo tab, mỗi mục có tên, ngày đăng ký/hết hạn, thông tin hợp đồng, upload file PDF hợp đồng
 
 ### 📦 Quản lý phần mềm (admin)
@@ -446,12 +448,12 @@ goldenfarm-ict-web/
 │   │   │   ├── auth.py            # Login, password, profile, user/permission admin
 │   │   │   ├── employees.py       # CRUD NV + departments + cascade delete
 │   │   │   ├── departments.py     # Department CRUD
-│   │   │   ├── equipment.py       # CRUD + transfer/revoke/allocate + history
+│   │   │   ├── equipment.py       # CRUD + transfer/revoke/allocate + history + import Excel
 │   │   │   ├── tickets.py         # CRUD + queue position + SSE events
 │   │   │   ├── bookings.py        # CRUD + resources + dates + overlap
 │   │   │   ├── business_trips.py  # CRUD + role-based filtering
 │   │   │   ├── dashboard.py       # GET /api/dashboard/stats
-│   │   │   ├── licenses.py        # Keys + categories/items + bulk/scan + contract upload
+│   │   │   ├── licenses.py        # Keys + categories/items + bulk/scan + contract upload + import Excel
 │   │   │   ├── software.py        # Software categories/items + contract upload
 │   │   │   ├── approvals.py       # Workflows + steps + requests + approve/reject + SSE
 │   │   │   ├── documents.py       # Storage CRUD + browse/download + granular permissions
@@ -543,7 +545,7 @@ goldenfarm-ict-web/
 | `PUT` | `/api/auth/profile` | Cập nhật profile (full_name, phone, personal_email) |
 | `POST` | `/api/auth/forgot-password` | Quên mật khẩu → lấy email gợi ý |
 | `POST` | `/api/auth/verify-reset` | Reset mật khẩu qua personal_email |
-| `POST` | `/api/auth/admin-reset-password` | Admin reset mật khẩu người khác |
+| `POST` | `/api/auth/admin-reset-password` | Reset mật khẩu người khác (admin/head hoặc user được cấp quyền `password-reset`) |
 | `GET` | `/api/auth/users` | Danh sách users (admin) |
 | `GET` | `/api/auth/users/search` | Tìm kiếm users (admin/head) |
 | `GET` | `/api/auth/permissions/modules` | Danh sách module permissions |
@@ -580,6 +582,7 @@ goldenfarm-ict-web/
 | `PUT` | `/api/equipment/{id}/transfer` | Bàn giao (chuyển employee_id + ghi history) |
 | `PUT` | `/api/equipment/{id}/revoke` | Thu hồi về kho (set employee_id=NULL) |
 | `PUT` | `/api/equipment/{id}/allocate` | Cấp phát từ kho |
+| `POST` | `/api/equipment/import` | Import Excel (xlsx) — upsert thiết bị theo `asset_code`, tự xử lý license + history |
 | `GET` | `/api/equipment/{id}/licenses` | License gán theo thiết bị |
 | `GET` | `/api/equipment/{id}/history` | Lịch sử bàn giao |
 
@@ -612,6 +615,7 @@ goldenfarm-ict-web/
 | `PUT` | `/api/licenses/{id}` | Cập nhật (inline edit) |
 | `DELETE` | `/api/licenses/{id}` | Xoá |
 | `POST` | `/api/licenses/bulk` | Bulk import (danh sách key) |
+| `POST` | `/api/licenses/import` | Import Excel (xlsx) — upsert license theo `equipment_id + license_key`, tự tìm thiết bị qua `asset_code`/`S/N` |
 | `POST` | `/api/licenses/scan` | Auto scan license từ specs/os_info |
 | `GET` | `/api/licenses/categories` | Danh sách danh mục license |
 | `POST` | `/api/licenses/categories` | Thêm danh mục license |

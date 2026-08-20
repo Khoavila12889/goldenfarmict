@@ -21,6 +21,9 @@ const MODULES = [
   { key: 'documents', label: 'Tài liệu', group: 'support', desc: 'Truy cập tài liệu dùng chung' },
   { key: 'salary', label: 'Phiếu lương', group: 'support', desc: 'Xem phiếu lương cá nhân' },
   { key: 'salary-pdf', label: 'Tải PDF lương', group: 'support', desc: 'Cho phép tải PDF phiếu lương' },
+  { key: 'dashboard', label: 'Dashboard', group: 'support', desc: 'Quyền truy cập trang Dashboard (Mặc định: Tất cả)' },
+  { key: 'announcements', label: 'Tạo thông báo Dashboard', group: 'support', desc: 'Tạo / sửa / xóa thông báo trên Dashboard. Mặc định: Admin & Trưởng phòng. Tick Xem hoặc Sửa để cấp cho nhân viên đặc biệt.' },
+  { key: 'password-reset', label: 'Reset mật khẩu', group: 'support', desc: 'Cho phép reset mật khẩu người khác. Mặc định: Admin & Trưởng phòng. Tick Xem hoặc Sửa để cấp cho nhân viên đặc biệt.' },
 ]
 
 const ADMIN_MODULES = new Set(MODULES.filter(m => m.group === 'admin').map(m => m.key))
@@ -584,6 +587,11 @@ function ModulePermCard({ mod, permissions, togglePerm, targetType, rolePerms, d
           }}>{inheritBadge.label}</span>
         )}
       </div>
+      {mod.desc && (
+        <div style={{ fontSize: '0.68rem', color: 'var(--bk-text-muted)', marginBottom: '0.35rem', lineHeight: 1.35 }}>
+          {mod.desc}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'center' }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.78rem', cursor: 'pointer', color: 'var(--bk-text-secondary)' }}>
           <input type="checkbox" checked={!!perm.can_view}

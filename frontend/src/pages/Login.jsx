@@ -1,16 +1,16 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, ArrowRight, ArrowLeft, Check, Mail, Lock, KeyRound, Server } from 'lucide-react'
-import { login, forgotPassword, verifyReset, setServerUrl, getServerOrigin, apiErrorMessage } from '../services/api'
+import { login, forgotPassword, verifyReset, setServerUrl, getServerOrigin, apiErrorMessage, isNativeApp } from '../services/api'
 import logoSrc from '../assets/logo.png'
 import bgSrc from '../assets/backgroud .webp'
 import './Login.css'
 
 // Chạy trên App Mobile đã build qua Capacitor/Cordova?
-const isNative = !!((window.Capacitor?.isNativePlatform?.() && window.Capacitor.isNativePlatform()) || window.Capacitor || window.cordova)
+const isNative = isNativeApp()
 
 export default function Login() {
-  const [server, setServer] = useState(() => localStorage.getItem('server_url') || getServerOrigin() || '')
+  const [server, setServer] = useState(() => getServerOrigin() || '')
   // Chỉ hiện ô nhập máy chủ trên App Native + lần đầu chưa lưu server_url
   const [showServerInput, setShowServerInput] = useState(() => isNative && !localStorage.getItem('server_url'))
   const [code, setCode] = useState('')

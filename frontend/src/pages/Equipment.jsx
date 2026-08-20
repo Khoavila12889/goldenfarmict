@@ -1,14 +1,15 @@
 ﻿import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import * as XLSX from 'xlsx'
 import './Equipment.css'
 import {
   getEquipmentList, createEquipment, updateEquipment,
   revokeEquipment, allocateEquipment, getEquipmentHistory,
-  getEmployees,
+  getEmployees, importEquipment,
 } from '../services/api'
 import { formatDate } from '../utils/date'
 import {
   Monitor, Laptop, Printer, Monitor as MonitorIcon, Keyboard, Mouse,
-  Smartphone, Tablet, Package, Plus, Search, Download, RefreshCw,
+  Smartphone, Tablet, Package, Plus, Search, Download, Upload, RefreshCw,
   MoreHorizontal, Eye, Pencil, Trash2, History, Undo2, UserPlus,
   X, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
   CheckCircle, AlertTriangle, XCircle, ArrowUpDown,
@@ -125,6 +126,7 @@ export default function Equipment() {
 
   const searchTimerRef = useRef(null)
   const actionRef = useRef(null)
+  const fileInputRef = useRef(null)
 
   useEffect(() => {
     return () => {
@@ -225,6 +227,134 @@ export default function Equipment() {
     } finally {
       setSaving(false)
     }
+  }
+
+  function handleExportXLSX() {
+    if (sorted.length === 0) { setMsg('Không có dữ liệu để xuất.'); return }
+    const data = sorted.map(eq => ({
+      'Mã nhân viên': eq.emp_code || '',
+      'Tên nhân viên': eq.full_name || '',
+      'Bộ phận': eq.department || '',
+      'Mã thiết bị': eq.asset_code,
+      'Loại thiết bị': eq.equipment_type,
+      'Thông số thiết bị': eq.specs,
+      'Windows OS': eq.os_info,
+      'Sức khỏe': HEALTH_MAP[eq.status]?.label || eq.status || '',
+      'Ngày cấp': eq.issued_date ? formatDate(eq.issued_date) : '',
+      'Ngày bàn giao': eq.handover_date ? formatDate(eq.handover_date) : '',
+      'Ngày thu hồi': eq.return_date ? formatDate(eq.return_date) : '',
+      'Mô tả': eq.description || '',
+      'Ghi chú': eq.notes || '',
+      'License': eq.license_product || '',
+      'License Key': eq.license_key || '',
+      'Hạn dùng license': eq.license_expiry || '',
+      'Kích hoạt': eq.license_activated || '',
+    }))
+
+    const worksheet = XLSX.utils.json_to_sheet(data)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'DanhSachThietBi')
+    XLSX.writeFile(workbook, `thiet-bi-${new Date().toISOString().slice(0, 10)}.xlsx`)
+  }
+
+  async function handleImportXLSX(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target.result
+        const wb = XLSX.read(bstr, { type: 'binary' })
+        const wsname = wb.SheetNames[0]
+        const ws = wb.Sheets[wsname]
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1 })
+
+        if (data.length < 2) { setMsg('Lỗi file Excel không có dữ liệu.'); return }
+
+        const nor = v => (v ? String(v) : '').trim()
+        const equipment = []
+        const parseErrors = []
+
+        const headerRow = (data[0] || []).map(h => nor(h).toLowerCase())
+        const colOf = (...names) => headerRow.findIndex(h => names.includes(h))
+        let colMap = {
+          assetCode: colOf('mã ts', 'ma ts', 'mã tài sản', 'ma tai san', 'asset_code', 'asset code'),
+          type: colOf('loại', 'loai', 'loại thiết bị', 'loai thiet bi', 'equipment_type', 'equipment type'),
+          serial: colOf('s/n', 'serial', 'serial_number', 'serial number', 'sn'),
+          specs: colOf('cấu hình', 'cau hinh', 'cấu hình chi tiết', 'specs'),
+          os: colOf('hệ điều hành', 'he dieu hanh', 'os', 'os_info', 'os info'),
+          status: colOf('sức khỏe', 'suc khoe', 'tình trạng', 'tinh trang', 'status', 'health'),
+          empCode: colOf('người sử dụng', 'nguoi su dung', 'người dùng', 'nguoi dung', 'mã nv', 'ma nv', 'mã nhân viên', 'ma nhan vien', 'employee_code', 'employee code'),
+          issued: colOf('ngày cấp', 'ngay cap', 'ngày cấp phát', 'ngay cap phat', 'issued_date', 'issued date'),
+          purchaseDate: colOf('ngày mua', 'ngay mua', 'purchase_date', 'purchase date'),
+          purchaseCost: colOf('giá mua', 'gia mua', 'giá trị', 'gia tri', 'purchase_cost', 'purchase cost'),
+          description: colOf('mô tả', 'mo ta', 'description', 'desc'),
+          notes: colOf('ghi chú', 'ghi chu', 'notes', 'note'),
+          licenseKey: colOf('license key', 'license_key', 'license', 'mã license', 'ma license', 'product id', 'product_id'),
+          licenseProduct: colOf('license', 'license_product', 'sản phẩm license', 'san pham license', 'product name', 'product_name', 'windows license'),
+          licenseExpiry: colOf('hạn dùng license', 'han dung license', 'hạn license', 'han license', 'license_expiry', 'license expiry'),
+          licenseActivated: colOf('kích hoạt', 'kich hoat', 'activated', 'license_activated'),
+        }
+
+        if (colMap.assetCode < 0) {
+          colMap = {
+            assetCode: 0, type: 1, serial: 2, specs: 3, os: 4, status: 5,
+            empCode: 6, issued: 7, purchaseDate: 8, purchaseCost: 9, description: 10, notes: 11,
+          }
+        }
+
+        for (let i = 1; i < data.length; i++) {
+          const row = data[i]
+          if (!row || row.length === 0) continue
+          const get = idx => (idx >= 0 ? row[idx] : '')
+          const assetCode = nor(get(colMap.assetCode))
+          if (!assetCode) { parseErrors.push(`Dòng ${i + 1}: thiếu mã tài sản`); continue }
+
+          equipment.push({
+            asset_code: assetCode,
+            equipment_type: nor(get(colMap.type)),
+            serial_number: nor(get(colMap.serial)),
+            specs: nor(get(colMap.specs)),
+            os_info: nor(get(colMap.os)),
+            status: nor(get(colMap.status)),
+            employee_code: nor(get(colMap.empCode)),
+            issued_date: nor(get(colMap.issued)),
+            purchase_date: nor(get(colMap.purchaseDate)),
+            purchase_cost: nor(get(colMap.purchaseCost)),
+            description: nor(get(colMap.description)),
+            notes: nor(get(colMap.notes)),
+            license_key: nor(get(colMap.licenseKey)),
+            license_product: nor(get(colMap.licenseProduct)),
+            license_expiry: nor(get(colMap.licenseExpiry)),
+            license_activated: nor(get(colMap.licenseActivated)),
+          })
+        }
+
+        if (equipment.length === 0) {
+          setMsg('Lỗi không có dữ liệu hợp lệ để import.')
+          return
+        }
+
+        const res = await importEquipment({ equipment })
+        const r = res.data
+        const base = `${r.created} tạo mới, ${r.updated} cập nhật`
+        const allErrors = [...(r.errors || []), ...parseErrors]
+        if (allErrors.length > 0) {
+          setMsg(`Lỗi import một số dòng (${allErrors.length} lỗi): ${allErrors.join('; ')}`)
+        } else {
+          setMsg(`✅ Import xong: ${base}`)
+        }
+        load()
+      } catch (err) {
+        setMsg(`Lỗi đọc file Excel hoặc server: ${err?.response?.data?.detail || err.message}`)
+      } finally {
+        setTimeout(() => setMsg(''), 8000)
+      }
+    }
+
+    reader.readAsBinaryString(file)
+    e.target.value = ''
   }
 
   async function handleRevoke(eq) {
@@ -518,6 +648,21 @@ export default function Equipment() {
         </select>
 
         <div className="eq-toolbar-actions">
+          <button className="eq-toolbar-btn" onClick={handleExportXLSX} title="Xuất Excel">
+            <Download size={15} />
+            Xuất Excel
+          </button>
+          <button className="eq-toolbar-btn" onClick={() => fileInputRef.current?.click()} title="Nhập Excel">
+            <Upload size={15} />
+            Nhập Excel
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx, .xls"
+            style={{ display: 'none' }}
+            onChange={handleImportXLSX}
+          />
           <button className="eq-toolbar-btn" onClick={load} title="Làm mới">
             <RefreshCw size={15} />
           </button>

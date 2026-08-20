@@ -48,6 +48,13 @@ export default function Employees() {
   const userRole = sessionStorage.getItem('user_role') || ''
   const userCode = sessionStorage.getItem('user_code') || ''
   const isAdmin = userRole === 'admin' || userRole === 'head'
+  const canResetPw = isAdmin || (() => {
+    try {
+      const perms = JSON.parse(sessionStorage.getItem('user_permissions') || '{}')
+      const p = perms['password-reset'] || {}
+      return !!(p.can_edit || p.can_view)
+    } catch { return false }
+  })()
 
   const [emps, setEmps] = useState([])
   const [depts, setDepts] = useState([])
@@ -742,7 +749,7 @@ export default function Employees() {
               <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
                 <button onClick={() => openEdit(selectedEmp)} style={panelBtnS}>✏️ Sửa</button>
                 <button onClick={() => handleDelete(selectedEmp.id)} style={{ ...panelBtnS, background: '#fef2f2', color: '#dc2626', borderColor: '#fca5a5' }}>🗑️ Xoá</button>
-                {isAdmin && (
+                {canResetPw && (
                   <button onClick={() => openResetPw(selectedEmp)} style={{ ...panelBtnS, background: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe' }}>🔑 Reset Password</button>
                 )}
               </div>

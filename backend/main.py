@@ -23,6 +23,7 @@ _CORS_ORIGINS = os.environ.get(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_CORS_ORIGINS,
+    allow_origin_regex=r".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -67,6 +68,13 @@ async def on_startup():
 
     # Ensure unique constraints exist for permission tables (needed for ON CONFLICT upsert)
     _ensure_permission_constraints(engine)
+
+    # Seed quyền mặc định cho admin + trưởng phòng (thông báo, reset mật khẩu, ...)
+    try:
+        from app.routers.auth import seed_default_role_permissions
+        seed_default_role_permissions()
+    except Exception as e:
+        print(f"  → seed default role permissions: {e}")
 
     # Add missing columns for existing tables (before ORM queries)
     with SessionLocal() as sess:

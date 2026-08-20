@@ -1,9 +1,10 @@
 ﻿import React, { useEffect, useState, useCallback } from 'react'
+import * as XLSX from 'xlsx'
 import '../styles/shared.css'
 import './Licenses.css'
 import {
   getLicenses, getLicenseStats, deleteLicense, updateLicense,
-  bulkImportLicenses, scanLicenses,
+  bulkImportLicenses, scanLicenses, importLicenses,
   getEmployees, getEmployeeEquipment,
   getSoftwareCategories, createSoftwareCategory, updateSoftwareCategory, deleteSoftwareCategory,
   getSoftwareItems, createSoftwareItem, updateSoftwareItem, deleteSoftwareItem, uploadSoftwareContract,
@@ -140,6 +141,96 @@ export default function Licenses() {
       showMsg(`Đã quét xong! Thêm ${r.data.added} license mới.`)
       loadLicenses()
     } catch { showMsg('Lỗi khi quét') }
+  }
+
+  const fileInputRef = React.useRef(null)
+
+  function handleExportXLSX() {
+    if (licenses.length === 0) { showMsg('Không có dữ liệu để xuất.', 'error'); return }
+    const data = licenses.map(lic => ({
+      'Mã nhân viên': lic.employee_code || '',
+      'Tên nhân viên': lic.full_name || '',
+      'Bộ phận': lic.department || '',
+      'Mã thiết bị': lic.asset_code || '',
+      'Loại thiết bị': lic.equipment_type || '',
+      'S/N': lic.serial_number || '',
+      'License Key': lic.license_key,
+      'Product': lic.product_name || '',
+      'Kích hoạt': lic.activated || '',
+      'Hết hạn': lic.expiry_date ? formatDate(lic.expiry_date) : '',
+      'Ghi chú': lic.notes || '',
+      'ID thiết bị': lic.equipment_id || '',
+    }))
+    const worksheet = XLSX.utils.json_to_sheet(data)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'DanhSachLicense')
+    XLSX.writeFile(workbook, `license-${new Date().toISOString().slice(0, 10)}.xlsx`)
+  }
+
+  async function handleImportXLSX(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = async (ev) => {
+      try {
+        const wb = XLSX.read(ev.target.result, { type: 'binary' })
+        const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' })
+        const nor = v => (v ? String(v) : '').trim()
+        const licenseList = []
+        const parseErrors = []
+
+        const headerRow = (data[0] || []).map(h => nor(h).toLowerCase())
+        const colOf = (...names) => headerRow.findIndex(h => names.includes(h))
+        const colMap = {
+          key: colOf('license key', 'license_key', 'key', 'mã license', 'ma license'),
+          product: colOf('product', 'product_name', 'product name', 'sản phẩm', 'san pham'),
+          activated: colOf('kích hoạt', 'kich hoat', 'activated', 'trạng thái', 'trang thai'),
+          expiry: colOf('hết hạn', 'het han', 'ngày hết hạn', 'ngay het han', 'expiry_date', 'expiry date', 'hạn dùng', 'han dung'),
+          notes: colOf('ghi chú', 'ghi chu', 'notes', 'note'),
+          assetCode: colOf('mã thiết bị', 'ma thiet bi', 'asset_code', 'asset code', 'mã tài sản', 'ma tai san', 'ma ts'),
+          serial: colOf('s/n', 'serial', 'serial_number', 'serial number', 'sn'),
+          equipmentId: colOf('id thiết bị', 'id thiet bi', 'equipment_id', 'equipment id'),
+        }
+
+        for (let i = 1; i < data.length; i++) {
+          const row = data[i]
+          if (!row || row.length === 0) continue
+          const get = idx => (idx >= 0 ? row[idx] : '')
+          const key = nor(get(colMap.key))
+          if (!key) { parseErrors.push(`Dòng ${i + 1}: thiếu License Key`); continue }
+          licenseList.push({
+            license_key: key,
+            product_name: nor(get(colMap.product)),
+            activated: nor(get(colMap.activated)),
+            expiry_date: nor(get(colMap.expiry)),
+            notes: nor(get(colMap.notes)),
+            asset_code: nor(get(colMap.assetCode)),
+            serial_number: nor(get(colMap.serial)),
+            equipment_id: nor(get(colMap.equipmentId)) || undefined,
+          })
+        }
+
+        if (licenseList.length === 0) {
+          showMsg('Lỗi không có dữ liệu hợp lệ để import.', 'error')
+          return
+        }
+
+        const res = await importLicenses({ licenses: licenseList })
+        const r = res.data
+        const base = `${r.created} tạo mới, ${r.updated} cập nhật`
+        const allErrors = [...(r.errors || []), ...parseErrors]
+        if (allErrors.length > 0) {
+          showMsg(`Lỗi import một số dòng (${allErrors.length} lỗi): ${allErrors.join('; ')}`, 'error')
+        } else {
+          showMsg(`✅ Import xong: ${base}`)
+        }
+        loadLicenses()
+      } catch (err) {
+        showMsg(`Lỗi đọc file Excel hoặc server: ${err?.response?.data?.detail || err.message}`, 'error')
+      }
+    }
+    reader.readAsBinaryString(file)
+    e.target.value = ''
   }
 
   // ─── Items Tab ────────────────────────────────────────────
@@ -341,6 +432,9 @@ export default function Licenses() {
                   />
                 </div>
                 <button className="bk-btn" onClick={handleScan}>Quét License</button>
+                <button className="bk-btn" onClick={handleExportXLSX}>⬇️ Xuất Excel</button>
+                <button className="bk-btn" onClick={() => fileInputRef.current?.click()}>⬆️ Nhập Excel</button>
+                <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleImportXLSX} />
                 <BulkImportButton onDone={() => { showMsg('Đã nhập hàng loạt!'); loadLicenses() }} />
               </div>
             </div>

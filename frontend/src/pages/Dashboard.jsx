@@ -261,6 +261,11 @@ export default function Dashboard() {
         {emp && <span style={{ fontSize: '0.85rem', fontWeight: 500, color: '#64748b' }}>— {emp.full_name} ({emp.department})</span>}
       </h1>
 
+      {/* Thông báo nội bộ — full-width, trên cùng vùng nội dung */}
+      <div style={{ marginBottom: '1.5rem' }}>
+        <AnnouncementsBox compact />
+      </div>
+
       <div className="kanban-grid">
         {/* Widget: Lịch hôm nay */}
         {showBookings && (
