@@ -51,8 +51,14 @@ Hệ thống quản lý ICT nội bộ — Quản lý nhân viên, thiết bị,
 ## Features
 
 ### 📊 Dashboard
-- **Admin**: 6 thẻ thống kê (NV, thiết bị, ticket pending, booking active), biểu đồ ticket theo phòng ban/trạng thái, danh sách booking hôm nay
-- **User**: Kanban ticket cá nhân, lịch đặt của user, queue position trong ticket
+- **Admin**:
+  - 4 thẻ KPI thống kê tổng quan (Tổng NV, Thiết bị quản lý, Ticket chờ xử lý, Lịch đặt hôm nay).
+  - Khung thông báo nội bộ (AnnouncementsBox).
+  - Biểu đồ / bảng Ticket theo trạng thái (chờ xử lý, đang xử lý, đã xử lý, đã hủy) có thể bấm mở rộng xem chi tiết danh sách ticket.
+  - Danh sách lịch đặt tài nguyên hôm nay (xe, phòng họp).
+  - **🧳 Nhân viên đi công tác hôm nay**: Widget hiển thị danh sách nhân viên đang trong thời gian công tác hôm nay, hiển thị điểm đến và thời gian.
+  - **🏖️ Nhân viên nghỉ phép / việc hôm nay**: Widget hiển thị danh sách nhân viên nghỉ phép hoặc việc riêng trong ngày hôm nay.
+- **User**: Kanban ticket cá nhân, lịch đặt của user, queue position trong hàng đợi ticket, thông báo nội bộ.
 
 ### 👥 Quản lý nhân viên (admin)
 - Bảng + filter phòng ban + tìm kiếm realtime
@@ -179,13 +185,16 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 - **ConnectionManager** (`core/chat_ws.py`): Quản lý kết nối theo `employee_code` (hỗ trợ multi-tab), tự dọn socket chết, broadcast theo danh sách thành viên phòng.
 - **Cascade (D3)**: Xoá User → tin nhắn giữ nguyên, `sender_id` set NULL (`ondelete="SET NULL"`); xoá phòng chat → cascade xoá tin nhắn + thành viên.
 
-### 📅 Đặt lịch — Scheduler Grid (Xe & Phòng họp)
-- **Grid scheduling**: Trục dọc time slots 07:00→19:00 (bước 30 phút), trục ngang resources
+### 📅 Đặt lịch, Công tác & Nghỉ phép — Scheduler Grid & Timeline
+- **3 Tab quản lý**:
+  - **📅 Đặt lịch**: Trục dọc time slots 07:00→19:00 (bước 30 phút), trục ngang resources (Xe, Phòng họp). Hỗ trợ Drag & Drop, Resize, Context Menu, vạch thời gian thực, overlap detection, dark mode.
+  - **🧳 Công tác**: Timeline Gantt chart theo tháng, thống kê trạng thái (Tổng số, Đang công tác, Sắp diễn ra, Đã kết thúc, Đã hủy), đăng ký lịch công tác (điểm đến, mục đích, ngày đi - về, ghi chú).
+  - **🏖️ Nghỉ phép / Việc**: Quản lý lịch nghỉ phép / nghỉ việc riêng cá nhân và phòng ban, hiển thị trực quan theo dạng lịch timeline.
 - **Booking Block**: Block màu chiếm đúng khung giờ, hiển thị title + tên NV + giờ
 - **Drag & Drop**: Kéo thả booking sang resource/giờ khác
 - **Resize**: Kéo handle dưới block để thay đổi thời gian kết thúc
 - **Context Menu**: Chuột phải → Chỉnh sửa / Kết thúc / Hủy
-- **Keyboard shortcuts**: `Ctrl+N` (tạo mới), `F5` (làm mới), `Esc` (đóng), `Ctrl+E` (sửa)
+- **Keyboard shortcuts**: `Ctrl+N` (tạo mới booking / công tác / nghỉ phép tương ứng theo tab đang chọn), `F5` (làm mới), `Esc` (đóng), `Ctrl+E` (sửa)
 - **Dark mode**: Toggle sáng/tối, lưu preference vào sessionStorage
 - **Responsive**: Desktop (grid đầy đủ), Mobile (drawer filter, grid cuộn)
 - **Real-time**: SSE cập nhật booking realtime
@@ -195,6 +204,7 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
   - 🟢 **Đang sử dụng** — đang trong khung giờ
   - ⏰ **Đã hết giờ** (`end_time` đã qua) — opacity thấp, gạch ngang title
 - **Overlap detection**: Client-side (gọi API check) + Server-side (SQL)
+- **Quản lý tài nguyên (Admin)**: Thêm/xoá tài nguyên (Xe 🚗, Phòng họp 🏢), hiển thị số lượt đặt.
 
 ### 🔗 Quy trình User Chia sẻ Link (File & Thư mục)
 

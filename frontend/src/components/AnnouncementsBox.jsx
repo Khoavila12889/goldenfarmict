@@ -3,6 +3,7 @@ import { Megaphone, Bell, Plus, Pin, MessageCircle, Send, X, Trash2, Pencil, Che
 import { getForumPosts, createForumPost, updateForumPost, deleteForumPost, getForumReplies, createForumReply, getForumOnlyOfficeConfig, getEmployees, uploadForumFile, apiUrl } from '../services/api'
 import { formatDate } from '../utils/date'
 import OnlyOfficeViewer from './OnlyOfficeViewer'
+import FileViewer from './FileViewer'
 import ImageLightbox from './ImageLightbox'
 import './AnnouncementsBox.css'
 
@@ -75,8 +76,9 @@ export default function AnnouncementsBox({ compact = false }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  // Preview file đính kèm: OnlyOffice (PDF/Office) + Lightbox (ảnh)
+  // Preview file đính kèm: FileViewer (PDF) + OnlyOffice (Office) + Lightbox (ảnh)
   const [ooFile, setOoFile] = useState(null)
+  const [pdfFile, setPdfFile] = useState(null)
   const [lightbox, setLightbox] = useState({ open: false, slides: [], index: 0 })
   const ooPostId = ooFile?.postId || null
   const fetchForumConfig = useCallback(() => getForumOnlyOfficeConfig(ooPostId), [ooPostId])
@@ -130,7 +132,7 @@ export default function AnnouncementsBox({ compact = false }) {
   }
 
   const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico']
-  const OFFICE_EXTS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'csv', 'txt', 'rtf']
+  const OFFICE_EXTS = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'csv', 'txt', 'rtf']
 
   function openAttachment(p) {
     const url = resolveAttachUrl(p.attachment_url)
@@ -144,6 +146,11 @@ export default function AnnouncementsBox({ compact = false }) {
         slides: [{ src: url, downloadUrl: url, alt: name, title: name, description: p.title || '' }],
         index: 0,
       })
+      return
+    }
+
+    if (ext === 'pdf') {
+      setPdfFile({ name, url, size: p.attachment_size })
       return
     }
 
@@ -583,7 +590,12 @@ export default function AnnouncementsBox({ compact = false }) {
         </>
       )}
 
-      {/* ─── Preview file đính kèm: OnlyOffice (PDF/Office) + Lightbox (ảnh) ─── */}
+      {/* ─── Preview file đính kèm: FileViewer (PDF) + OnlyOffice (Office) + Lightbox (ảnh) ─── */}
+      <FileViewer
+        file={pdfFile}
+        isOpen={!!pdfFile}
+        onClose={() => setPdfFile(null)}
+      />
       <OnlyOfficeViewer
         file={ooFile}
         isOpen={!!ooFile}

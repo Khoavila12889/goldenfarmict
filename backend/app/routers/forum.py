@@ -473,4 +473,12 @@ def serve_forum_file(filename: str):
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File không tồn tại")
 
-    return FileResponse(file_path, filename=filename)
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+    media_type = 'application/pdf' if ext == 'pdf' else None
+    
+    return FileResponse(
+        file_path,
+        media_type=media_type,
+        content_disposition_type="inline",
+        filename=filename
+    )

@@ -190,6 +190,8 @@ export default function Licenses() {
           assetCode: colOf('mã thiết bị', 'ma thiet bi', 'asset_code', 'asset code', 'mã tài sản', 'ma tai san', 'ma ts'),
           serial: colOf('s/n', 'serial', 'serial_number', 'serial number', 'sn'),
           equipmentId: colOf('id thiết bị', 'id thiet bi', 'equipment_id', 'equipment id'),
+          empCode: colOf('mã nhân viên', 'ma nhan vien', 'mã nv', 'ma nv', 'employee_code', 'employee code', 'người sử dụng', 'nguoi su dung'),
+          empName: colOf('tên nhân viên', 'ten nhan vien', 'họ và tên', 'ho va ten', 'họ tên', 'employee_name', 'full_name', 'full name'),
         }
 
         for (let i = 1; i < data.length; i++) {
@@ -207,6 +209,8 @@ export default function Licenses() {
             asset_code: nor(get(colMap.assetCode)),
             serial_number: nor(get(colMap.serial)),
             equipment_id: nor(get(colMap.equipmentId)) || undefined,
+            employee_code: nor(get(colMap.empCode)),
+            employee_name: nor(get(colMap.empName)),
           })
         }
 

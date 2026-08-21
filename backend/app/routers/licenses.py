@@ -118,6 +118,22 @@ def import_licenses(body: dict):
                         {"c": eq_ref},
                     )
                     equipment_id = eq["id"] if eq else None
+                if not equipment_id:
+                    emp_code = _norm(item.get("employee_code"))
+                    emp_name = _norm(item.get("employee_name"))
+                    if not emp_code and emp_name:
+                        emp = fetchone(
+                            "SELECT employee_code FROM employees WHERE LOWER(full_name)=LOWER(:c) LIMIT 1",
+                            {"c": emp_name},
+                        )
+                        emp_code = emp["employee_code"] if emp else ""
+                    if emp_code:
+                        eq = fetchone(
+                            "SELECT id FROM equipment WHERE employee_id = "
+                            "(SELECT id FROM employees WHERE employee_code=:c LIMIT 1) LIMIT 1",
+                            {"c": emp_code},
+                        )
+                        equipment_id = eq["id"] if eq else None
             else:
                 equipment_id = int(equipment_id)
 
@@ -139,6 +155,7 @@ def import_licenses(body: dict):
                         ),
                         {"p": product, "a": activated, "e": expiry, "n": notes, "id": existing[0]},
                     )
+                    sess.commit()
                     stats["updated"] += 1
                 else:
                     sess.execute(
@@ -148,6 +165,7 @@ def import_licenses(body: dict):
                         ),
                         {"eid": equipment_id, "key": lic_key, "p": product, "a": activated, "e": expiry, "n": notes},
                     )
+                    sess.commit()
                     stats["created"] += 1
         except Exception as e:
             stats["errors"].append(f"Dòng {line_no}: {lic_key or ''} — {str(e)}")

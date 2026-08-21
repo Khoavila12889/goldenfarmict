@@ -116,6 +116,16 @@ def import_equipment(body: dict):
                 employee_id = None
                 emp_name = ""
                 emp_code = _norm(item.get("employee_code"))
+                emp_full = _norm(item.get("employee_name"))
+                if not emp_code and emp_full:
+                    emp = sess.execute(
+                        text("SELECT id, employee_code FROM employees WHERE LOWER(full_name) = LOWER(:c) LIMIT 1"),
+                        {"c": emp_full},
+                    ).first()
+                    if emp:
+                        employee_id = emp[0]
+                        emp_code = emp[1]
+                        emp_name = emp_full
                 if emp_code:
                     emp = sess.execute(
                         text("SELECT id, full_name FROM employees WHERE employee_code = :c"),

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { getBusinessTrips, createBusinessTrip, updateBusinessTrip, deleteBusinessTrip } from '../../services/api'
 import BusinessTripDialog from './BusinessTripDialog'
+import LeaveRequestDialog from './LeaveRequestDialog'
 import BusinessTripGrid from './BusinessTripGrid'
 import { formatDateDDMM } from '../../utils/bookingUtils'
 
@@ -25,7 +26,8 @@ function monthEnd(date) {
 
 const MONTHS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']
 
-export default function BusinessTripPanel({ employee, openDialog }) {
+export default function BusinessTripPanel({ employee, openDialog, type = 'business_trip' }) {
+  const isLeave = type === 'leave'
   const [trips, setTrips] = useState([])
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -165,7 +167,7 @@ export default function BusinessTripPanel({ employee, openDialog }) {
         <div className="bk-toolbar-row">
           <div className="bk-toolbar-left">
             <button className="bk-btn bk-btn-primary" onClick={() => { setEditTrip(null); setDialogOpen(true) }}>
-              + Đăng ký công tác
+              {isLeave ? '🏖️ Đăng ký nghỉ phép' : '+ Đăng ký công tác'}
             </button>
             <button className={`bk-btn ${filter === '' ? 'bk-btn-active' : ''}`}
               onClick={() => setFilter('')}>Tất cả</button>
@@ -296,13 +298,26 @@ export default function BusinessTripPanel({ employee, openDialog }) {
         </div>
       )}
 
-      <BusinessTripDialog
-        isOpen={dialogOpen}
-        onClose={() => setDialogOpen(false)}
-        onSubmit={handleSubmit}
-        employee={employee}
-        initialData={editTrip}
-      />
+      {isLeave && !editTrip ? (
+        <LeaveRequestDialog
+          isOpen={dialogOpen}
+          onClose={() => setDialogOpen(false)}
+          onSuccess={() => {
+            setMsg('✅ Đã gửi đơn xin nghỉ phép')
+            loadTrips()
+            setTimeout(() => setMsg(''), 3000)
+          }}
+          employee={employee}
+        />
+      ) : (
+        <BusinessTripDialog
+          isOpen={dialogOpen}
+          onClose={() => setDialogOpen(false)}
+          onSubmit={handleSubmit}
+          employee={employee}
+          initialData={editTrip}
+        />
+      )}
     </div>
   )
 }

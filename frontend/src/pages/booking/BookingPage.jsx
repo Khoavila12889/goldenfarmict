@@ -29,7 +29,7 @@ export default function BookingPage() {
     return sessionStorage.getItem('bk_dark_mode') === 'true'
   })
   const [searchTerm, setSearchTerm] = useState('')
-  const [tab, setTab] = useState('bookings')
+  const [tab, setTab] = useState('bookings') // 'bookings' | 'trips' | 'leaves'
 
   // Resource management
   const userRole = sessionStorage.getItem('user_role')
@@ -156,7 +156,7 @@ export default function BookingPage() {
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
         e.preventDefault()
-        if (tab === 'trips') {
+        if (tab === 'trips' || tab === 'leaves') {
           handleNewTrip()
         } else {
           setDialogOpen(true)
@@ -184,6 +184,7 @@ export default function BookingPage() {
     <div className="booking-module">
       <div className={`bk-layout${drawerOpen ? ' bk-layout-drawer-open' : ''}`}>
         <div className="bk-layout-main">
+          {/* TAB BAR: Thêm tab Nghỉ phép/việc */}
           <div className="bk-tabs">
             <button className={`bk-tab${tab === 'bookings' ? ' active' : ''}`} onClick={() => setTab('bookings')}>
               📅 Đặt lịch
@@ -191,13 +192,26 @@ export default function BookingPage() {
             <button className={`bk-tab${tab === 'trips' ? ' active' : ''}`} onClick={() => setTab('trips')}>
               🧳 Công tác
             </button>
+            <button className={`bk-tab${tab === 'leaves' ? ' active' : ''}`} onClick={() => setTab('leaves')}>
+              🏖️ Nghỉ phép / Việc
+            </button>
           </div>
 
+          {/* HIỂN THỊ THEO TAB KHÁC NHAU */}
           {tab === 'trips' ? (
             <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
               <BusinessTripPanel
                 employee={employee}
                 openDialog={tripDialogRequest}
+                type="business_trip"
+              />
+            </div>
+          ) : tab === 'leaves' ? (
+            <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+              <BusinessTripPanel
+                employee={employee}
+                openDialog={tripDialogRequest}
+                type="leave"
               />
             </div>
           ) : loading && bookings.length === 0 ? (

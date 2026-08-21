@@ -180,19 +180,12 @@ export default function FileViewer({ file, isOpen, onClose }) {
           {isPdf && (
             <div className="fv-pdf-container">
               {!pdfLoaded && <div className="fv-loading"><div className="fv-spinner" /><p>Đang tải PDF...</p></div>}
-              <object
-                data={file.url}
-                type="application/pdf"
+              <iframe
+                src={file.url}
+                title={file.name}
                 className="fv-pdf-object"
                 onLoad={() => setPdfLoaded(true)}
-              >
-                <div className="fv-fallback">
-                  <p>Trình duyệt không hỗ trợ xem PDF trực tiếp.</p>
-                  <a href={file.url} target="_blank" className="fv-btn fv-btn-primary" rel="noopener noreferrer">
-                    <Download size={16} /> Nhấn vào đây để xem / tải xuống
-                  </a>
-                </div>
-              </object>
+              />
             </div>
           )}
 
