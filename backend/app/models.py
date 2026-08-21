@@ -194,6 +194,8 @@ class BusinessTrip(Base):
     end_date = Column(String, nullable=False)
     notes = Column(Text, default='')
     status = Column(String, default='active', index=True)
+    type = Column(String, default='business_trip', index=True)
+    approval_request_id = Column(Integer, default=0)
     completed_at = Column(String, default='')
     created_at = Column(String, default='')
     updated_at = Column(String, default='')

@@ -170,6 +170,7 @@
   width: 100%;
   height: 100%;
   display: flex;
+  flex-direction: column;
   background: #fff;
 }
 
@@ -177,6 +178,24 @@
   width: 100%;
   height: 100%;
   border: none;
+  flex: 1;
+}
+
+.fv-pdf-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: #f1f5f9;
+  border-top: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.fv-pdf-hint {
+  margin-right: auto;
+  font-size: 0.78rem;
+  color: #64748b;
 }
 
 .fv-fallback {

@@ -100,7 +100,9 @@ export function updateUsername(employee_code, username) {
 }
 
 export function getDashboardStats() {
-  return api.get('/dashboard/stats')
+  const userCode = sessionStorage.getItem('user_code') || ''
+  const userRole = sessionStorage.getItem('user_role') || ''
+  return api.get('/dashboard/stats', { params: { user_code: userCode, user_role: userRole } })
 }
 
 export function getEmployees(keyword = '', department = '', status = '') {

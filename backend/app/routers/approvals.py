@@ -19,15 +19,54 @@ def _employee(code):
     )
 
 
+def _materialize_trip_from_request(req):
+    """Khi đơn nghỉ phép / công tác được duyệt xong → ghi vào business_trips để hiện trên lịch & dashboard."""
+    rid = req["id"]
+    try:
+        meta = json.loads(req.get("metadata_json") or "{}")
+    except Exception:
+        meta = {}
+    kind = meta.get("kind", "")
+    if kind not in ("leave", "business_trip"):
+        return
+    existing = fetchone(
+        "SELECT id FROM business_trips WHERE approval_request_id=:rid",
+        {"rid": rid}
+    )
+    if existing:
+        return
+    insert(
+        "INSERT INTO business_trips (employee_code, full_name, department, destination, purpose, start_date, end_date, notes, status, type, approval_request_id) VALUES (:employee_code, :full_name, :department, :destination, :purpose, :start_date, :end_date, :notes, 'active', :type, :rid)",
+        {
+            "employee_code": meta.get("employee_code", ""),
+            "full_name": meta.get("full_name", "") or req.get("requester_name", ""),
+            "department": meta.get("department", "") or req.get("requester_dept", ""),
+            "destination": meta.get("destination", ""),
+            "purpose": meta.get("purpose", "") or req.get("description", ""),
+            "start_date": meta.get("start_date", ""),
+            "end_date": meta.get("end_date", ""),
+            "notes": json.dumps(meta, ensure_ascii=False),
+            "type": meta.get("kind", "business_trip"),
+            "rid": rid,
+        }
+    )
+    publish_sync("trip_created", {"id": rid, "approval_request_id": rid})
+
+
 # ─── WORKFLOW TEMPLATES ─────────────────────────────────────────
 
 
 @router.get("/workflows")
 def list_workflows(active: bool = Query(True)):
-    rows = fetchall(
-        "SELECT * FROM workflow_templates WHERE is_active=:active ORDER BY id",
-        {"active": 1 if active else 0}
-    )
+    # active=True  → chỉ trả template ĐANG hoạt động VÀ có ít nhất 1 bước duyệt
+    # active=False → trả TẤT CẢ template (cả active lẫn inactive) cho trang quản trị
+    if active:
+        rows = fetchall(
+            "SELECT * FROM workflow_templates WHERE is_active=:active ORDER BY id",
+            {"active": True}
+        )
+    else:
+        rows = fetchall("SELECT * FROM workflow_templates ORDER BY id")
     for r in rows:
         r["steps"] = fetchall(
             "SELECT * FROM workflow_steps WHERE template_id=:id ORDER BY step_order",
@@ -300,7 +339,7 @@ def submit_request(req_id: int):
         "UPDATE approval_requests SET status='pending', updated_at=CURRENT_TIMESTAMP::text WHERE id=:id",
         {"id": req_id}
     )
-    publish_sync("request_submitted", {"id": req_id, "title": req["title"]})
+    publish_sync("request_submitted", {"id": req_id, "title": req["title"], "requester_code": req.get("requester_code", "")})
     return {"success": True}
 
 
@@ -342,12 +381,13 @@ def approve_request(req_id: int, body: dict):
             "UPDATE approval_requests SET status='approved', updated_at=CURRENT_TIMESTAMP::text WHERE id=:id",
             {"id": req_id}
         )
+        _materialize_trip_from_request(req)
     else:
         execute(
             "UPDATE approval_requests SET status='in_progress', current_step=:step, updated_at=CURRENT_TIMESTAMP::text WHERE id=:id",
             {"step": next_step, "id": req_id}
         )
-    publish_sync("request_approved", {"id": req_id})
+    publish_sync("request_approved", {"id": req_id, "title": req["title"], "requester_code": req.get("requester_code", ""), "approver_code": approver_code, "approver_name": emp["full_name"]})
     return {"success": True}
 
 
@@ -372,5 +412,5 @@ def reject_request(req_id: int, body: dict):
         "UPDATE approval_requests SET status='rejected', updated_at=CURRENT_TIMESTAMP::text WHERE id=:id",
         {"id": req_id}
     )
-    publish_sync("request_rejected", {"id": req_id})
+    publish_sync("request_rejected", {"id": req_id, "title": req["title"], "requester_code": req.get("requester_code", ""), "approver_code": approver_code, "approver_name": emp["full_name"]})
     return {"success": True}

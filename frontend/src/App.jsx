@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard'
 import Employees from './pages/Employees'
 import Tickets from './pages/Tickets'
 import BookingPage from './pages/booking/BookingPage'
+import NghiPhep from './pages/nghiphep'
 import Licenses from './pages/Licenses'
 import Equipment from './pages/Equipment'
 import Approvals from './pages/Approvals'
@@ -58,6 +59,7 @@ export default function App() {
         <Route path="employees" element={<AdminRoute requiredModule="employees"><Employees /></AdminRoute>} />
         <Route path="tickets" element={<Tickets />} />
         <Route path="bookings" element={<BookingPage />} />
+        <Route path="nghiphep" element={<NghiPhep />} />
         <Route path="licenses" element={<AdminRoute requiredModule="licenses"><Licenses /></AdminRoute>} />
         <Route path="equipment" element={<AdminRoute requiredModule="equipment"><Equipment /></AdminRoute>} />
         <Route path="approvals" element={<Approvals />} />

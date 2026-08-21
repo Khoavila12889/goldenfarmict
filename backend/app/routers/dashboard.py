@@ -1,11 +1,12 @@
-from fastapi import APIRouter
+import json
+from fastapi import APIRouter, Query
 from ..core.db import fetchall, fetchone, execute
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 
 @router.get("/stats")
-def dashboard_stats():
+def dashboard_stats(user_code: str = Query(""), user_role: str = Query("")):
     total_employees = fetchone("SELECT COUNT(*) as cnt FROM employees WHERE status='active'")
     total_equipment = fetchone("SELECT COUNT(*) as cnt FROM equipment")
     pending_tickets = fetchone("SELECT COUNT(*) as cnt FROM tickets WHERE status='Cho xu ly'")
@@ -31,7 +32,7 @@ def dashboard_stats():
     # Lọc danh sách công tác / nghỉ phép đang hoạt động hôm nay
     # Status active hoặc approved (hỗ trợ cả active và approved)
     active_absences = fetchall(
-        "SELECT bt.id, bt.employee_code, bt.destination, bt.purpose, bt.start_date, bt.end_date, bt.status, "
+        "SELECT bt.id, bt.employee_code, bt.destination, bt.purpose, bt.start_date, bt.end_date, bt.status, bt.type, "
         "COALESCE(e.full_name, bt.full_name) as full_name, "
         "COALESCE(e.department, bt.department) as department "
         "FROM business_trips bt "
@@ -62,6 +63,58 @@ def dashboard_stats():
         else:
             trips_today.append(item)
 
+    # ── Nhân viên ĐANG XIN nghỉ phép / công tác (approval_request chờ duyệt) ──
+    # - admin: toàn công ty
+    # - head: chỉ nhân viên cùng phòng ban
+    # - user: chỉ đơn của chính mình
+    pending_sql = (
+        "SELECT id, title, requester_code, requester_name, requester_dept, status, created_at, metadata_json "
+        "FROM approval_requests "
+        "WHERE status IN ('pending','in_progress') "
+        "AND metadata_json::jsonb ? 'kind' "
+        "AND metadata_json::jsonb->>'kind' IN ('leave','business_trip')"
+    )
+    pending_params = {}
+
+    emp = fetchone(
+        "SELECT department FROM employees WHERE employee_code=:code",
+        {"code": user_code}
+    ) if user_code else None
+    dept = (emp or {}).get("department", "") if emp else ""
+
+    if user_role == "head" and dept:
+        pending_sql += " AND requester_dept=:dept"
+        pending_params["dept"] = dept
+    elif user_role == "user" and user_code:
+        pending_sql += " AND requester_code=:code"
+        pending_params["code"] = user_code
+
+    pending_sql += " ORDER BY id DESC"
+    pending_rows = fetchall(pending_sql, pending_params)
+
+    pending_items = []
+    seen_emps = set()
+    for p in pending_rows:
+        try:
+            meta = json.loads(p.get("metadata_json") or "{}")
+        except Exception:
+            meta = {}
+        code = p.get("requester_code", "")
+        if code:
+            seen_emps.add(code)
+        pending_items.append({
+            "request_id": p.get("id"),
+            "employee_code": code,
+            "full_name": p.get("requester_name") or "",
+            "department": p.get("requester_dept") or "",
+            "kind": meta.get("kind", ""),
+            "title": p.get("title") or "",
+            "start_date": meta.get("start_date", ""),
+            "end_date": meta.get("end_date", ""),
+            "status": p.get("status", ""),
+            "created_at": str(p.get("created_at", "")),
+        })
+
     return {
         "total_employees": total_employees["cnt"],
         "total_equipment": total_equipment["cnt"],
@@ -77,4 +130,9 @@ def dashboard_stats():
         "leaves_today": leaves_today,
         "trips_count": len(trips_today),
         "leaves_count": len(leaves_today),
+        "pending_absences": {
+            "total_requests": len(pending_items),
+            "total_employees": len(seen_emps),
+            "items": pending_items,
+        },
     }

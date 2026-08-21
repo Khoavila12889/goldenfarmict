@@ -149,12 +149,8 @@ export default function AnnouncementsBox({ compact = false }) {
       return
     }
 
-    if (ext === 'pdf') {
-      setPdfFile({ name, url, size: p.attachment_size })
-      return
-    }
-
-    if (OFFICE_EXTS.includes(ext) && String(p.attachment_url || '').startsWith('/api/forum/uploads/')) {
+    // PDF + file office đọc qua ONLYOFFICE (render được trên mọi trình duyệt, kể cả Brave/mobile/iOS)
+    if ((ext === 'pdf' || OFFICE_EXTS.includes(ext)) && String(p.attachment_url || '').startsWith('/api/forum/uploads/')) {
       setOoFile({ name, url, postId: p.id })
       return
     }

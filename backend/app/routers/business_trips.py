@@ -13,6 +13,7 @@ def list_trips(
     date_from: str = Query(""),
     date_to: str = Query(""),
     status: str = Query(""),
+    type: str = Query(""),
 ):
     sql = "SELECT * FROM business_trips WHERE 1=1"
     params = {}
@@ -30,6 +31,9 @@ def list_trips(
     if status:
         sql += " AND status=:status"
         params["status"] = status
+    if type:
+        sql += " AND type=:type"
+        params["type"] = type
 
     sql += " ORDER BY start_date DESC"
     rows = fetchall(sql, params)
@@ -39,15 +43,16 @@ def list_trips(
 @router.post("")
 def create_trip(body: dict):
     new_id = insert("""
-        INSERT INTO business_trips (employee_code, full_name, department,
+        INSERT INTO business_trips (employee_code, full_name, department, type,
                                     destination, purpose, start_date, end_date, notes, status)
-        VALUES (:employee_code, :full_name, :department, :destination, :purpose,
+        VALUES (:employee_code, :full_name, :department, :type, :destination, :purpose,
                 :start_date, :end_date, :notes, 'active')
         RETURNING id
     """, {
         "employee_code": body.get("employee_code", ""),
         "full_name": body.get("full_name", ""),
         "department": body.get("department", ""),
+        "type": body.get("type", "business_trip"),
         "destination": body.get("destination", ""),
         "purpose": body.get("purpose", ""),
         "start_date": body.get("start_date"),

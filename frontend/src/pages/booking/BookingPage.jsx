@@ -192,9 +192,6 @@ export default function BookingPage() {
             <button className={`bk-tab${tab === 'trips' ? ' active' : ''}`} onClick={() => setTab('trips')}>
               🧳 Công tác
             </button>
-            <button className={`bk-tab${tab === 'leaves' ? ' active' : ''}`} onClick={() => setTab('leaves')}>
-              🏖️ Nghỉ phép / Việc
-            </button>
           </div>
 
           {/* HIỂN THỊ THEO TAB KHÁC NHAU */}
@@ -204,14 +201,6 @@ export default function BookingPage() {
                 employee={employee}
                 openDialog={tripDialogRequest}
                 type="business_trip"
-              />
-            </div>
-          ) : tab === 'leaves' ? (
-            <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-              <BusinessTripPanel
-                employee={employee}
-                openDialog={tripDialogRequest}
-                type="leave"
               />
             </div>
           ) : loading && bookings.length === 0 ? (

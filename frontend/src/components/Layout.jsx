@@ -3,7 +3,8 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { 
   LayoutDashboard, Users, Monitor, Key, Ticket, CheckCircle, 
   Settings, Calendar, Receipt, Folder, Shield, Menu, X, User, 
-  Lock, Eye, EyeOff, CheckSquare, HelpCircle, Activity, MessageSquare 
+  Lock, Eye, EyeOff, CheckSquare, HelpCircle, Activity, MessageSquare,
+  CalendarOff
 } from 'lucide-react'
 import { changePassword, getProfile, apiUrl } from '../services/api'
 import { driver } from 'driver.js'
@@ -21,6 +22,7 @@ const iconMap = {
   approvals: CheckCircle,
   workflows: Settings,
   bookings: Calendar,
+  nghiphep: CalendarOff,
   documents: Folder,
   salary: Receipt,
   salaryAdmin: Receipt,
@@ -41,6 +43,7 @@ const allNavItems = [
   { path: '/approvals', label: 'Phê duyệt', icon: 'approvals', roles: ['user', 'head', 'admin'] },
   { path: '/workflows', label: 'Quy trình', icon: 'workflows', roles: ['head', 'admin'] },
   { path: '/bookings', label: 'Lịch(Booking)', icon: 'bookings', roles: ['user', 'head', 'admin'] },
+  { path: '/nghiphep', label: 'Nghỉ phép', icon: 'nghiphep', roles: ['user', 'head', 'admin'] },
   { path: '/documents', label: 'Tài liệu', icon: 'documents', roles: ['user', 'head', 'admin'] },
   { path: '/salary-slip', label: 'Phiếu lương', icon: 'salary', roles: ['user', 'head', 'admin'] },
   { path: '/salary-slip-admin', label: 'Quản lý lương', icon: 'salaryAdmin', roles: ['head', 'admin'] },
@@ -60,6 +63,7 @@ const MODULE_MAP = {
   '/approvals': 'approvals',
   '/workflows': 'workflows',
   '/bookings': 'bookings',
+  '/nghiphep': 'nghiphep',
   '/documents': 'documents',
   '/salary-slip': 'salary',
   '/salary-slip-admin': 'salary-admin',

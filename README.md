@@ -51,13 +51,18 @@ Hệ thống quản lý ICT nội bộ — Quản lý nhân viên, thiết bị,
 ## Features
 
 ### 📊 Dashboard
+- **Giao diện mới** (`frontend/src/pages/dashboard.css`, class `d-*`): layout **NEXUS CORE ERP** — hàng **5 thẻ KPI** (Tổng NV, Thiết bị, Ticket chờ xử lý, Lịch đặt hôm nay, **NV xin nghỉ/công tác**), nội dung chính **65/35** (Thông báo nội bộ + Ticket theo trạng thái), khu sự kiện dạng lưới. **Click vào thẻ số liệu** mở modal xem chi tiết danh sách (cuộn khi nhiều).
 - **Admin**:
-  - 4 thẻ KPI thống kê tổng quan (Tổng NV, Thiết bị quản lý, Ticket chờ xử lý, Lịch đặt hôm nay).
+  - 5 thẻ KPI thống kê tổng quan (Tổng NV, Thiết bị quản lý, Ticket chờ xử lý, Lịch đặt hôm nay, **NV xin nghỉ/công tác**). Click thẻ **Lịch đặt hôm nay** / **NV xin nghỉ/công tác** → modal chi tiết.
   - Khung thông báo nội bộ (AnnouncementsBox).
-  - Biểu đồ / bảng Ticket theo trạng thái (chờ xử lý, đang xử lý, đã xử lý, đã hủy) có thể bấm mở rộng xem chi tiết danh sách ticket.
-  - Danh sách lịch đặt tài nguyên hôm nay (xe, phòng họp).
-  - **🧳 Nhân viên đi công tác hôm nay**: Widget hiển thị danh sách nhân viên đang trong thời gian công tác hôm nay, hiển thị điểm đến và thời gian.
-  - **🏖️ Nhân viên nghỉ phép / việc hôm nay**: Widget hiển thị danh sách nhân viên nghỉ phép hoặc việc riêng trong ngày hôm nay.
+  - Bảng Ticket theo trạng thái (chờ xử lý, đang xử lý, đã xử lý, đã hủy) pill tags, bấm mở rộng xem danh sách ticket.
+  - **🧳 Nhân viên đi công tác hôm nay**: Widget danh sách NV đang công tác hôm nay, điểm đến, thời gian (bấm "Xem tất cả" mở modal).
+- **User / Trưởng phòng**:
+  - **Đơn chờ duyệt** (trưởng phòng): widget **🗂️ Đơn chờ duyệt** + nút Duyệt/Từ chối.
+  - **Trạng thái đơn của tôi**: widget **📋 Trạng thái đơn của tôi** (nghỉ phép/công tác — chờ duyệt / đã duyệt / bị từ chối).
+  - **NV phòng đang xin nghỉ/công tác** (trưởng phòng): liệt kê nhân viên phòng mình đang xin, click "Xem tất cả".
+  - Lịch đặt của user, ticket cá nhân, queue position, thông báo nội bộ.
+- **Định dạng ngày**: hiển thị `dd/mm/yyyy` toàn dashboard.
 - **User**: Kanban ticket cá nhân, lịch đặt của user, queue position trong hàng đợi ticket, thông báo nội bộ.
 
 ### 👥 Quản lý nhân viên (admin)
@@ -78,6 +83,7 @@ Hệ thống quản lý ICT nội bộ — Quản lý nhân viên, thiết bị,
 - **Icons**: lucide-react (Monitor, Laptop, Printer, CheckCircle, v.v.) — không dùng emoji
 - **Phân tích thông số**: CPU, RAM, Ổ cứng, HĐH (từ specs string), hiển thị dạng card với border-left color
 - **Cấp phát**: Search dropdown nhân viên (giữ nguyên API)
+- **Bàn giao (Handover)**: thiết bị đang sử dụng có nút **Bàn giao** → mở ô tìm nhân viên mới → gọi `PUT /equipment/{id}/transfer` (đóng lịch sử cũ, gán NV mới). Thiết bị trong kho dùng **Cấp phát** (`/allocate`).
 - **Thu hồi về kho** (giữ nguyên API)
 - **Lịch sử bàn giao** (handover/return date) với timeline UI
 - **Density**: 3 mức (compact/normal/comfortable), lưu vào localStorage
@@ -111,6 +117,32 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 - Duyệt: chuyển sang bước tiếp theo (hoặc hoàn tất nếu là bước cuối)
 - Từ chối: kết thúc phiếu với trạng thái `rejected`
 - SSE realtime: thông báo khi có phiếu mới cần duyệt
+
+**Tích hợp Đăng ký Nghỉ phép / Công tác (Booking module):**
+- Đăng ký nghỉ phép (tab **Nghỉ phép / Việc**) và đăng ký công tác (tab **Công tác**) nay đi qua **cùng kênh duyệt** này thay vì tạo thẳng lịch.
+- Quy trình duyệt được **tự chọn tự động** theo loại:
+  - Nghỉ phép → template có tên chứa `nghỉ` / `phép` / `leave`.
+  - Công tác → template có tên chứa `công tác` / `trip` / `business`.
+  - Không tìm thấy → dùng template active đầu tiên (fallback). Nếu không có workflow active, form báo lỗi hướng dẫn liên hệ quản trị viên.
+- Trạng thái phiếu của user: `Nháp` → `Chờ duyệt` → `Đang duyệt` → `Đã duyệt` / `Bị từ chối`.
+
+**Dashboard — widget duyệt & trạng thái:**
+- **Trưởng phòng (role `head`)**: widget **🗂️ Đơn chờ duyệt** ngay trên Dashboard — hiển thị đơn nghỉ phép/công tác của phòng ban mình và nút **✅ Duyệt / ❌ Từ chối**. Chỉ người đúng chức vụ + cùng phòng ban với người gửi mới thấy/duyệt được.
+- **Mọi user**: widget **📋 Trạng thái đơn của tôi** — xem trạng thái duyệt của các đơn mình đã gửi (`chờ duyệt / đã duyệt / bị từ chối / nháp / hủy`).
+- **SSE realtime + Toast:**
+  - Có đơn mới gửi → **trưởng phòng** nhận toast "📥 Đơn mới chờ duyệt" và list tự cập nhật.
+  - Đơn được duyệt/từ chối → **user sở hữu đơn** nhận toast "✅ đã được duyệt" / "❌ bị từ chối", trạng thái đơn cập nhật realtime (không cần refresh).
+  - Sau khi trưởng phòng duyệt xong, `loadData` chạy lại để dashboard lịch hôm nay cập nhật.
+
+**Lưu trữ sau khi duyệt:**
+- Khi phiếu đạt trạng thái **`approved`** (hết tất cả bước duyệt), backend **tự ghi vào bảng `business_trips`** (status `active`) để lịch nghỉ phép/công tác hiển thị trên Dashboard "Nhân viên đi công tác / nghỉ hôm nay" và booking page.
+- Gắn `business_trips.approval_request_id` để tránh trùng lặp khi đơn được tạo lại (idempotent).
+- Nếu phiếu **từ chối/huỷ** → không ghi vào `business_trips`.
+
+> **⚠️ Cần cấu hình trước:** Hệ duyệt dựa trên `workflow_templates` + `workflow_steps`.
+> 1. Phải có ≥ 1 workflow active (admin tạo ở trang **Workflow Templates**). Nếu chỉ muốn nghỉ phép, đặt tên chứa `nghỉ phép` để tự ưu tiên.
+> 2. Bước duyệt cần cấu hình `approver_type='role'`, `approver_value` = đúng **chức danh (position)** của trưởng phòng (VD `Trưởng phòng`), bật `department_match` (cùng phòng ban).
+> 3. Sau khi thêm cột mới (`business_trips.approval_request_id`) cần khởi động lại backend để migration chạy: `docker compose restart backend`.
 
 ### 💰 Quản lý phiếu lương (Salary Slip)
 
@@ -190,6 +222,8 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
   - **📅 Đặt lịch**: Trục dọc time slots 07:00→19:00 (bước 30 phút), trục ngang resources (Xe, Phòng họp). Hỗ trợ Drag & Drop, Resize, Context Menu, vạch thời gian thực, overlap detection, dark mode.
   - **🧳 Công tác**: Timeline Gantt chart theo tháng, thống kê trạng thái (Tổng số, Đang công tác, Sắp diễn ra, Đã kết thúc, Đã hủy), đăng ký lịch công tác (điểm đến, mục đích, ngày đi - về, ghi chú).
   - **🏖️ Nghỉ phép / Việc**: Quản lý lịch nghỉ phép / nghỉ việc riêng cá nhân và phòng ban, hiển thị trực quan theo dạng lịch timeline.
+- **🏖️ Module Nghỉ phép riêng (`/nghiphep`)**: Nghỉ phép được **tách thành module độc lập** (`frontend/src/pages/nghiphep.jsx`) thay vì nằm trong booking — gồm đăng ký đơn nghỉ phép + danh sách đơn & trạng thái duyệt của chính mình. Module nằm trong **hệ thống phân quyền** (module key `nghiphep`, mặc định bật cho mọi role, bật/tắt được ở trang Phân quyền). Form đăng ký hỗ trợ nghỉ **Cả ngày / Buổi sáng / Buổi chiều / Theo giờ** (từ giờ → đến giờ, lưu `session='hourly'`, `start_time`, `end_time`, `hours`).
+- **Phân loại Công tác / Nghỉ phép bằng cột `type`**: bảng `business_trips` có thêm cột `type` (`business_trip` | `leave`) để tách rõ. Tab **Công tác** chỉ hiển thị `type='business_trip'`; nghỉ phép sau khi duyệt ghi vào `business_trips` với `type='leave'`. Dashboard phân loại `trips_today` / `leaves_today` theo cột này.
 - **Booking Block**: Block màu chiếm đúng khung giờ, hiển thị title + tên NV + giờ
 - **Drag & Drop**: Kéo thả booking sang resource/giờ khác
 - **Resize**: Kéo handle dưới block để thay đổi thời gian kết thúc
@@ -692,7 +726,7 @@ goldenfarm-ict-web/
 | `PUT` | `/api/requests/{id}` | Sửa phiếu (chỉ draft) |
 | `PUT` | `/api/requests/{id}/submit` | Gửi duyệt (draft → pending) |
 | `PUT` | `/api/requests/{id}/cancel` | Huỷ phiếu |
-| `PUT` | `/api/requests/{id}/approve` | Phê duyệt bước hiện tại |
+| `PUT` | `/api/requests/{id}/approve` | Phê duyệt bước hiện tại (duyệt xong → ghi vào `business_trips` nếu là đơn nghỉ phép/công tác) |
 | `PUT` | `/api/requests/{id}/reject` | Từ chối phiếu |
 
 ### System
@@ -763,7 +797,7 @@ goldenfarm-ict-web/
 | `user_permissions` | 10 | Permission module theo user |
 | `resources` | 7 | Xe + Phòng họp, is_active |
 | `bookings` | 81 | resource_id, book_date, start/end_time, status |
-| `business_trips` | 21 | employee_code, destination, start/end_date, status |
+| `business_trips` | 21 | employee_code, destination, purpose, start/end_date, status, type (`business_trip`\|`leave`), approval_request_id |
 | `workflow_templates` | 3 | name, icon, is_active |
 | `workflow_steps` | 1 | template_id, step_order, approver_type/role/department_match |
 | `approval_requests` | 1 | requester_code, status, current_step, total_steps |

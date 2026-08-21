@@ -18,6 +18,7 @@ const MODULES = [
   { key: 'tickets', label: 'Tickets', group: 'support', desc: 'Yêu cầu hỗ trợ IT' },
   { key: 'approvals', label: 'Phê duyệt', group: 'support', desc: 'Phê duyệt yêu cầu' },
   { key: 'bookings', label: 'Lịch (Booking)', group: 'support', desc: 'Đặt lịch xe & phòng họp' },
+  { key: 'nghiphep', label: 'Nghỉ phép', group: 'support', desc: 'Đăng ký & theo dõi đơn nghỉ phép / việc' },
   { key: 'documents', label: 'Tài liệu', group: 'support', desc: 'Truy cập tài liệu dùng chung' },
   { key: 'salary', label: 'Phiếu lương', group: 'support', desc: 'Xem phiếu lương cá nhân' },
   { key: 'salary-pdf', label: 'Tải PDF lương', group: 'support', desc: 'Cho phép tải PDF phiếu lương' },

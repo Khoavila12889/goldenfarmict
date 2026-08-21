@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { getBusinessTrips, createBusinessTrip, updateBusinessTrip, deleteBusinessTrip } from '../../services/api'
+import { getBusinessTrips, updateBusinessTrip, deleteBusinessTrip, createApprovalRequest, submitApprovalRequest } from '../../services/api'
+import { getApprovalTemplate } from '../../utils/approvalTemplate'
 import BusinessTripDialog from './BusinessTripDialog'
 import LeaveRequestDialog from './LeaveRequestDialog'
 import BusinessTripGrid from './BusinessTripGrid'
@@ -63,6 +64,7 @@ export default function BusinessTripPanel({ employee, openDialog, type = 'busine
       const params = {
         date_from: dateRange.start,
         date_to: dateRange.end,
+        type: type,
       }
       if (filter === 'mine') params.employee_code = userCode
       const res = await getBusinessTrips(params)
@@ -97,8 +99,28 @@ export default function BusinessTripPanel({ employee, openDialog, type = 'busine
         await updateBusinessTrip(editId, data)
         setMsg('✅ Cập nhật thành công')
       } else {
-        await createBusinessTrip(data)
-        setMsg('✅ Đăng ký thành công')
+        // Đăng ký công tác mới → đi qua quy trình duyệt của trưởng phòng
+        const template = await getApprovalTemplate('business_trip')
+        if (!template) {
+          setMsg('⚠️ Chưa có quy trình duyệt (workflow) nào để gửi đơn. Liên hệ quản trị viên.')
+          return { error: 'Không có workflow duyệt' }
+        }
+        const created = await createApprovalRequest({
+          template_id: template.id,
+          title: `Đơn đăng ký công tác: ${data.full_name || ''} - ${data.destination || ''}`,
+          description: `Nơi đến: ${data.destination}\nMục đích: ${data.purpose}\nTừ ${data.start_date} đến ${data.end_date}`,
+          requester_code: data.employee_code || '',
+          metadata: {
+            kind: 'business_trip',
+            ...data,
+            destination: data.destination,
+            purpose: data.purpose,
+          },
+        })
+        if (created?.data?.id) {
+          await submitApprovalRequest(created.data.id)
+        }
+        setMsg('✅ Đã gửi đơn công tác, chờ trưởng phòng duyệt')
       }
       await loadTrips()
       setTimeout(() => setMsg(''), 3000)

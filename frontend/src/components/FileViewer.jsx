@@ -12,6 +12,18 @@ function isTextFile(name) {
   return textExts.includes(getExt(name))
 }
 
+// Trình duyệt không có PDF engine tích hợp (Brave, iOS/Safari, Samsung…) → iframe PDF không render được
+function isPdfUnsupported() {
+  try {
+    const ua = navigator.userAgent || ''
+    if (/iPad|iPhone|iPod/.test(ua) || (navigator.platform && /Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1)) return true
+    if (navigator.brave) return true
+    return false
+  } catch (_) {
+    return false
+  }
+}
+
 export default function FileViewer({ file, isOpen, onClose }) {
   const [textContent, setTextContent] = useState('')
   const [textLoading, setTextLoading] = useState(false)
@@ -19,6 +31,7 @@ export default function FileViewer({ file, isOpen, onClose }) {
   const [imgLoaded, setImgLoaded] = useState(false)
   const [imgError, setImgError] = useState(null)
   const [pdfLoaded, setPdfLoaded] = useState(false)
+  const [pdfFallback, setPdfFallback] = useState(false)
   const mediaRef = useRef(null)
 
   useEffect(() => {
@@ -29,6 +42,7 @@ export default function FileViewer({ file, isOpen, onClose }) {
       setImgLoaded(false)
       setImgError(null)
       setPdfLoaded(false)
+      setPdfFallback(false)
     }
   }, [isOpen])
 
@@ -80,6 +94,15 @@ export default function FileViewer({ file, isOpen, onClose }) {
     if (!isOpen || !file) return
     if (getExt(file.name) !== 'pdf') return
     const timer = setTimeout(() => setPdfLoaded(true), 2000)
+    return () => clearTimeout(timer)
+  }, [isOpen, file])
+
+  // Nếu iframe không render được (Brave/iOS/mobile) → chuyển sang chế độ fallback
+  useEffect(() => {
+    if (!isOpen || !file) return
+    if (getExt(file.name) !== 'pdf') return
+    if (!isPdfUnsupported()) return
+    const timer = setTimeout(() => setPdfFallback(true), 600)
     return () => clearTimeout(timer)
   }, [isOpen, file])
 
@@ -177,7 +200,7 @@ export default function FileViewer({ file, isOpen, onClose }) {
             </div>
           )}
 
-          {isPdf && (
+          {isPdf && !pdfFallback && (
             <div className="fv-pdf-container">
               {!pdfLoaded && <div className="fv-loading"><div className="fv-spinner" /><p>Đang tải PDF...</p></div>}
               <iframe
@@ -186,6 +209,30 @@ export default function FileViewer({ file, isOpen, onClose }) {
                 className="fv-pdf-object"
                 onLoad={() => setPdfLoaded(true)}
               />
+              <div className="fv-pdf-bar">
+                <span className="fv-pdf-hint">PDF không hiển thị?</span>
+                <a className="fv-btn fv-btn-secondary" href={file.url} target="_blank" rel="noopener noreferrer">
+                  Mở trong tab mới
+                </a>
+                <a className="fv-btn fv-btn-primary" href={file.url} download>
+                  Tải xuống
+                </a>
+              </div>
+            </div>
+          )}
+
+          {isPdf && pdfFallback && (
+            <div className="fv-fallback">
+              <div className="fv-unknown-icon">📄</div>
+              <p>Trình duyệt không hỗ trợ xem PDF trực tiếp.</p>
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                <a className="fv-btn fv-btn-primary" href={file.url} target="_blank" rel="noopener noreferrer">
+                  Mở trong tab mới
+                </a>
+                <a className="fv-btn fv-btn-secondary" href={file.url} download>
+                  Tải xuống
+                </a>
+              </div>
             </div>
           )}
 

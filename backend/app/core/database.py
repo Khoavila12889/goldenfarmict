@@ -89,6 +89,8 @@ def _add_missing_columns(session):
         ("document_shares", "employee_code", "TEXT DEFAULT ''"),
         ("bookings", "completed_at", "TEXT DEFAULT ''"),
         ("business_trips", "completed_at", "TEXT DEFAULT ''"),
+        ("business_trips", "approval_request_id", "INTEGER DEFAULT 0"),
+        ("business_trips", "type", "TEXT DEFAULT 'business_trip'"),
         ("equipment", "asset_code", "TEXT DEFAULT ''"),
         ("equipment", "lifecycle_status", "TEXT DEFAULT ''"),
         ("equipment", "purchase_date", "TEXT DEFAULT ''"),

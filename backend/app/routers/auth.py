@@ -33,10 +33,15 @@ DEFAULT_ROLE_MODULE_PERMS = {
     "admin": {
         "announcements": {"can_view": True, "can_edit": True},
         "password-reset": {"can_view": True, "can_edit": True},
+        "nghiphep": {"can_view": True, "can_edit": False},
     },
     "head": {
         "announcements": {"can_view": True, "can_edit": True},
         "password-reset": {"can_view": True, "can_edit": True},
+        "nghiphep": {"can_view": True, "can_edit": False},
+    },
+    "user": {
+        "nghiphep": {"can_view": True, "can_edit": False},
     },
 }
 
@@ -325,6 +330,7 @@ ALL_MODULES = [
     {"key": "approvals", "label": "Phê duyệt", "group": "support"},
     {"key": "workflows", "label": "Quy trình", "group": "admin"},
     {"key": "bookings", "label": "Lịch", "group": "support"},
+    {"key": "nghiphep", "label": "Nghỉ phép", "group": "support"},
     {"key": "documents", "label": "Tài liệu", "group": "support"},
     {"key": "salary", "label": "Phiếu lương", "group": "support"},
     {"key": "salary-admin", "label": "Quản lý lương", "group": "admin"},

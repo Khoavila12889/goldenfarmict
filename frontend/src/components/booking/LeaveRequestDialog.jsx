@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Calendar, Clock, FileText, UserCheck, Phone, AlertCircle } from 'lucide-react'
-import { getEmployees, createApprovalRequest } from '../../services/api'
+import { getEmployees, createApprovalRequest, submitApprovalRequest } from '../../services/api'
+import { getApprovalTemplate } from '../../utils/approvalTemplate'
 
 const LEAVE_TYPES = [
   { id: 'annual', label: '🏖️ Nghỉ phép năm (Trừ phép năm)' },
@@ -10,12 +11,25 @@ const LEAVE_TYPES = [
   { id: 'maternity', label: '👶 Nghỉ thai sản' },
 ]
 
+function calcHours(from, to) {
+  if (!from || !to) return 0
+  const [h1, m1] = from.split(':').map(Number)
+  const [h2, m2] = to.split(':').map(Number)
+  if (Number.isNaN(h1) || Number.isNaN(h2)) return 0
+  let diffMin = (h2 * 60 + m2) - (h1 * 60 + m1)
+  if (diffMin < 0) diffMin += 24 * 60
+  return diffMin / 60
+}
+
 export default function LeaveRequestDialog({ isOpen, onClose, onSuccess, employee }) {
   const [formData, setFormData] = useState({
     leave_type: 'annual',
     start_date: new Date().toISOString().split('T')[0],
     end_date: new Date().toISOString().split('T')[0],
-    session: 'full', // 'full' | 'morning' | 'afternoon'
+    session: 'full', // 'full' | 'morning' | 'afternoon' | 'hourly'
+    start_time: '08:00',
+    end_time: '09:00',
+    hours: 1,
     reason: '',
     handover_code: '',
     contact_phone: employee?.phone || '',
@@ -52,25 +66,63 @@ export default function LeaveRequestDialog({ isOpen, onClose, onSuccess, employe
     setErrorMsg('')
 
     try {
-      const selectedType = LEAVE_TYPES.find(t => t.id === formData.leave_type)?.label || 'Nghỉ phép'
-      const sessionText = formData.session === 'morning' ? ' (Buổi sáng)' : formData.session === 'afternoon' ? ' (Buổi chiều)' : ''
-      
-      // Tạo request phê duyệt gửi cho Trưởng phòng
-      const payload = {
-        title: `Đơn xin nghỉ phép: ${employee?.full_name || ''} - ${selectedType}`,
-        description: `
-• Loại nghỉ: ${selectedType}
-• Thời gian: ${formData.start_date} đến ${formData.end_date}${sessionText}
-• Lý do: ${formData.reason}
-• Người bàn giao: ${formData.handover_code || 'Chưa chỉ định'}
-• SĐT liên hệ khẩn cấp: ${formData.contact_phone || 'Không có'}
-• Ghi chú bàn giao: ${formData.notes || 'Không'}
-        `.trim(),
-        type: 'leave',
-        meta_data: JSON.stringify(formData)
+      const template = await getApprovalTemplate('leave')
+      if (!template) {
+        setErrorMsg('Chưa có quy trình duyệt (workflow) nào để gửi đơn. Vui lòng liên hệ quản trị viên.')
+        setLoading(false)
+        return
       }
 
-      await createApprovalRequest(payload)
+      const selectedType = LEAVE_TYPES.find(t => t.id === formData.leave_type)?.label || 'Nghỉ phép'
+      const computedHours = formData.session === 'hourly'
+        ? calcHours(formData.start_time, formData.end_time)
+        : (formData.hours || 0)
+      const sessionText = formData.session === 'morning' ? ' (Buổi sáng)'
+        : formData.session === 'afternoon' ? ' (Buổi chiều)'
+        : formData.session === 'hourly' ? ` (Nghỉ ${computedHours} tiếng: ${formData.start_time} → ${formData.end_time})`
+        : ''
+      const handover = colleagues.find(c => c.employee_code === formData.handover_code)
+
+      const description = [
+        `Loại nghỉ: ${selectedType}`,
+        `Thời gian: ${formData.start_date} đến ${formData.end_date}${sessionText}`,
+        `Lý do: ${formData.reason}`,
+        `Người bàn giao: ${handover ? `${handover.full_name} (${handover.employee_code})` : 'Chưa chỉ định'}`,
+        `SĐT liên hệ khẩn cấp: ${formData.contact_phone || 'Không có'}`,
+        `Nội dung bàn giao: ${formData.notes || 'Không'}`,
+      ].join('\n')
+
+      // Tạo đơn phê duyệt gửi tới trưởng phòng (template tự động chọn theo nghỉ phép)
+      const payload = {
+        template_id: template.id,
+        title: `Đơn xin nghỉ phép: ${employee?.full_name || ''} - ${selectedType}`,
+        description,
+        requester_code: employee?.employee_code || sessionStorage.getItem('user_code') || '',
+        metadata: {
+          kind: 'leave',
+          employee_code: employee?.employee_code || '',
+          full_name: employee?.full_name || '',
+          department: employee?.department || '',
+          destination: selectedType,
+          purpose: description,
+          start_date: formData.start_date,
+          end_date: formData.end_date,
+          leave_type: formData.leave_type,
+          session: formData.session,
+          start_time: formData.session === 'hourly' ? formData.start_time : '',
+          end_time: formData.session === 'hourly' ? formData.end_time : '',
+          hours: formData.session === 'hourly' ? computedHours : 0,
+          reason: formData.reason,
+          handover_code: formData.handover_code,
+          contact_phone: formData.contact_phone,
+          notes: formData.notes,
+        },
+      }
+
+      const created = await createApprovalRequest(payload)
+      if (created?.data?.id) {
+        await submitApprovalRequest(created.data.id)
+      }
       onSuccess && onSuccess()
       onClose()
     } catch (err) {
@@ -145,6 +197,7 @@ export default function LeaveRequestDialog({ isOpen, onClose, onSuccess, employe
                 { id: 'full', label: 'Cả ngày' },
                 { id: 'morning', label: 'Buổi sáng' },
                 { id: 'afternoon', label: 'Buổi chiều' },
+                { id: 'hourly', label: '⏰ Theo giờ' },
               ].map(item => (
                 <label key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.82rem', cursor: 'pointer' }}>
                   <input
@@ -158,6 +211,40 @@ export default function LeaveRequestDialog({ isOpen, onClose, onSuccess, employe
                 </label>
               ))}
             </div>
+
+            {formData.session === 'hourly' && (
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.75rem', marginTop: '0.6rem' }}>
+                <div>
+                  <label style={labelStyle}>Từ giờ</label>
+                  <input
+                    type="time"
+                    value={formData.start_time}
+                    onChange={e => setFormData(prev => ({
+                      ...prev,
+                      start_time: e.target.value,
+                      hours: calcHours(e.target.value, prev.end_time),
+                    }))}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Đến giờ</label>
+                  <input
+                    type="time"
+                    value={formData.end_time}
+                    onChange={e => setFormData(prev => ({
+                      ...prev,
+                      end_time: e.target.value,
+                      hours: calcHours(prev.start_time, e.target.value),
+                    }))}
+                    style={inputStyle}
+                  />
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#0a5b35', fontWeight: 600, paddingBottom: '0.45rem' }}>
+                  = {calcHours(formData.start_time, formData.end_time)} tiếng
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Lý do nghỉ phép */}

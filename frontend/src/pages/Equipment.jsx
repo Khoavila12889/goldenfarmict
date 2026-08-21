@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx'
 import './Equipment.css'
 import {
   getEquipmentList, createEquipment, updateEquipment,
-  revokeEquipment, allocateEquipment, getEquipmentHistory,
+  revokeEquipment, allocateEquipment, transferEquipment, getEquipmentHistory,
   getEmployees, importEquipment,
 } from '../services/api'
 import { formatDate } from '../utils/date'
@@ -16,7 +16,7 @@ import {
   SlidersHorizontal, Columns, Loader2, Box, Users,
   AlertOctagon, Wifi, HardDrive, Cpu,
   PanelRight, List, GripHorizontal, FileDown,
-  Info, CalendarDays,
+  Info, CalendarDays, Clock,
 } from 'lucide-react'
 
 const TYPE_OPTIONS = ['Laptop', 'PC', 'Máy in', 'Màn hình', 'Bàn phím', 'Chuột', 'Điện thoại', 'Tablet', 'Khác']
@@ -96,6 +96,7 @@ export default function Equipment() {
   const [history, setHistory] = useState([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [showHist, setShowHist] = useState(false)
+  const [allocOpen, setAllocOpen] = useState(false)
 
   const [showForm, setShowForm] = useState(false)
   const [issuedDisplay, setIssuedDisplay] = useState('')
@@ -381,13 +382,22 @@ export default function Equipment() {
     setEmpSearch('')
     setEmpResults([])
     try {
-      await allocateEquipment(eqId, {
-        employee_id: target.id, employee_code: target.employee_code, employee_name: target.full_name,
-      })
+      const isAllocated = !!(equipment.find(e => e.id === eqId) || selectedEq)?.employee_id
+      if (isAllocated) {
+        await transferEquipment(eqId, {
+          employee_id: target.id, employee_code: target.employee_code, employee_name: target.full_name,
+        })
+        setMsg(`Đã bàn giao cho ${target.full_name}.`)
+      } else {
+        await allocateEquipment(eqId, {
+          employee_id: target.id, employee_code: target.employee_code, employee_name: target.full_name,
+        })
+        setMsg(`Đã cấp phát cho ${target.full_name}.`)
+      }
       load()
       const updated = equipment.find(e => e.id === eqId)
-      if (updated) setSelectedEq(updated)
-      setMsg(`Đã cấp phát cho ${target.full_name}.`)
+      if (updated) { setSelectedEq(updated); setEmpResults([]) }
+      setAllocOpen(false)
     } catch {
       setMsg('Lỗi cấp phát thiết bị.')
     }
@@ -431,6 +441,7 @@ export default function Equipment() {
     setEmpResults([])
     setShowHist(false)
     setHistory([])
+    setAllocOpen(false)
   }
 
   function handleSort(field) {
@@ -978,12 +989,12 @@ export default function Equipment() {
                     <button onClick={() => handleRevoke(selectedEq)} className="eq-toolbar-btn" style={{ background: '#fef2f2', color: '#dc2626', borderColor: '#fca5a5' }}>
                       <Undo2 size={14} /> Thu hồi
                     </button>
-                    <button onClick={() => { setEmpSearch(''); setEmpResults([]) }} className="eq-toolbar-btn">
+                    <button onClick={() => { setAllocOpen(true); setEmpSearch(''); setEmpResults([]) }} className="eq-toolbar-btn">
                       <UserPlus size={14} /> Bàn giao
                     </button>
                   </>
                 ) : (
-                  <button onClick={() => { setEmpSearch(''); setEmpResults([]) }} className="eq-toolbar-btn" style={{ background: '#e8f0fe', color: '#00468C', borderColor: '#b3d0f0' }}>
+                  <button onClick={() => { setAllocOpen(true); setEmpSearch(''); setEmpResults([]) }} className="eq-toolbar-btn" style={{ background: '#e8f0fe', color: '#00468C', borderColor: '#b3d0f0' }}>
                     <UserPlus size={14} /> Cấp phát
                   </button>
                 )}
@@ -995,8 +1006,8 @@ export default function Equipment() {
                 </button>
               </div>
 
-              {/* Employee search for allocation */}
-              {selectedEq && !selectedEq.employee_id && (
+              {/* Tìm nhân viên để cấp phát / bàn giao */}
+              {allocOpen && selectedEq && (
                 <div style={{ marginBottom: '0.75rem' }}>
                   <div style={{ position: 'relative', marginBottom: '0.3rem' }}>
                     <Search size={14} style={{ position: 'absolute', left: '0.55rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', pointerEvents: 'none' }} />
