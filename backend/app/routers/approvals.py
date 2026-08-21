@@ -108,9 +108,9 @@ def update_workflow(wf_id: int, body: dict):
     for col in ["name", "description", "icon", "is_active"]:
         if col in body:
             fields.append(f"{col}=:{col}")
-            params[col] = body[col]
+            params[col] = bool(body[col]) if col == "is_active" else body[col]
     if not fields:
-        return {"success": False, "error": "No fields"}
+        return {"success": False}
     params["wf_id"] = wf_id
     execute(f"UPDATE workflow_templates SET {', '.join(fields)}, updated_at=CURRENT_TIMESTAMP WHERE id=:wf_id", params)
     publish_sync("workflow_updated", {"id": wf_id})
@@ -137,8 +137,8 @@ def add_step(wf_id: int, body: dict):
     step_id = insert(
         "INSERT INTO workflow_steps (template_id, step_order, approver_type, approver_value, department_match, can_edit) VALUES (:template_id, :step_order, :approver_type, :approver_value, :department_match, :can_edit) RETURNING id",
         {"template_id": wf_id, "step_order": new_order, "approver_type": body.get("approver_type", "role"),
-         "approver_value": body.get("approver_value", ""), "department_match": body.get("department_match", 1),
-         "can_edit": body.get("can_edit", 0)}
+         "approver_value": body.get("approver_value", ""), "department_match": bool(body.get("department_match", True)),
+         "can_edit": bool(body.get("can_edit", False))}
     )
     execute("UPDATE workflow_templates SET updated_at=CURRENT_TIMESTAMP::text WHERE id=:id", {"id": wf_id})
     return {"success": True, "id": step_id, "step_order": new_order}
@@ -146,11 +146,11 @@ def add_step(wf_id: int, body: dict):
 
 @router.put("/workflows/steps/{step_id}")
 def update_step(step_id: int, body: dict):
-    fields, params = [], {}
+    fields, params = {}, {}
     for col in ["step_order", "approver_type", "approver_value", "department_match", "can_edit"]:
         if col in body:
             fields.append(f"{col}=:{col}")
-            params[col] = body[col]
+            params[col] = body[col] if col not in ("department_match", "can_edit") else bool(body[col])
     if not fields:
         return {"success": False}
     params["step_id"] = step_id
