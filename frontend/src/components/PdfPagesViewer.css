@@ -1,0 +1,239 @@
+/* ─── PdfPagesViewer — xem PDF dạng trang ảnh WebP ─────────────── */
+
+.ppv-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: rgba(15, 23, 42, 0.72);
+  animation: ppvFade 0.18s ease;
+}
+
+@keyframes ppvFade { from { opacity: 0; } to { opacity: 1; } }
+
+.ppv-container {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(880px, 96vw);
+  height: min(92vh, 1000px);
+  background: #f1f5f9;
+  border-radius: 14px;
+  box-shadow: 0 16px 48px rgba(15, 23, 42, 0.35);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: ppvPop 0.2s ease;
+}
+
+@keyframes ppvPop {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 12px)); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+/* Header */
+.ppv-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+  flex-wrap: wrap;
+}
+
+.ppv-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #0a5b35;
+  min-width: 0;
+}
+
+.ppv-file-name {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ppv-page-count {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 0.15rem 0.5rem;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.ppv-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.ppv-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 0.35rem;
+  border: none;
+  background: #f1f5f9;
+  color: #475569;
+  border-radius: 7px;
+  cursor: pointer;
+  font-weight: 700;
+  transition: all 0.15s;
+}
+
+.ppv-icon-btn:hover { background: #e2e8f0; color: #0f172a; }
+.ppv-close:hover { background: #fee2e2; color: #dc2626; }
+
+.ppv-zoom-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748b;
+  min-width: 40px;
+  text-align: center;
+}
+
+.ppv-sep {
+  width: 1px;
+  height: 20px;
+  background: #e2e8f0;
+  margin: 0 0.25rem;
+}
+
+/* Content */
+.ppv-content {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ppv-center {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  color: #64748b;
+  font-size: 0.86rem;
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+.ppv-center small { color: #94a3b8; }
+
+.ppv-spin { animation: ppvRotate 0.9s linear infinite; color: #0a5b35; }
+
+@keyframes ppvRotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.ppv-error-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 0.4rem;
+}
+
+.ppv-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.55rem 1rem;
+  background: #fff;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s;
+}
+
+.ppv-btn:hover { background: #f1f5f9; }
+
+.ppv-btn-primary {
+  background: #0a5b35;
+  color: #fff;
+  border-color: #0a5b35;
+}
+
+.ppv-btn-primary:hover { background: #063d23; }
+
+/* Pages */
+.ppv-pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem 1rem 2rem;
+}
+
+.ppv-page {
+  margin: 0;
+  max-width: 100%;
+  position: relative;
+}
+
+.ppv-page img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12);
+  border-radius: 4px;
+  transition: width 0.15s ease;
+}
+
+.ppv-page figcaption {
+  text-align: center;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  margin-top: 0.35rem;
+}
+
+/* Nav buttons */
+.ppv-nav {
+  position: absolute;
+  right: 1rem;
+  bottom: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.ppv-nav button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 50%;
+  background: #0a5b35;
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(10, 91, 53, 0.35);
+  transition: all 0.15s;
+}
+
+.ppv-nav button:hover { background: #063d23; transform: translateY(-1px); }
+
+/* Responsive */
+@media (max-width: 640px) {
+  .ppv-container { width: 100vw; height: 100vh; border-radius: 0; }
+  .ppv-file-name { max-width: 46vw; }
+}

@@ -1,12 +1,16 @@
 from typing import Optional
 import os
+import re
+import logging
+import uuid
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException, Header, File, UploadFile, Request
+from fastapi import APIRouter, HTTPException, Header, File, UploadFile, Request, Response
 from fastapi.responses import FileResponse
 from app.core.db import fetchall, fetchone, execute, insert
 from app.core.auth import verify_session
 from app.core import events
 from app.services.upload_service import save_forum_upload, FORUM_UPLOAD_BASE
+from app.services import pdf_pages
 from app.routers.documents import (
     _sign_doc_token,
     _make_doc_key,
@@ -16,6 +20,17 @@ from app.routers.documents import (
     _OO_MIME,
 )
 from app.routers.auth import _get_effective_permissions, _has_module_capability
+
+log = logging.getLogger(__name__)
+
+_DOC_ID_RE = re.compile(r'^[a-f0-9]{32}$')
+_PAGE_FILE_RE = re.compile(r'^p-\d{3}\.webp$')
+
+# Media type tường minh cho file đính kèm thông báo (tránh đoán sai + set cache đúng)
+_MEDIA_TYPES = {
+    'pdf': 'application/pdf',
+    'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png', 'webp': 'image/webp',
+}
 
 
 class ForumPostCreate(BaseModel):
@@ -69,6 +84,28 @@ def _can_manage_announcements(user: dict) -> bool:
 def require_manager(user: dict):
     if not _can_manage_announcements(user):
         raise HTTPException(status_code=403, detail="Chỉ admin, trưởng phòng hoặc người được phân quyền mới được dùng chức năng này")
+
+
+def _cleanup_attachment_files(attachment_url: str):
+    """Dọn dẹp file đính kèm + cache trang WebP khi không còn bài đăng nào dùng."""
+    if not attachment_url or not attachment_url.startswith('/api/forum/uploads/'):
+        return
+    stored = os.path.basename(attachment_url.split('?')[0])
+    if not stored:
+        return
+    try:
+        ref = fetchone(
+            "SELECT COUNT(*) AS n FROM forum_posts WHERE attachment_url = :u",
+            {"u": attachment_url}
+        )
+        if ref and (ref.get('n') or 0) > 0:
+            return
+        file_path = os.path.join(FORUM_UPLOAD_BASE, stored)
+        if os.path.realpath(file_path).startswith(os.path.realpath(FORUM_UPLOAD_BASE)) and os.path.exists(file_path):
+            os.remove(file_path)
+        pdf_pages.delete_pdf_pages(stored)
+    except Exception as e:
+        log.warning(f"[FORUM] Cleanup attachment {stored}: {e}")
 
 
 # ─── POSTS ────────────────────────────────────────────────────────────
@@ -161,9 +198,11 @@ def update_post(
     user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
     require_manager(user)
 
-    post = fetchone("SELECT id FROM forum_posts WHERE id = :id", {"id": post_id})
+    post = fetchone("SELECT * FROM forum_posts WHERE id = :id", {"id": post_id})
     if not post:
         raise HTTPException(status_code=404, detail="Không tìm thấy thông báo")
+
+    old_attachment_url = post.get('attachment_url') or ''
 
     updates = {}
     if data.title is not None:
@@ -195,6 +234,8 @@ def update_post(
             f"UPDATE forum_posts SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = :post_id",
             updates
         )
+        if 'attachment_url' in updates and old_attachment_url and old_attachment_url != updates['attachment_url']:
+            _cleanup_attachment_files(old_attachment_url)
 
     events.publish_sync("forum_post_updated", {"id": post_id})
     return {"success": True, "message": "Đã cập nhật thông báo"}
@@ -211,12 +252,14 @@ def delete_post(
     user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
     require_manager(user)
 
-    post = fetchone("SELECT id FROM forum_posts WHERE id = :id", {"id": post_id})
+    post = fetchone("SELECT * FROM forum_posts WHERE id = :id", {"id": post_id})
     if not post:
         raise HTTPException(status_code=404, detail="Không tìm thấy thông báo")
 
     execute("DELETE FROM forum_replies WHERE post_id = :id", {"id": post_id})
     execute("DELETE FROM forum_posts WHERE id = :id", {"id": post_id})
+
+    _cleanup_attachment_files(post.get('attachment_url') or '')
 
     events.publish_sync("forum_post_deleted", {"id": post_id})
     return {"success": True, "message": "Đã xóa thông báo"}
@@ -454,6 +497,14 @@ async def upload_forum_file(
     require_manager(user)
 
     result = await save_forum_upload(file)
+
+    # PDF → convert ngay sang các trang WebP trong nền (không chặn upload)
+    # để user mở thông báo xem bằng ảnh, nhanh hơn nhiều so với render PDF qua OnlyOffice.
+    if (result.get('file_type') or '').lower() == 'pdf':
+        doc_id = pdf_pages.schedule_pdf_pages(result['stored_name'])
+        if doc_id:
+            result['pdf_pages_status_url'] = f"/api/forum/uploads/{result['stored_name']}/pages"
+
     return {
         "status": "success",
         "data": result,
@@ -461,8 +512,72 @@ async def upload_forum_file(
     }
 
 
+# ─── PDF → WEBP: trạng thái + danh sách trang ảnh (xem nhanh) ─────────
+@router.get("/uploads/{filename}/pages")
+def forum_pdf_pages(
+    filename: str,
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token")
+):
+    verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
+
+    safe = os.path.basename(filename or '')
+    if not safe.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="File không phải PDF")
+
+    pdf_path = os.path.join(FORUM_UPLOAD_BASE, safe)
+    if not os.path.realpath(pdf_path).startswith(os.path.realpath(FORUM_UPLOAD_BASE)):
+        raise HTTPException(status_code=400, detail="Đường dẫn file không hợp lệ")
+    if not os.path.exists(pdf_path):
+        raise HTTPException(status_code=404, detail="File không tồn tại")
+
+    status = pdf_pages.pages_status(safe)
+    if not status.get('supported', False):
+        raise HTTPException(status_code=400, detail="File không phải PDF")
+
+    data = {
+        'file': safe,
+        'ready': bool(status.get('ready')),
+        'converting': bool(status.get('converting')),
+        'original_url': f"/api/forum/uploads/{safe}",
+    }
+    if status.get('ready'):
+        doc_id = os.path.splitext(safe)[0]
+        base = f"/api/forum/pages/{doc_id}"
+        data.update({
+            'page_count': status['page_count'],
+            'width': status['width'],
+            'height': status['height'],
+            'pages': [f"{base}/{p}" for p in status['pages']],
+        })
+    return {"data": data}
+
+
+@router.get("/pages/{doc_id}/{page_file}")
+def forum_pdf_page_image(doc_id: str, page_file: str):
+    # doc_id là uuid hex, page_file theo mẫu p-001.webp → chặt chẽ, không cần auth
+    # (giống serve_forum_file; tên file không đoán được).
+    if not _DOC_ID_RE.match(doc_id) or not _PAGE_FILE_RE.match(page_file):
+        raise HTTPException(status_code=400, detail="Yêu cầu không hợp lệ")
+
+    file_path = os.path.join(pdf_pages.PAGES_BASE, doc_id, page_file)
+    real_path = os.path.realpath(file_path)
+    if not real_path.startswith(os.path.realpath(pdf_pages.PAGES_BASE)):
+        raise HTTPException(status_code=400, detail="Đường dẫn file không hợp lệ")
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Trang ảnh chưa sẵn sàng")
+
+    return FileResponse(
+        file_path,
+        media_type='image/webp',
+        headers={'Cache-Control': 'public, max-age=31536000, immutable'},
+    )
+
+
 @router.get("/uploads/{filename}")
-def serve_forum_file(filename: str):
+def serve_forum_file(filename: str, request: Request = None):
     file_path = os.path.join(FORUM_UPLOAD_BASE, filename)
 
     real_path = os.path.realpath(file_path)
@@ -474,11 +589,28 @@ def serve_forum_file(filename: str):
         raise HTTPException(status_code=404, detail="File không tồn tại")
 
     ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
-    media_type = 'application/pdf' if ext == 'pdf' else None
-    
+    media_type = _MEDIA_TYPES.get(ext)
+
+    # ETag + 304: client tải lại file đính kèm mỗi lần mở thông báo → trả 304 nhẹ hơn nhiều
+    try:
+        stat = os.stat(file_path)
+        etag = f'"forum-{int(stat.st_mtime_ns)}-{stat.st_size}"'
+        if request is not None and request.headers.get('if-none-match') == etag:
+            return Response(
+                status_code=304,
+                headers={'ETag': etag, 'Cache-Control': 'public, max-age=604800'},
+            )
+    except OSError:
+        etag = None
+
+    headers = {'Cache-Control': 'public, max-age=604800'}
+    if etag:
+        headers['ETag'] = etag
+
     return FileResponse(
         file_path,
         media_type=media_type,
         content_disposition_type="inline",
-        filename=filename
+        filename=filename,
+        headers=headers,
     )

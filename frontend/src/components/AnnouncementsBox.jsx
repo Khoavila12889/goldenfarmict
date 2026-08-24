@@ -3,7 +3,7 @@ import { Megaphone, Bell, Plus, Pin, MessageCircle, Send, X, Trash2, Pencil, Che
 import { getForumPosts, createForumPost, updateForumPost, deleteForumPost, getForumReplies, createForumReply, getForumOnlyOfficeConfig, getEmployees, uploadForumFile, apiUrl } from '../services/api'
 import { formatDate } from '../utils/date'
 import OnlyOfficeViewer from './OnlyOfficeViewer'
-import FileViewer from './FileViewer'
+import PdfPagesViewer from './PdfPagesViewer'
 import ImageLightbox from './ImageLightbox'
 import './AnnouncementsBox.css'
 
@@ -76,9 +76,9 @@ export default function AnnouncementsBox({ compact = false }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  // Preview file đính kèm: FileViewer (PDF) + OnlyOffice (Office) + Lightbox (ảnh)
+  // Preview file đính kèm: PdfPagesViewer (PDF → ảnh WebP) + OnlyOffice (Office cũ) + Lightbox (ảnh)
   const [ooFile, setOoFile] = useState(null)
-  const [pdfFile, setPdfFile] = useState(null)
+  const [pagesFile, setPagesFile] = useState(null)
   const [lightbox, setLightbox] = useState({ open: false, slides: [], index: 0 })
   const ooPostId = ooFile?.postId || null
   const fetchForumConfig = useCallback(() => getForumOnlyOfficeConfig(ooPostId), [ooPostId])
@@ -149,8 +149,16 @@ export default function AnnouncementsBox({ compact = false }) {
       return
     }
 
-    // PDF + file office đọc qua ONLYOFFICE (render được trên mọi trình duyệt, kể cả Brave/mobile/iOS)
-    if ((ext === 'pdf' || OFFICE_EXTS.includes(ext)) && String(p.attachment_url || '').startsWith('/api/forum/uploads/')) {
+    // PDF đính kèm nội bộ → xem bằng các trang ảnh WebP đã convert trên server
+    // (nhanh, không cần OnlyOffice, hiển thị tốt trên mọi trình duyệt kể cả Brave/iOS).
+    if (ext === 'pdf' && String(p.attachment_url || '').startsWith('/api/forum/uploads/')) {
+      const filename = leaf.split('/').pop()
+      setPagesFile({ name, url, filename })
+      return
+    }
+
+    // File Office cũ (doc/xls/ppt…) đọc qua ONLYOFFICE
+    if (OFFICE_EXTS.includes(ext) && String(p.attachment_url || '').startsWith('/api/forum/uploads/')) {
       setOoFile({ name, url, postId: p.id })
       return
     }
@@ -586,11 +594,11 @@ export default function AnnouncementsBox({ compact = false }) {
         </>
       )}
 
-      {/* ─── Preview file đính kèm: FileViewer (PDF) + OnlyOffice (Office) + Lightbox (ảnh) ─── */}
-      <FileViewer
-        file={pdfFile}
-        isOpen={!!pdfFile}
-        onClose={() => setPdfFile(null)}
+      {/* ─── Preview file đính kèm: PdfPagesViewer (PDF → WebP) + OnlyOffice (Office) + Lightbox (ảnh) ─── */}
+      <PdfPagesViewer
+        file={pagesFile}
+        isOpen={!!pagesFile}
+        onClose={() => setPagesFile(null)}
       />
       <OnlyOfficeViewer
         file={ooFile}

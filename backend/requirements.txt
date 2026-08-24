@@ -34,6 +34,9 @@ pyjwt>=2.8.0
 # Pillow — resize ảnh thumbnail on-the-fly (module Documents)
 Pillow>=10.0.0
 
+# PyMuPDF — convert PDF đính kèm thông báo thành trang ảnh WebP (xem nhanh, thay OnlyOffice cho PDF)
+PyMuPDF>=1.24.0
+
 # PostgreSQL driver
 psycopg2-binary>=2.9.0
 

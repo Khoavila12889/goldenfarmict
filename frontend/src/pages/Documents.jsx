@@ -11,6 +11,7 @@ import '../styles/shared.css'
 import './Documents.css'
 import FileViewer from '../components/FileViewer'
 import OnlyOfficeViewer from '../components/OnlyOfficeViewer'
+import PdfPagesViewer from '../components/PdfPagesViewer'
 import ShareDocument from '../components/ShareDocument'
 import ImageLightbox from '../components/ImageLightbox'
 import { getStorageConfigs, browseStorage, getStoragePermissions, createStoragePermission, deleteStoragePermission, createStorageConfig, updateStorageConfig, deleteStorageConfig, exportStorageConfig, testStorageConnection, testStorageConnectionDirect, getStorageDepartments, apiUrl } from '../services/api'
@@ -158,6 +159,8 @@ export default function Documents() {
   const [ooFile, setOoFile] = useState(null)
   const [ooOpen, setOoOpen] = useState(false)
   const [ooConfigId, setOoConfigId] = useState(null)
+  // Xem PDF dạng trang ảnh WebP (thay OnlyOffice — giảm tải Document Server)
+  const [pdfPagesFile, setPdfPagesFile] = useState(null)
   const [shareFile, setShareFile] = useState(null)
   const [shareOpen, setShareOpen] = useState(false)
   const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, file: null })
@@ -308,6 +311,26 @@ export default function Documents() {
       const idx = imageEntries.findIndex(e => e.name === entry.name)
       setLightboxIndex(idx >= 0 ? idx : 0)
       setShowLightbox(true)
+      return
+    }
+
+    // PDF → xem bằng các trang ảnh WebP đã convert trên server (nhanh, không cần OnlyOffice)
+    const ext = entry.name.split('.').pop().toLowerCase()
+    if (ext === 'pdf') {
+      const isGdrive = activeConfig?.type === 'gdrive'
+      const normalizedPath = currentPath === '/' ? entry.name : `${currentPath.replace(/\/$/, '')}/${entry.name}`
+      setPdfPagesFile({
+        name: entry.name,
+        url: buildFileDownloadUrl(activeConfig, entry, currentPath, userCode, userRole),
+        doc: {
+          configId: activeConfig.id,
+          filePath: normalizedPath,
+          fileId: isGdrive && entry.id ? entry.id : '',
+          size: entry.size || 0,
+          userCode,
+          userRole,
+        },
+      })
       return
     }
 
@@ -1400,6 +1423,7 @@ export default function Documents() {
       )}
 
       <FileViewer file={viewerFile} isOpen={viewerOpen} onClose={() => { setViewerOpen(false); setViewerFile(null) }} />
+      <PdfPagesViewer file={pdfPagesFile} isOpen={!!pdfPagesFile} onClose={() => setPdfPagesFile(null)} />
       <OnlyOfficeViewer file={ooFile} configId={ooConfigId} isOpen={ooOpen} onClose={() => { setOoOpen(false); setOoFile(null); setOoConfigId(null) }} />
       <ShareDocument file={shareFile} isOpen={shareOpen} onClose={() => { setShareOpen(false); setShareFile(null) }} />
       <ImageLightbox open={showLightbox} onClose={() => setShowLightbox(false)} slides={lightboxSlides} index={lightboxIndex} />

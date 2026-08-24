@@ -53,9 +53,13 @@ export function getApiBase() {
   return origin ? `${origin}/api` : '/api'
 }
 
-// URL đầy đủ đến 1 endpoint của backend (theo server đang cấu hình)
+// URL đầy đủ đến 1 endpoint của backend (theo server đang cấu hình).
+// Idempotent với path đã chứa tiền tố /api (VD: đường dẫn trả về từ backend
+// như '/api/forum/pages/x/p-001.webp') — tránh ghép đôi thành '/api/api/...'.
 export function apiUrl(path) {
-  const p = String(path || '').startsWith('/') ? path : `/${path}`
+  let p = String(path || '')
+  if (!p.startsWith('/')) p = `/${p}`
+  if (p === '/api' || p.startsWith('/api/')) return `${getServerOrigin()}${p}`
   return `${getApiBase()}${p}`
 }
 
@@ -1023,6 +1027,24 @@ export function uploadForumFile(file) {
   return api.post('/forum/upload', fd, {
     headers: { ...forumAuthHeaders(), 'Content-Type': 'multipart/form-data' },
   })
+}
+
+// PDF đính kèm → danh sách trang ảnh WebP đã convert (xem nhanh thay OnlyOffice)
+export function getForumPdfPages(filename) {
+  return api.get(`/forum/uploads/${encodeURIComponent(filename)}/pages`, { headers: forumAuthHeaders() })
+}
+
+// PDF trong module Tài liệu → trang ảnh WebP (storage FTP/SMB/GDrive)
+export function getDocumentPdfPages({ configId, filePath, fileId = '', size = 0, userCode, userRole }) {
+  const params = {
+    config_id: configId,
+    file_path: filePath,
+    file_id: fileId,
+    size,
+    user_code: userCode,
+    user_role: userRole,
+  }
+  return api.get('/documents/pdf-pages', { params })
 }
 
 export default api

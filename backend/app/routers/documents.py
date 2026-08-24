@@ -1,5 +1,7 @@
 import ftplib
+import hashlib
 import os
+import re
 import json
 from datetime import datetime
 from urllib.parse import unquote
@@ -7,6 +9,7 @@ from fastapi import APIRouter, Query, HTTPException, Body, Request
 from pydantic import BaseModel
 from ..core.db import fetchall, fetchone, execute, insert
 from ..core.auth import verify_token
+from ..services import pdf_pages
 
 
 def _require_auth(admin_code: str, token: str, role: str):
@@ -1926,6 +1929,110 @@ def onlyoffice_callback(body: OnlyOfficeCallback):
         logging.info(f"[ONLYOFFICE] File saved successfully: {file_path}")
 
     return {"error": 0}
+
+
+# ═══════════════════════════════════════════════════════════════
+# PDF → WEBP: xem nhanh tài liệu PDF dạng trang ảnh (thay OnlyOffice)
+# ═══════════════════════════════════════════════════════════════
+
+_DOC_ID_RE = re.compile(r'^[a-f0-9]{32}$')
+_PAGE_FILE_RE = re.compile(r'^p-\d{3}\.webp$')
+
+
+def _doc_pages_doc_id(config_id: int, file_path: str, size: int = 0) -> str:
+    """doc_id bất định danh cho cache: sha256(storage|path|size) — file đổi nội dung
+    (size khác) tự nhận cache mới; không đoán được từ ngoài."""
+    raw = f"doc|{config_id}|{file_path}|{int(size or 0)}"
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()[:32]
+
+
+def _schedule_doc_pdf_convert(cfg, config_id: int, file_path: str, file_id: str, doc_id: str) -> bool:
+    """Tải PDF về cache tạm (nếu chưa có) rồi lên hàng convert nền. Trả True nếu đã/đang xử lý."""
+    tmp_dir = os.path.join(pdf_pages.DOC_PAGES_BASE, '_src')
+    os.makedirs(tmp_dir, exist_ok=True)
+    pdf_path = os.path.join(tmp_dir, f'{doc_id}.pdf')
+    if not os.path.exists(pdf_path):
+        data = _get_file_bytes(cfg, file_path, file_id)
+        with open(pdf_path, 'wb') as f:
+            f.write(data)
+    return pdf_pages.schedule_source(pdf_path, doc_id, pdf_pages.DOC_PAGES_BASE)
+
+
+@router.get("/pdf-pages")
+def document_pdf_pages(
+    config_id: int = Query(...),
+    file_path: str = Query(...),
+    file_id: str = Query(''),
+    size: int = Query(0),
+    user_code: str = Query(''),
+    user_role: str = Query('user')
+):
+    active_sql = "" if user_role in ('admin', 'head') else "AND is_active = TRUE"
+    cfg = fetchone(f"SELECT * FROM storage_config WHERE id=:id {active_sql}", {"id": config_id})
+    if not cfg:
+        raise HTTPException(404, "Storage not found or inactive")
+
+    folder_path = os.path.dirname(file_path).replace('\\', '/')
+    allowed = _check_folder_permission(config_id, folder_path, user_code, user_role)
+    share_grant = _check_share_access(config_id, file_path, user_code, user_role)
+    if not allowed and share_grant is None:
+        raise HTTPException(403, "No permission to access this file")
+
+    filename = os.path.basename(file_path)
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+    if ext != 'pdf':
+        raise HTTPException(400, f"File không phải PDF: .{ext}")
+
+    doc_id = _doc_pages_doc_id(config_id, file_path, size)
+    m = pdf_pages.read_manifest(doc_id, pdf_pages.DOC_PAGES_BASE)
+
+    data = {
+        'file': filename,
+        'ready': bool(m),
+        'converting': False,
+        'original_url': f"/api/documents/download?config_id={config_id}&file_path={unquote(file_path)}&user_code={user_code}&user_role={user_role}",
+    }
+    if m:
+        base = f"/api/documents/pdf-pages/{doc_id}"
+        data.update({
+            'page_count': m['page_count'],
+            'width': m['width'],
+            'height': m['height'],
+            'pages': [f"{base}/{p}" for p in m['pages']],
+        })
+        return {"data": data}
+
+    # Chưa có manifest → lên hàng convert lazy (lần xem đầu)
+    try:
+        scheduled = _schedule_doc_pdf_convert(cfg, config_id, file_path, file_id, doc_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Không tải được file PDF từ storage: {e}")
+    data['converting'] = bool(scheduled)
+    if not scheduled:
+        raise HTTPException(502, "Không thể chuyển đổi file PDF này")
+    return {"data": data}
+
+
+@router.get("/pdf-pages/{doc_id}/{page_file}")
+def document_pdf_page_image(doc_id: str, page_file: str):
+    # doc_id là sha256 hex + page_file theo mẫu p-001.webp → chặt chẽ, không cần auth
+    if not _DOC_ID_RE.match(doc_id) or not _PAGE_FILE_RE.match(page_file):
+        raise HTTPException(400, "Yêu cầu không hợp lệ")
+
+    file_path = os.path.join(pdf_pages.DOC_PAGES_BASE, doc_id, page_file)
+    real_path = os.path.realpath(file_path)
+    if not real_path.startswith(os.path.realpath(pdf_pages.DOC_PAGES_BASE)):
+        raise HTTPException(400, "Đường dẫn file không hợp lệ")
+    if not os.path.exists(file_path):
+        raise HTTPException(404, "Trang ảnh chưa sẵn sàng")
+
+    return FileResponse(
+        file_path,
+        media_type='image/webp',
+        headers={'Cache-Control': 'public, max-age=31536000, immutable'},
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
