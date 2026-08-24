@@ -31,8 +31,12 @@ function ProtectedRoute({ children }) {
 function AdminRoute({ children, requiredModule }) {
   const role = sessionStorage.getItem('user_role')
   if (role === 'admin' || role === 'head') return children
-  const perms = JSON.parse(sessionStorage.getItem('user_permissions') || '{}')
+  let perms = {}
+  try { perms = JSON.parse(sessionStorage.getItem('user_permissions') || '{}') } catch (_) {}
   if (requiredModule && perms[requiredModule]?.can_view) return children
+  // Trang Nhân viên mở thêm cho người được cấp module "Reset mật khẩu"
+  // (chế độ giới hạn: chỉ xem danh sách + nút reset, không sửa dữ liệu NV)
+  if (requiredModule === 'employees' && (perms['password-reset']?.can_view || perms['password-reset']?.can_edit)) return children
   return <Navigate to="/" replace />
 }
 

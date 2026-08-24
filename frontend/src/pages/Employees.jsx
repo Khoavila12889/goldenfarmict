@@ -400,27 +400,35 @@ export default function Employees() {
           <span style={{ background: '#e8f0fe', color: '#00468C', padding: '0.3rem 0.8rem', borderRadius: 20, fontSize: '0.8rem', fontWeight: 600 }}>
             {loading ? '...' : `${emps.length} NV`}
           </span>
-          <button onClick={openDeptAdd} style={{
-            padding: '0.45rem 0.9rem', height: 36, background: '#fff', color: '#475569',
-            border: '1px solid #e2e8f0', borderRadius: 8, fontWeight: 500, fontSize: '0.82rem',
-            cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-          }}>📂 Phòng ban</button>
-          <button onClick={openAdd} style={{
-            padding: '0.45rem 0.9rem', height: 36, background: '#00468C', color: '#fff',
-            border: 'none', borderRadius: 8, fontWeight: 600, fontSize: '0.82rem',
-            cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-          }}>➕ Thêm NV</button>
+          {isAdmin && (
+            <>
+              <button onClick={openDeptAdd} style={{
+                padding: '0.45rem 0.9rem', height: 36, background: '#fff', color: '#475569',
+                border: '1px solid #e2e8f0', borderRadius: 8, fontWeight: 500, fontSize: '0.82rem',
+                cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+              }}>📂 Phòng ban</button>
+              <button onClick={openAdd} style={{
+                padding: '0.45rem 0.9rem', height: 36, background: '#00468C', color: '#fff',
+                border: 'none', borderRadius: 8, fontWeight: 600, fontSize: '0.82rem',
+                cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+              }}>➕ Thêm NV</button>
+            </>
+          )}
           <button onClick={handleExportXLSX} style={{
             padding: '0.45rem 0.9rem', height: 36, background: '#fff', color: '#475569',
             border: '1px solid #e2e8f0', borderRadius: 8, fontWeight: 500, fontSize: '0.82rem',
             cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
           }}>📤 Export Excel</button>
-          <input ref={fileInputRef} type="file" accept=".xlsx, .xls" style={{ display: 'none' }} onChange={handleImportXLSX} />
-          <button onClick={() => fileInputRef.current?.click()} style={{
-            padding: '0.45rem 0.9rem', height: 36, background: '#fff', color: '#475569',
-            border: '1px solid #e2e8f0', borderRadius: 8, fontWeight: 500, fontSize: '0.82rem',
-            cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-          }}>📥 Import Excel</button>
+          {isAdmin && (
+            <>
+              <input ref={fileInputRef} type="file" accept=".xlsx, .xls" style={{ display: 'none' }} onChange={handleImportXLSX} />
+              <button onClick={() => fileInputRef.current?.click()} style={{
+                padding: '0.45rem 0.9rem', height: 36, background: '#fff', color: '#475569',
+                border: '1px solid #e2e8f0', borderRadius: 8, fontWeight: 500, fontSize: '0.82rem',
+                cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+              }}>📥 Import Excel</button>
+            </>
+          )}
         </div>
       </div>
 
@@ -747,8 +755,12 @@ export default function Employees() {
 
               {/* Actions */}
               <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-                <button onClick={() => openEdit(selectedEmp)} style={panelBtnS}>✏️ Sửa</button>
-                <button onClick={() => handleDelete(selectedEmp.id)} style={{ ...panelBtnS, background: '#fef2f2', color: '#dc2626', borderColor: '#fca5a5' }}>🗑️ Xoá</button>
+                {isAdmin && (
+                  <>
+                    <button onClick={() => openEdit(selectedEmp)} style={panelBtnS}>✏️ Sửa</button>
+                    <button onClick={() => handleDelete(selectedEmp.id)} style={{ ...panelBtnS, background: '#fef2f2', color: '#dc2626', borderColor: '#fca5a5' }}>🗑️ Xoá</button>
+                  </>
+                )}
                 {canResetPw && (
                   <button onClick={() => openResetPw(selectedEmp)} style={{ ...panelBtnS, background: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe' }}>🔑 Reset Password</button>
                 )}
