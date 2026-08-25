@@ -58,6 +58,7 @@ class License(Base):
     __tablename__ = 'licenses'
     id = Column(Integer, primary_key=True, autoincrement=True)
     equipment_id = Column(Integer, nullable=False)
+    employee_id = Column(Integer, nullable=True)
     license_key = Column(String, nullable=False, default='')
     product_name = Column(String, default='', index=True)
     activated = Column(String, default='')

@@ -279,8 +279,8 @@ export function updateLicense(id, data) {
   return api.put(`/licenses/${id}`, data)
 }
 
-export function bulkImportLicenses(equipment_id, keys, product_name) {
-  return api.post('/licenses/bulk', { equipment_id, keys, product_name })
+export function bulkImportLicenses(equipment_id, keys, product_name, employee_id = null) {
+  return api.post('/licenses/bulk', { equipment_id, keys, product_name, employee_id })
 }
 
 export function scanLicenses() {

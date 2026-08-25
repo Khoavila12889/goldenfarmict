@@ -5,7 +5,7 @@ import './Licenses.css'
 import {
   getLicenses, getLicenseStats, deleteLicense, updateLicense,
   bulkImportLicenses, scanLicenses, importLicenses,
-  getEmployees, getEmployeeEquipment,
+  getEmployees, getEmployeeEquipment, getDepartments,
   getSoftwareCategories, createSoftwareCategory, updateSoftwareCategory, deleteSoftwareCategory,
   getSoftwareItems, createSoftwareItem, updateSoftwareItem, deleteSoftwareItem, uploadSoftwareContract,
   apiUrl,
@@ -44,6 +44,14 @@ export default function Licenses() {
   const [selectedLic, setSelectedLic] = useState(null)
   const [editData, setEditData] = useState({})
   const [saving, setSaving] = useState(false)
+
+  // Phân bổ license cho user
+  const [deptList, setDeptList] = useState([])
+  const [assignDept, setAssignDept] = useState('')
+  const [assignEmp, setAssignEmp] = useState('')
+  const [panelEmps, setPanelEmps] = useState([])
+  const [panelEquips, setPanelEquips] = useState([])
+  const [assignEquip, setAssignEquip] = useState('')
 
   // Items tab state
   const [items, setItems] = useState([])
@@ -89,6 +97,14 @@ export default function Licenses() {
       .finally(() => setItemsLoading(false))
   }, [itemSearch])
 
+  function loadPanelEmployees(dept) {
+    getEmployees('', dept || '').then(r => setPanelEmps(r.data?.data || [])).catch(() => setPanelEmps([]))
+  }
+
+  useEffect(() => {
+    getDepartments().then(r => setDeptList(r.data?.data || [])).catch(() => {})
+  }, [])
+
   useEffect(() => {
     setLoading(true)
     loadLicenses()
@@ -110,17 +126,69 @@ export default function Licenses() {
     const data = {}
     EDITABLE.forEach(k => { data[k] = lic[k] || '' })
     setEditData(data)
+    if (lic.employee_id) {
+      setAssignEmp(String(lic.employee_id))
+      setAssignDept(lic.department || '')
+      loadPanelEmployees(lic.department || '')
+    } else {
+      setAssignEmp(''); setAssignDept('')
+      loadPanelEmployees('')
+    }
+    setAssignEquip(lic.equipment_id ? String(lic.equipment_id) : '')
+    setPanelEquips([])
+  }
+
+  async function handleAssignEmpChange(e) {
+    const empId = e.target.value
+    setAssignEmp(empId)
+    setPanelEquips([]); setAssignEquip('')
+    if (empId) {
+      try {
+        const r = await getEmployeeEquipment(empId)
+        const list = r.data?.data || []
+        setPanelEquips(list)
+        if (list.length === 1) setAssignEquip(String(list[0].id))
+      } catch { setPanelEquips([]) }
+    }
+  }
+
+  function handleAssignDeptChange(dept) {
+    setAssignDept(dept)
+    setAssignEmp(''); setPanelEquips([]); setAssignEquip('')
+    loadPanelEmployees(dept)
+  }
+
+  function equipLabel(eq) {
+    const parts = [eq.equipment_type || `#${eq.id}`]
+    if (eq.asset_code) parts.push(`(${eq.asset_code})`)
+    return parts.join(' ')
   }
 
   async function saveEdit() {
     if (!selectedLic) return
+    if (assignEmp && panelEquips.length > 0 && !assignEquip) {
+      showMsg('Người dùng này đang có thiết bị — hãy chọn thiết bị để gắn key theo đúng quan hệ quản lý.', 'error')
+      return
+    }
     setSaving(true)
     try {
-      await updateLicense(selectedLic.id, editData)
+      await updateLicense(selectedLic.id, {
+        ...editData,
+        employee_id: assignEmp ? parseInt(assignEmp) : null,
+        equipment_id: assignEquip ? parseInt(assignEquip) : null,
+      })
       showMsg('Đã cập nhật license!')
-      setSelectedLic(prev => ({ ...prev, ...editData }))
-      loadLicenses()
-    } catch { showMsg('Lỗi khi cập nhật', 'error') }
+      const r = await getLicenses(search)
+      const rows = r.data?.data || []
+      setLicenses(rows)
+      const fresh = rows.find(x => x.id === selectedLic.id)
+      if (fresh) {
+        setSelectedLic(fresh)
+        setAssignEmp(fresh.employee_id ? String(fresh.employee_id) : '')
+        setAssignDept(fresh.employee_id ? (fresh.department || '') : '')
+        setAssignEquip(fresh.equipment_id ? String(fresh.equipment_id) : '')
+      }
+    } catch (err) { showMsg(err?.response?.data?.detail || 'Lỗi khi cập nhật', 'error') }
     setSaving(false)
   }
 
@@ -509,6 +577,42 @@ export default function Licenses() {
                     <DetailItem label="Thiết bị" value={selectedLic.equipment_type} />
                     <DetailItem label="S/N" value={selectedLic.serial_number} />
                   </div>
+                  <div style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--bk-text, #0f172a)', marginBottom: '0.5rem' }}>Phân bổ cho người dùng</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                    <div>
+                      <label className="bk-form-label">Bộ phận</label>
+                      <select value={assignDept} onChange={e => handleAssignDeptChange(e.target.value)} className="bk-input">
+                        <option value="">Tất cả bộ phận</option>
+                        {deptList.map(d => <option key={d.name || d} value={d.name || d}>{d.name || d}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="bk-form-label">Người sử dụng</label>
+                      <select value={assignEmp} onChange={handleAssignEmpChange} className="bk-input">
+                        <option value="">— Không gán —</option>
+                        {panelEmps.map(e => <option key={e.id} value={String(e.id)}>{e.full_name}{e.department ? ` - ${e.department}` : ''}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  {assignEmp && panelEquips.length > 0 && (
+                    <div style={{ marginBottom: '0.4rem' }}>
+                      <label className="bk-form-label">Thiết bị của người dùng *</label>
+                      <select value={assignEquip} onChange={e => setAssignEquip(e.target.value)} className="bk-input">
+                        <option value="">— Chọn thiết bị —</option>
+                        {panelEquips.map(eq => <option key={eq.id} value={String(eq.id)}>{equipLabel(eq)}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  {assignEmp && panelEquips.length === 0 && (
+                    <div style={{ fontSize: '0.72rem', color: '#b45309', marginBottom: '0.4rem' }}>
+                      Người dùng chưa có thiết bị — key sẽ gán trực tiếp cho user.
+                    </div>
+                  )}
+                  {!assignEmp && selectedLic.assign_source === 'equipment' && (
+                    <div style={{ fontSize: '0.72rem', color: 'var(--bk-text-muted, #94a3b8)', marginBottom: '0.75rem' }}>
+                      Hiện đang gán qua thiết bị. Chọn người dùng để gán trực tiếp cho key.
+                    </div>
+                  )}
                   <div style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--bk-text, #0f172a)', marginBottom: '0.5rem' }}>Chỉnh sửa</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.75rem' }}>
                     {EDITABLE.map(k => (
@@ -782,9 +886,18 @@ function BulkImportButton({ onDone }) {
   }
 
   async function handleBulkSubmit() {
-    if (!selectedEquip || !bulkKeys.trim()) return
+    if ((!selectedEquip && !selectedEmp) || !bulkKeys.trim()) return
+    if (selectedEmp && equipList.length > 0 && !selectedEquip) {
+      alert('Nhân viên này đang có thiết bị — hãy chọn thiết bị để gắn key theo đúng quan hệ quản lý.')
+      return
+    }
     const keys = bulkKeys.split('\n').filter(k => k.trim())
-    await bulkImportLicenses(parseInt(selectedEquip), keys, bulkProduct.trim())
+    await bulkImportLicenses(
+      selectedEquip ? parseInt(selectedEquip) : null,
+      keys,
+      bulkProduct.trim(),
+      selectedEmp ? parseInt(selectedEmp) : null,
+    )
     setOpen(false); setBulkKeys(''); setBulkProduct(''); setSelectedEmp(''); setSelectedEquip(''); setDeptFilter('')
     onDone()
   }
@@ -812,12 +925,14 @@ function BulkImportButton({ onDone }) {
             <option value="" disabled>Không có nhân viên</option>
           ) : empList.map(e => <option key={e.id} value={e.id}>{e.full_name}{e.department ? ` - ${e.department}` : ''}</option>)}
         </select>
-        {equipList.length > 0 && (
+        {equipList.length > 0 ? (
           <select value={selectedEquip} onChange={e => setSelectedEquip(e.target.value)} className="bk-input" style={{ marginBottom: '0.5rem' }}>
-            <option value="">Chọn thiết bị...</option>
+            <option value="">Chọn thiết bị của nhân viên...</option>
             {equipList.map(eq => <option key={eq.id} value={eq.id}>{eq.equipment_type || `#${eq.id}`}</option>)}
           </select>
-        )}
+        ) : selectedEmp ? (
+          <div style={{ fontSize: '0.72rem', color: '#b45309', marginBottom: '0.5rem' }}>Nhân viên chưa có thiết bị — key sẽ gán trực tiếp cho nhân viên.</div>
+        ) : null}
         <textarea placeholder="License Key (mỗi dòng 1 key)" value={bulkKeys} onChange={e => setBulkKeys(e.target.value)} rows={5}
           className="bk-input" style={{ resize: 'vertical', minHeight: 80, marginBottom: '0.5rem' }} />
         <input type="text" placeholder="Product name (chung)" value={bulkProduct} onChange={e => setBulkProduct(e.target.value)}

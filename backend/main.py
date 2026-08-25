@@ -102,6 +102,17 @@ async def on_startup():
         except Exception as e:
             sess.rollback()
             print(f"  → users.username migration: {e}")
+
+    # licenses.employee_id — gán user trực tiếp cho license (không bắt buộc qua thiết bị)
+    with SessionLocal() as sess:
+        try:
+            sess.execute(text("ALTER TABLE licenses ADD COLUMN IF NOT EXISTS employee_id INTEGER"))
+            # Cho phép key gán theo user chưa có thiết bị (quan hệ chuẩn: user -> thiết bị -> key)
+            sess.execute(text("ALTER TABLE licenses ALTER COLUMN equipment_id DROP NOT NULL"))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → licenses.employee_id migration: {e}")
         try:
             sess.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_users_username ON users (username) WHERE username <> ''"))
             sess.commit()

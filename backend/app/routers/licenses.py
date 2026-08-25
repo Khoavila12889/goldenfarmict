@@ -1,5 +1,5 @@
 import re, os, shutil
-from fastapi import APIRouter, Query, UploadFile, File
+from fastapi import APIRouter, Query, UploadFile, File, HTTPException
 from sqlalchemy import text
 from ..core.db import fetchall, fetchone, execute, insert
 from ..core.session import SessionLocal
@@ -13,15 +13,21 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 @router.get("")
 def list_licenses(search: str = ""):
     sql = """
-        SELECT lic.*, eq.equipment_type, eq.serial_number, eq.asset_code,
-               emp.full_name, emp.department, emp.employee_code
+        SELECT lic.*,
+               eq.equipment_type, eq.serial_number, eq.asset_code,
+               COALESCE(ass.id, emp.id) AS assigned_employee_id,
+               COALESCE(ass.full_name, emp.full_name) AS full_name,
+               COALESCE(ass.department, emp.department) AS department,
+               COALESCE(ass.employee_code, emp.employee_code) AS employee_code,
+               CASE WHEN lic.employee_id IS NOT NULL THEN 'user' ELSE 'equipment' END AS assign_source
         FROM licenses lic
-        JOIN equipment eq ON eq.id=lic.equipment_id
-        JOIN employees emp ON emp.id=eq.employee_id
+        LEFT JOIN equipment eq ON eq.id=lic.equipment_id
+        LEFT JOIN employees ass ON ass.id=lic.employee_id
+        LEFT JOIN employees emp ON emp.id=eq.employee_id
     """
     params = {}
     if search:
-        sql += " WHERE LOWER(lic.license_key) LIKE LOWER(:search) OR LOWER(lic.product_name) LIKE LOWER(:search) OR LOWER(emp.full_name) LIKE LOWER(:search)"
+        sql += " WHERE LOWER(lic.license_key) LIKE LOWER(:search) OR LOWER(lic.product_name) LIKE LOWER(:search) OR LOWER(COALESCE(ass.full_name, emp.full_name, '')) LIKE LOWER(:search)"
         params["search"] = f"%{search}%"
     sql += " ORDER BY lic.id DESC"
     rows = fetchall(sql, params)
@@ -54,17 +60,36 @@ def create_license(body: dict):
 
 @router.put("/{license_id}")
 def update_license(license_id: int, body: dict):
-    execute(
-        "UPDATE licenses SET license_key=:license_key, product_name=:product_name, activated=:activated, expiry_date=:expiry_date, notes=:notes, updated_at=CURRENT_TIMESTAMP WHERE id=:id",
-        {
-            "license_key": body.get("license_key", ""),
-            "product_name": body.get("product_name", ""),
-            "activated": body.get("activated", ""),
-            "expiry_date": body.get("expiry_date", ""),
-            "notes": body.get("notes", ""),
-            "id": license_id,
-        },
-    )
+    emp_id = body.get("employee_id") or None
+    eq_id = body.get("equipment_id") or None
+
+    # Quan hệ chính xác: thiết bị gắn vào key phải thuộc user được gán key
+    if eq_id:
+        eq = fetchone("SELECT id, employee_id FROM equipment WHERE id=:id", {"id": eq_id})
+        if not eq:
+            raise HTTPException(400, "Thiết bị không tồn tại")
+        if emp_id and eq["employee_id"] and eq["employee_id"] != emp_id:
+            raise HTTPException(400, "Thiết bị không thuộc người dùng đã chọn. Hãy chọn thiết bị đang cấp cho người dùng này.")
+
+    fields = [
+        "license_key=:license_key", "product_name=:product_name", "activated=:activated",
+        "expiry_date=:expiry_date", "notes=:notes", "updated_at=CURRENT_TIMESTAMP",
+    ]
+    params = {
+        "license_key": body.get("license_key", ""),
+        "product_name": body.get("product_name", ""),
+        "activated": body.get("activated", ""),
+        "expiry_date": body.get("expiry_date", ""),
+        "notes": body.get("notes", ""),
+        "id": license_id,
+    }
+    if "employee_id" in body:
+        fields.append("employee_id=:employee_id")
+        params["employee_id"] = emp_id
+    if "equipment_id" in body:
+        fields.append("equipment_id=:equipment_id")
+        params["equipment_id"] = eq_id
+    execute(f"UPDATE licenses SET {', '.join(fields)} WHERE id=:id", params)
     return {"success": True}
 
 
@@ -78,12 +103,23 @@ def delete_license(license_id: int):
 def bulk_import(body: dict):
     keys = body.get("keys", [])
     equipment_id = body.get("equipment_id")
+    employee_id = body.get("employee_id")
     product_name = body.get("product_name", "")
+
+    # Quan hệ chính xác: thiết bị gắn key phải thuộc user được gán key
+    if equipment_id and employee_id:
+        eq = fetchone("SELECT employee_id FROM equipment WHERE id=:id", {"id": equipment_id})
+        if eq and eq["employee_id"] and eq["employee_id"] != employee_id:
+            raise HTTPException(400, "Thiết bị không thuộc người dùng đã chọn. Hãy chọn thiết bị đang cấp cho người dùng này.")
+
     added = 0
     for k in keys:
         k = k.strip()
         if k:
-            execute("INSERT INTO licenses (equipment_id, license_key, product_name) VALUES (:eid, :key, :product)", {"eid": equipment_id, "key": k, "product": product_name})
+            execute(
+                "INSERT INTO licenses (equipment_id, employee_id, license_key, product_name) VALUES (:eid, :pid, :key, :product)",
+                {"eid": equipment_id or None, "pid": employee_id or None, "key": k, "product": product_name},
+            )
             added += 1
     return {"success": True, "added": added}
 
