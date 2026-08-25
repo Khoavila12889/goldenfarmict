@@ -745,6 +745,8 @@ export default function Licenses() {
 
 function BulkImportButton({ onDone }) {
   const [open, setOpen] = useState(false)
+  const [depts, setDepts] = useState([])
+  const [deptFilter, setDeptFilter] = useState('')
   const [empList, setEmpList] = useState([])
   const [selectedEmp, setSelectedEmp] = useState('')
   const [equipList, setEquipList] = useState([])
@@ -752,7 +754,25 @@ function BulkImportButton({ onDone }) {
   const [bulkKeys, setBulkKeys] = useState('')
   const [bulkProduct, setBulkProduct] = useState('')
 
-  async function openBulk() { setOpen(true); const r = await getEmployees(); setEmpList(r.data?.data || []) }
+  async function openBulk() {
+    setOpen(true)
+    getDepartments().then(r => setDepts(r.data?.data || [])).catch(() => {})
+    loadEmployees('')
+  }
+
+  async function loadEmployees(dept) {
+    try {
+      const r = await getEmployees('', dept || '')
+      setEmpList(r.data?.data || [])
+    } catch { setEmpList([]) }
+  }
+
+  async function handleDeptChange(e) {
+    const dept = e.target.value
+    setDeptFilter(dept)
+    setSelectedEmp(''); setEquipList([]); setSelectedEquip('')
+    await loadEmployees(dept)
+  }
 
   async function handleEmpChange(e) {
     const id = e.target.value; setSelectedEmp(id)
@@ -765,7 +785,7 @@ function BulkImportButton({ onDone }) {
     if (!selectedEquip || !bulkKeys.trim()) return
     const keys = bulkKeys.split('\n').filter(k => k.trim())
     await bulkImportLicenses(parseInt(selectedEquip), keys, bulkProduct.trim())
-    setOpen(false); setBulkKeys(''); setBulkProduct(''); setSelectedEmp(''); setSelectedEquip('')
+    setOpen(false); setBulkKeys(''); setBulkProduct(''); setSelectedEmp(''); setSelectedEquip(''); setDeptFilter('')
     onDone()
   }
 
@@ -780,9 +800,17 @@ function BulkImportButton({ onDone }) {
           <div className="bk-dialog-title">Nhập hàng loạt License Key</div>
           <button className="bk-dialog-close" onClick={() => setOpen(false)}>✕</button>
         </div>
+        <select value={deptFilter} onChange={handleDeptChange} className="bk-input" style={{ marginBottom: '0.5rem' }}>
+          <option value="">Tất cả bộ phận</option>
+          {depts.map(d => <option key={d.name || d} value={d.name || d}>
+            {d.name || d}{d.head_name ? ` (TP: ${d.head_name})` : ''}
+          </option>)}
+        </select>
         <select value={selectedEmp} onChange={handleEmpChange} className="bk-input" style={{ marginBottom: '0.5rem' }}>
-          <option value="">Chọn nhân viên...</option>
-          {empList.map(e => <option key={e.id} value={e.id}>{e.full_name}{e.department ? ` - ${e.department}` : ''}</option>)}
+          <option value="">{deptFilter ? 'Chọn nhân viên của bộ phận...' : 'Chọn nhân viên...'}</option>
+          {empList.length === 0 ? (
+            <option value="" disabled>Không có nhân viên</option>
+          ) : empList.map(e => <option key={e.id} value={e.id}>{e.full_name}{e.department ? ` - ${e.department}` : ''}</option>)}
         </select>
         {equipList.length > 0 && (
           <select value={selectedEquip} onChange={e => setSelectedEquip(e.target.value)} className="bk-input" style={{ marginBottom: '0.5rem' }}>
