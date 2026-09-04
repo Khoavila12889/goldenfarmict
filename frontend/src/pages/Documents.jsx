@@ -33,13 +33,16 @@ function buildThumbnailUrl(cfg, entry, currentPath, userCode, userRole) {
     ? entry.name
     : `${currentPath.replace(/\/$/, '')}/${entry.name}`
   
+  let url
   if (isGdrive) {
     if (entry.thumbnailLink) {
       return entry.thumbnailLink.replace(/=s\d+(-c)?$/, '=s800')
     }
-    return apiUrl(`/documents/thumbnail?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}&file_id=${encodeURIComponent(entry.id)}&user_code=${userCode}&user_role=${userRole}&size=800`)
+    url = apiUrl(`/documents/thumbnail?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}&file_id=${encodeURIComponent(entry.id)}&user_code=${userCode}&user_role=${userRole}&size=800`)
+  } else {
+    url = apiUrl(`/documents/thumbnail?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}&user_code=${userCode}&user_role=${userRole}&size=400`)
   }
-  return apiUrl(`/documents/thumbnail?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}&user_code=${userCode}&user_role=${userRole}&size=400`)
+  return encodeURI(url)
 }
 
 function getFileIcon(name, isDir) {
@@ -98,7 +101,7 @@ function buildFileDownloadUrl(cfg, entry, currentPath, userCode, userRole, inlin
   if (isGdrive && entry.id) url += `&file_id=${encodeURIComponent(entry.id)}`
   url += `&user_code=${userCode}&user_role=${userRole}`
   if (inline) url += '&inline=true'
-  return url
+  return encodeURI(url)
 }
 
 function SkeletonRows({ count = 5 }) {
