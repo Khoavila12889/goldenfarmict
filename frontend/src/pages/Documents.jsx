@@ -33,15 +33,18 @@ function buildThumbnailUrl(cfg, entry, currentPath, userCode, userRole) {
     ? entry.name
     : `${currentPath.replace(/\/$/, '')}/${entry.name}`
   
-  let url
+  let url = ''
   if (isGdrive) {
     if (entry.thumbnailLink) {
-      return entry.thumbnailLink.replace(/=s\d+(-c)?$/, '=s800')
+      url = entry.thumbnailLink.replace(/=s\d+(-c)?$/, '=s800')
+      return url // Link từ Google thường đã an toàn
     }
     url = apiUrl(`/documents/thumbnail?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}&file_id=${encodeURIComponent(entry.id)}&user_code=${userCode}&user_role=${userRole}&size=800`)
   } else {
     url = apiUrl(`/documents/thumbnail?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}&user_code=${userCode}&user_role=${userRole}&size=400`)
   }
+  
+  // Sửa lỗi Firefox: Đảm bảo URL cuối cùng được mã hóa an toàn toàn bộ
   return encodeURI(url)
 }
 
