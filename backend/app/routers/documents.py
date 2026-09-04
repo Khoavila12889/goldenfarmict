@@ -1212,7 +1212,7 @@ async def download_file(
 
 # ─── Thumbnail (on-the-fly resize cho card ảnh) ────────────────
 
-_IMAGE_EXTS = ('jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tif', 'tiff')
+_IMAGE_EXTS = ('jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif', 'tif', 'tiff')
 _THUMB_CACHE_MAX_AGE = 3600  # seconds
 
 
@@ -1295,53 +1295,6 @@ def file_thumbnail(
         from fastapi.responses import Response
         return Response(content=data, media_type=mime, headers=cache_headers)
 
-
-    import logging
-
-    try:
-        ftp = ftplib.FTP()
-        ftp.connect(cfg['host'], cfg['port'] or 21, timeout=10)
-        ftp.login(cfg['username'] or 'anonymous', cfg['password'] or '')
-
-        base = cfg['remote_path'] or '/'
-        full_path = os.path.join(base, file_path.lstrip('/')).replace('\\', '/')
-        logging.info(f"[FTP] Reading file: {full_path}")
-
-        filename = os.path.basename(file_path)
-
-        import mimetypes
-        mime_type, _ = mimetypes.guess_type(filename)
-        if not mime_type:
-            mime_type = 'application/octet-stream'
-
-        def file_iterator():
-            data = io.BytesIO()
-            try:
-                ftp.retrbinary(f'RETR {full_path}', data.write)
-                data.seek(0)
-                while True:
-                    chunk = data.read(8192)
-                    if not chunk:
-                        break
-                    yield chunk
-            except Exception as e:
-                logging.error(f"[FTP] Error: {e}")
-                raise
-            finally:
-                ftp.quit()
-
-        return StreamingResponse(
-            file_iterator(),
-            media_type=mime_type,
-            headers={
-                "Content-Disposition": f'inline; filename="{filename}"',
-                "Cache-Control": "no-cache"
-            }
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"FTP error: {str(e)}")
 
 def _download_smb(cfg, file_path):
     try:
