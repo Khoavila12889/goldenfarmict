@@ -661,6 +661,20 @@ export function getOnlyOfficeConfig(configId, filePath, userCode, userRole, file
   })
 }
 
+// ─── Draw.io (Diagrams.net) ───────────────────────────────────
+export function loadDrawioFile(configId, filePath, userCode, userRole) {
+  return api.get('/documents/drawio/load', {
+    params: { config_id: configId, file_path: filePath, user_code: userCode, user_role: userRole },
+    responseType: 'text',
+  })
+}
+
+export function saveDrawioFile(configId, filePath, xml, userCode, userRole) {
+  return api.put('/documents/drawio/save', { xml }, {
+    params: { config_id: configId, file_path: filePath, user_code: userCode, user_role: userRole },
+  })
+}
+
 // ─── Document Sharing ───────────────────────────────────────────
 function shareAuthParams() {
   const userCode = sessionStorage.getItem('user_code') || ''

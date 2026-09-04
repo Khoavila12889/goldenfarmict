@@ -1932,6 +1932,83 @@ def onlyoffice_callback(body: OnlyOfficeCallback):
 
 
 # ═══════════════════════════════════════════════════════════════
+# DRAW.IO INTEGRATION (Diagrams.net)
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/drawio/load")
+async def load_drawio_file(
+    config_id: int = Query(...),
+    file_path: str = Query(...),
+    user_code: str = Query(''),
+    user_role: str = Query('user')
+):
+    """Đọc nội dung XML file .drawio từ storage (SMB/FTP/GDrive)."""
+    from fastapi.responses import Response as FastAPIResponse
+
+    active_sql = "" if user_role in ('admin', 'head') else "AND is_active = TRUE"
+    cfg = fetchone(f"SELECT * FROM storage_config WHERE id=:id {active_sql}", {"id": config_id})
+    if not cfg:
+        raise HTTPException(404, "Storage not found or inactive")
+
+    folder_path = os.path.dirname(file_path).replace('\\', '/')
+    allowed = _check_folder_permission(config_id, folder_path, user_code, user_role)
+    share_grant = _check_share_access(config_id, file_path, user_code, user_role)
+    if not allowed and share_grant is None:
+        raise HTTPException(403, "No permission to access this file")
+
+    try:
+        data = _get_file_bytes(cfg, file_path)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Failed to read file: {str(e)}")
+
+    return FastAPIResponse(content=data, media_type="application/xml")
+
+
+@router.put("/drawio/save")
+async def save_drawio_file(
+    config_id: int = Query(...),
+    file_path: str = Query(...),
+    body: dict = Body(...),
+    user_code: str = Query(''),
+    user_role: str = Query('user')
+):
+    """Nhận XML từ postMessage 'save' event, ghi đè lên storage."""
+    active_sql = "" if user_role in ('admin', 'head') else "AND is_active = TRUE"
+    cfg = fetchone(f"SELECT * FROM storage_config WHERE id=:id {active_sql}", {"id": config_id})
+    if not cfg:
+        raise HTTPException(404, "Storage not found or inactive")
+
+    folder_path = os.path.dirname(file_path).replace('\\', '/')
+    allowed = _check_folder_permission(config_id, folder_path, user_code, user_role)
+    share_grant = _check_share_access(config_id, file_path, user_code, user_role)
+    if not allowed and share_grant is None:
+        raise HTTPException(403, "No permission to access this file")
+
+    xml_content = body.get("xml", "")
+    if not xml_content:
+        raise HTTPException(400, "No XML content provided")
+
+    try:
+        _put_file_bytes(cfg, file_path, xml_content.encode("utf-8"))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Failed to save file: {str(e)}")
+
+    from ..core.events import publish_sync
+    publish_sync("document_updated", {
+        "config_id": config_id,
+        "file_path": file_path,
+        "action": "drawio_save",
+        "ts": datetime.now().isoformat(),
+    })
+
+    return {"status": "success"}
+
+
+# ═══════════════════════════════════════════════════════════════
 # PDF → WEBP: xem nhanh tài liệu PDF dạng trang ảnh (thay OnlyOffice)
 # ═══════════════════════════════════════════════════════════════
 

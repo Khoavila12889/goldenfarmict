@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Monitor, Key, Ticket, CheckCircle, 
   Settings, Calendar, Receipt, Folder, Shield, Menu, X, User, 
   Lock, Eye, EyeOff, CheckSquare, HelpCircle, Activity, MessageSquare,
-  CalendarOff
+  CalendarOff, PenTool
 } from 'lucide-react'
 import { changePassword, getProfile, apiUrl } from '../services/api'
 import { driver } from 'driver.js'
@@ -30,6 +30,7 @@ const iconMap = {
   permissions: Shield,
   monitor: Activity,
   help: HelpCircle,
+  drawioTools: PenTool,
 }
 
 const allNavItems = [
@@ -45,6 +46,7 @@ const allNavItems = [
   { path: '/bookings', label: 'Lịch(Booking)', icon: 'bookings', roles: ['user', 'head', 'admin'] },
   { path: '/nghiphep', label: 'Nghỉ phép', icon: 'nghiphep', roles: ['user', 'head', 'admin'] },
   { path: '/documents', label: 'Tài liệu', icon: 'documents', roles: ['user', 'head', 'admin'] },
+  { path: '/tools/drawio', label: 'Vẽ sơ đồ (Draw.io)', icon: 'drawioTools', roles: ['user', 'head', 'admin'] },
   { path: '/salary-slip', label: 'Phiếu lương', icon: 'salary', roles: ['user', 'head', 'admin'] },
   { path: '/salary-slip-admin', label: 'Quản lý lương', icon: 'salaryAdmin', roles: ['head', 'admin'] },
   { path: '/permissions', label: 'Phân quyền', icon: 'permissions', roles: ['admin'] },

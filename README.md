@@ -14,6 +14,7 @@ Hệ thống quản lý ICT nội bộ — Quản lý nhân viên, thiết bị,
 | **CSS** | Thuần CSS (CSS Custom Properties — dark/light mode) + `shared.css` cho pattern dùng chung |
 | **Storage** | SMB (`pysmb`), FTP (`ftplib`), Google Drive (`google-api-python-client`, `google-auth`) |
 | **Office Editor** | ONLYOFFICE Document Server + `@onlyoffice/document-editor-react` |
+| **Diagram Editor** | Draw.io (Diagrams.net) — iframe embed qua `jgraph/drawio` Docker image |
 
 ## Architecture
 
@@ -144,6 +145,13 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 > 2. Bước duyệt cần cấu hình `approver_type='role'`, `approver_value` = đúng **chức danh (position)** của trưởng phòng (VD `Trưởng phòng`), bật `department_match` (cùng phòng ban).
 > 3. Sau khi thêm cột mới (`business_trips.approval_request_id`) cần khởi động lại backend để migration chạy: `docker compose restart backend`.
 
+### 🛠️ Công cụ vẽ sơ đồ (Draw.io — `/tools/drawio`)
+- **Workspace Layout**: Toolbar + canvas area, giao diện giống phần mềm độc lập nhúng trong web
+- **Toolbar**: Icon PenTool + tiêu đề, input tên bản vẽ (mặc định `Ban_ve_moi_1`), nút "Tải xuống XML" và "Lưu lên hệ thống"
+- **Tích hợp Draw.io**: Nhúng iframe Draw.io (Diagrams.net) qua Docker image `jgraph/drawio`, load/save qua `postMessage`
+- **Hỗ trợ 2 chế độ**: Standalone (tools page, lưu local) và Documents (lưu lên SMB/FTP/GDrive)
+- **File extension**: `.drawio` và `.xml` — mở trực tiếp bằng DrawioViewer trong Documents
+
 ### 💰 Quản lý phiếu lương (Salary Slip)
 
 - **Admin — 3 Tab UI** (`SalarySlipAdmin.jsx`):
@@ -183,6 +191,7 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 - **User UI trực quan**: Giao diện dạng card grid (hiển thị file dạng thumbnail lớn) kết hợp list view, cho phép chuyển đổi linh hoạt
 - **File Preview**: Xem trước ảnh, PDF, video, audio, text, code ngay trong trình duyệt (FileViewer component)
 - **Online Office Editor**: Chỉnh sửa .docx/.xlsx/.pptx trực tuyến qua ONLYOFFICE Document Server (`office.goldenfarm.vn`)
+- **Draw.io Editor**: Vẽ sơ đồ trực tuyến (.drawio/.xml) qua Draw.io (Diagrams.net) — iframe embed, load/save qua postMessage
 - **Search file**: Tìm kiếm file/thư mục theo tên realtime
 - **Cấu hình storage**: SMB (Windows Share), FTP, Google Drive (Service Account)
 - **Test kết nối** trước khi lưu
@@ -368,6 +377,7 @@ const { startTour } = useOnboardingTour({
 | `workflows` | Quy trình |
 | `bookings` | Lịch |
 | `documents` | Tài liệu |
+| `drawioTools` | Vẽ sơ đồ (Draw.io) |
 | `salary` | Phiếu lương |
 | `salaryAdmin` | Quản lý lương |
 | `permissions` | Phân quyền |
@@ -419,10 +429,15 @@ DATABASE_URL=postgresql://goldenfarm:your_strong_password@localhost:5432/goldenf
 
 # VPS/Docker (Production): Dùng service `db` trong docker-compose
 # DATABASE_URL=postgresql://goldenfarm:your_strong_password@db:5432/goldenfarmict
+
+# Draw.io (Diagrams.net) — cần khi deploy Docker
+DRAWIO_PORT=8091
+DRAWIO_PUBLIC_URL=http://10.0.0.9:8091
 ```
 
 - **Local development**: Chạy PostgreSQL local rồi cấu hình `DATABASE_URL` trong `.env`
 - **Docker deployment**: Không cần đổi gì — docker-compose tự gắn `DATABASE_URL` vào container backend
+- **Draw.io**: Cần cấu hình `DRAWIO_PUBLIC_URL` trong `.env` (VD: `http://10.0.0.9:8091`) và `VITE_DRAWIO_PUBLIC_URL` trong `frontend/.env`
 
 ## Usage
 
@@ -450,6 +465,8 @@ docker compose up -d --build
 
 - Frontend: `http://<VPS_IP>:8088`
 - Backend API: `http://<VPS_IP>:8000`
+- OnlyOffice: `http://<VPS_IP>:8080`
+- Draw.io: `http://<VPS_IP>:8091`
 
 > Hệ thống sử dụng **PostgreSQL 16** duy nhất (service `db` trong docker-compose). Không còn hỗ trợ SQLite.
 
@@ -516,6 +533,7 @@ goldenfarm-ict-web/
 │   │   ├── App.jsx                # Routing + ProtectedRoute / AdminRoute guards
 │   │   ├── components/
 │   │   │   ├── OnlyOfficeViewer.jsx # ONLYOFFICE document editor overlay
+│   │   │   └── DrawioViewer.jsx    # Draw.io diagram editor (iframe embed, 2 modes)
 │   │   ├── pages/
 │   │   │   ├── Login.jsx          # Đăng nhập (employee_code + password/email)
 │   │   │   ├── Dashboard.jsx      # Admin tổng quan / User cá nhân
@@ -526,7 +544,8 @@ goldenfarm-ict-web/
 │   │   │   ├── Tickets.jsx        # User kanban / Admin filter+reply
 │   │   │   ├── Approvals.jsx      # Approval requests: tạo phiếu, duyệt/từ chối, timeline logs
 │   │   │   ├── WorkflowTemplates.jsx # Quản lý quy trình phê duyệt & bước duyệt
-│   │   │   ├── Documents.jsx      # Storage browser SMB/FTP/GDrive + ONLYOFFICE
+│   │   │   ├── Documents.jsx      # Storage browser SMB/FTP/GDrive + ONLYOFFICE + Draw.io
+│   │   │   ├── ToolsDrawio.jsx    # Draw.io workspace (toolbar + iframe embed)
 │   │   │   ├── Todos.jsx, Todos.css # Kanban quản lý công việc
 │   │   │   ├── Permissions.jsx    # Phân quyền 3 tab: Module + Documents (Nextcloud-style) + Roles + RBAC 3-Tier
 │   │   │   ├── Profile.jsx        # Hồ sơ cá nhân, đổi mật khẩu
@@ -758,6 +777,8 @@ goldenfarm-ict-web/
 | `GET` | `/api/documents/onlyoffice/config` | Lấy editor config cho ONLYOFFICE (JWT-signed) |
 | `GET` | `/api/documents/onlyoffice/download` | Stream file cho ONLYOFFICE Document Server (temporary JWT token) |
 | `POST` | `/api/documents/onlyoffice/callback` | Webhook từ ONLYOFFICE — lưu file sau khi chỉnh sửa (status 2/6) |
+| `GET` | `/api/documents/drawio/load` | Đọc nội dung XML file .drawio từ storage (SMB/FTP/GDrive) |
+| `PUT` | `/api/documents/drawio/save` | Ghi nội dung XML từ Draw.io editor về storage |
 | `GET` | `/api/documents/departments` | Danh sách phòng ban (cho dropdown) |
 | `GET` | `/api/documents/permissions/{config_id}` | Danh sách phân quyền (granular fields) |
 | `POST` | `/api/documents/permissions` | Thêm phân quyền (legacy) |

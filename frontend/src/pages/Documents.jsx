@@ -11,6 +11,7 @@ import '../styles/shared.css'
 import './Documents.css'
 import FileViewer from '../components/FileViewer'
 import OnlyOfficeViewer from '../components/OnlyOfficeViewer'
+import DrawioViewer from '../components/DrawioViewer'
 import PdfPagesViewer from '../components/PdfPagesViewer'
 import ShareDocument from '../components/ShareDocument'
 import ImageLightbox from '../components/ImageLightbox'
@@ -59,6 +60,7 @@ function getFileIcon(name, isDir) {
     '7z':   { icon: Archive, color: '#64748b' },
     tar:    { icon: Archive, color: '#64748b' },
     gz:     { icon: Archive, color: '#64748b' },
+    drawio: { icon: FileCode, color: '#f97316' },
     exe:    { icon: FileCog, color: '#1e293b' },
     msi:    { icon: FileCog, color: '#1e293b' },
     jpg:    { icon: Image, color: '#16a34a' },
@@ -159,6 +161,10 @@ export default function Documents() {
   const [ooFile, setOoFile] = useState(null)
   const [ooOpen, setOoOpen] = useState(false)
   const [ooConfigId, setOoConfigId] = useState(null)
+  // Draw.io viewer state
+  const [drawioFile, setDrawioFile] = useState(null)
+  const [drawioOpen, setDrawioOpen] = useState(false)
+  const [drawioConfigId, setDrawioConfigId] = useState(null)
   // Xem PDF dạng trang ảnh WebP (thay OnlyOffice — giảm tải Document Server)
   const [pdfPagesFile, setPdfPagesFile] = useState(null)
   const [shareFile, setShareFile] = useState(null)
@@ -292,7 +298,8 @@ export default function Documents() {
       'pdf', 'txt', 'log', 'md', 'json', 'xml', 'csv',
       'html', 'css', 'js', 'jsx', 'ts', 'tsx', 'py', 'java', 'c', 'cpp', 'h', 'cs', 'php', 'rb', 'go', 'rs', 'sql',
       'mp4', 'webm', 'ogg', 'mp3', 'wav', 'm4a',
-      'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'
+      'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+      'drawio',
     ]
     return previewable.includes(ext)
   }
@@ -338,6 +345,15 @@ export default function Documents() {
       setOoFile({ ...entry, browsePath: currentPath, storageType: activeConfig.type })
       setOoConfigId(activeConfig.id)
       setOoOpen(true)
+      return
+    }
+
+    // Draw.io files (.drawio, .xml)
+    const drawioExts = ['drawio', 'xml']
+    if (drawioExts.includes(ext)) {
+      setDrawioFile({ ...entry, browsePath: currentPath, storageType: activeConfig.type })
+      setDrawioConfigId(activeConfig.id)
+      setDrawioOpen(true)
       return
     }
 
@@ -1425,6 +1441,7 @@ export default function Documents() {
       <FileViewer file={viewerFile} isOpen={viewerOpen} onClose={() => { setViewerOpen(false); setViewerFile(null) }} />
       <PdfPagesViewer file={pdfPagesFile} isOpen={!!pdfPagesFile} onClose={() => setPdfPagesFile(null)} />
       <OnlyOfficeViewer file={ooFile} configId={ooConfigId} isOpen={ooOpen} onClose={() => { setOoOpen(false); setOoFile(null); setOoConfigId(null) }} />
+      <DrawioViewer file={drawioFile} configId={drawioConfigId} isOpen={drawioOpen} onClose={() => { setDrawioOpen(false); setDrawioFile(null); setDrawioConfigId(null) }} />
       <ShareDocument file={shareFile} isOpen={shareOpen} onClose={() => { setShareOpen(false); setShareFile(null) }} />
       <ImageLightbox open={showLightbox} onClose={() => setShowLightbox(false)} slides={lightboxSlides} index={lightboxIndex} />
     </div>

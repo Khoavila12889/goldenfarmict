@@ -20,6 +20,7 @@ import HelpPage from './pages/HelpPage'
 import MonitorPage from './pages/MonitorPage'
 import Chat from './pages/Chat'
 import PublicSharePage from './pages/PublicSharePage'
+import ToolsDrawio from './pages/ToolsDrawio'
 import Layout from './components/Layout'
 
 function ProtectedRoute({ children }) {
@@ -76,6 +77,7 @@ export default function App() {
         <Route path="monitor" element={<AdminRoute><MonitorPage /></AdminRoute>} />
         <Route path="help" element={<HelpPage />} />
         <Route path="chat" element={<Chat />} />
+        <Route path="tools/drawio" element={<ToolsDrawio />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

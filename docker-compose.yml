@@ -52,6 +52,7 @@ services:
       - ONLYOFFICE_PUBLIC_URL=${ONLYOFFICE_PUBLIC_URL}
       - ONLYOFFICE_SECRET=${ONLYOFFICE_SECRET}
       - ONLYOFFICE_ENABLED=${ONLYOFFICE_ENABLED}
+      - DRAWIO_PUBLIC_URL=${DRAWIO_PUBLIC_URL}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
@@ -75,6 +76,24 @@ services:
     restart: unless-stopped
     networks:
       - goldenfarm-network
+
+  # 5. Draw.io (Diagrams.net) - vẽ sơ đồ tương tự Visio
+  drawio:
+    image: jgraph/drawio:latest
+    container_name: goldenfarm-drawio
+    ports:
+      - "${DRAWIO_PORT}:8080"
+    environment:
+      - DRAWIO_ENABLE_PLUGINS=false
+    restart: unless-stopped
+    networks:
+      - goldenfarm-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   # 4. OnlyOffice Document Server (for viewing/editing Office files)
   # OnlyOffice Document Server cho phép xem/chỉnh sửa file Office trực tiếp trong browser
