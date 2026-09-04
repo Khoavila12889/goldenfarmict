@@ -145,6 +145,18 @@ async def on_startup():
             sess.rollback()
             print(f"  → document_shares.permissions migration: {e}")
 
+    # document_shares.employee_code — comma list of employee codes for USER shares
+    with SessionLocal() as sess:
+        try:
+            sess.execute(text(
+                "ALTER TABLE document_shares "
+                "ADD COLUMN IF NOT EXISTS employee_code TEXT DEFAULT ''"
+            ))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → document_shares.employee_code migration: {e}")
+
     # chat_messages.attachment_* — metadata file đính kèm (ảnh / pdf / xlsx)
     with SessionLocal() as sess:
         try:
