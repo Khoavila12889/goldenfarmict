@@ -35,17 +35,13 @@ function buildThumbnailUrl(cfg, entry, currentPath, userCode, userRole) {
   
   let url = ''
   if (isGdrive) {
-    if (entry.thumbnailLink) {
-      url = entry.thumbnailLink.replace(/=s\d+(-c)?$/, '=s800')
-      return url // Link từ Google thường đã an toàn
-    }
+    // Bỏ thumbnailLink — ép toàn bộ ảnh GDrive qua backend proxy
+    // Tránh lỗi CORS/Cookie trên Firefox
     url = apiUrl(`/documents/thumbnail?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}&file_id=${encodeURIComponent(entry.id)}&user_code=${userCode}&user_role=${userRole}&size=800`)
   } else {
     url = apiUrl(`/documents/thumbnail?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}&user_code=${userCode}&user_role=${userRole}&size=400`)
   }
-  
-  // Sửa lỗi Firefox: Đảm bảo URL cuối cùng được mã hóa an toàn toàn bộ
-  return encodeURI(url)
+  return url
 }
 
 function getFileIcon(name, isDir) {
@@ -1038,7 +1034,7 @@ export default function Documents() {
                     onContextMenu={(ev) => handleContextMenu(ev, e)}>
                     <div className="doc-card-icon">
                       {isImg && thumbUrl ? (
-                        <img src={thumbUrl} alt={e.name} loading="lazy" className="doc-card-thumb"
+                        <img src={thumbUrl} alt={e.name} loading="lazy" className="doc-card-thumb" referrerPolicy="no-referrer"
                           onError={(ev) => {
                             ev.currentTarget.style.display = 'none'
                             ev.currentTarget.nextSibling.style.display = 'flex'
@@ -1109,7 +1105,7 @@ export default function Documents() {
                       <div className="doc-col-name">
                         {isImg && thumbUrl ? (
                           <div className="doc-list-thumb-wrap">
-                            <img src={thumbUrl} alt={e.name} loading="lazy" className="doc-list-thumb"
+                            <img src={thumbUrl} alt={e.name} loading="lazy" className="doc-list-thumb" referrerPolicy="no-referrer"
                               onError={(ev) => {
                                 ev.currentTarget.style.display = 'none'
                                 ev.currentTarget.parentElement.nextSibling?.removeAttribute('style')
