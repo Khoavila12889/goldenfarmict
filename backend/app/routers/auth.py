@@ -337,6 +337,7 @@ ALL_MODULES = [
     {"key": "dashboard", "label": "Dashboard", "group": "support"},
     {"key": "announcements", "label": "Tạo thông báo Dashboard", "group": "support"},
     {"key": "password-reset", "label": "Reset mật khẩu", "group": "support"},
+    {"key": "drawio", "label": "Vẽ sơ đồ (Draw.io)", "group": "support"},
 ]
 
 

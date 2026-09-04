@@ -25,6 +25,7 @@ const MODULES = [
   { key: 'dashboard', label: 'Dashboard', group: 'support', desc: 'Quyền truy cập trang Dashboard (Mặc định: Tất cả)' },
   { key: 'announcements', label: 'Tạo thông báo Dashboard', group: 'support', desc: 'Tạo / sửa / xóa thông báo trên Dashboard. Mặc định: Admin & Trưởng phòng. Tick Xem hoặc Sửa để cấp cho nhân viên đặc biệt.' },
   { key: 'password-reset', label: 'Reset mật khẩu', group: 'support', desc: 'Cho phép reset mật khẩu người khác. Mặc định: Admin & Trưởng phòng. Tick Xem hoặc Sửa để cấp cho nhân viên đặc biệt.' },
+  { key: 'drawio', label: 'Vẽ sơ đồ (Draw.io)', group: 'support', desc: 'Truy cập công cụ vẽ sơ đồ Draw.io' },
 ]
 
 const ADMIN_MODULES = new Set(MODULES.filter(m => m.group === 'admin').map(m => m.key))

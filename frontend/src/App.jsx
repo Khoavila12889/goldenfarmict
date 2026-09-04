@@ -77,7 +77,7 @@ export default function App() {
         <Route path="monitor" element={<AdminRoute><MonitorPage /></AdminRoute>} />
         <Route path="help" element={<HelpPage />} />
         <Route path="chat" element={<Chat />} />
-        <Route path="tools/drawio" element={<ToolsDrawio />} />
+        <Route path="tools/drawio" element={<AdminRoute requiredModule="drawio"><ToolsDrawio /></AdminRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

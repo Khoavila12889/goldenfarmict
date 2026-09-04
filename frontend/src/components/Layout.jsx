@@ -69,6 +69,7 @@ const MODULE_MAP = {
   '/documents': 'documents',
   '/salary-slip': 'salary',
   '/salary-slip-admin': 'salary-admin',
+  '/tools/drawio': 'drawio',
   '/permissions': 'permissions',
   '/monitor': 'monitor',
   '/help': 'help',
