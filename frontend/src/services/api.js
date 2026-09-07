@@ -15,7 +15,7 @@ function normalizeOrigin(url) {
   if (s.endsWith('/api')) s = s.slice(0, -4)
   s = s.replace(/\/+$/, '')
   if (s && !/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) {
-    s = 'http://' + s
+    s = 'https://' + s
   }
   return s
 }
