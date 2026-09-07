@@ -48,6 +48,13 @@ export default function Employees() {
   const userRole = sessionStorage.getItem('user_role') || ''
   const userCode = sessionStorage.getItem('user_code') || ''
   const isAdmin = userRole === 'admin' || userRole === 'head'
+  const canEditEmployees = isAdmin || (() => {
+    try {
+      const perms = JSON.parse(sessionStorage.getItem('user_permissions') || '{}')
+      const p = perms['employees'] || {}
+      return !!p.can_edit
+    } catch { return false }
+  })()
   const canResetPw = isAdmin || (() => {
     try {
       const perms = JSON.parse(sessionStorage.getItem('user_permissions') || '{}')
@@ -400,7 +407,7 @@ export default function Employees() {
           <span style={{ background: '#e8f0fe', color: '#00468C', padding: '0.3rem 0.8rem', borderRadius: 20, fontSize: '0.8rem', fontWeight: 600 }}>
             {loading ? '...' : `${emps.length} NV`}
           </span>
-          {isAdmin && (
+          {canEditEmployees && (
             <>
               <button onClick={openDeptAdd} style={{
                 padding: '0.45rem 0.9rem', height: 36, background: '#fff', color: '#475569',
@@ -419,7 +426,7 @@ export default function Employees() {
             border: '1px solid #e2e8f0', borderRadius: 8, fontWeight: 500, fontSize: '0.82rem',
             cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
           }}>📤 Export Excel</button>
-          {isAdmin && (
+          {canEditEmployees && (
             <>
               <input ref={fileInputRef} type="file" accept=".xlsx, .xls" style={{ display: 'none' }} onChange={handleImportXLSX} />
               <button onClick={() => fileInputRef.current?.click()} style={{
@@ -755,7 +762,7 @@ export default function Employees() {
 
               {/* Actions */}
               <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-                {isAdmin && (
+                {canEditEmployees && (
                   <>
                     <button onClick={() => openEdit(selectedEmp)} style={panelBtnS}>✏️ Sửa</button>
                     <button onClick={() => handleDelete(selectedEmp.id)} style={{ ...panelBtnS, background: '#fef2f2', color: '#dc2626', borderColor: '#fca5a5' }}>🗑️ Xoá</button>
