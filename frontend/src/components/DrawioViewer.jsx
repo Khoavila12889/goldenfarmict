@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { X, Loader2, AlertCircle } from 'lucide-react'
 import { loadDrawioFile, saveDrawioFile } from '../services/api'
 
-const DRAWIO_URL = import.meta.env.VITE_DRAWIO_PUBLIC_URL || ''
+// Ưu tiên env (VD: https://drawio.domain.com), fallback về nginx proxy cùng domain
+const DRAWIO_URL = import.meta.env.VITE_DRAWIO_PUBLIC_URL || '/drawio'
 
 const EMPTY_XML = '<mxfile><diagram><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel></diagram></mxfile>'
 
@@ -72,7 +73,13 @@ export default function DrawioViewer({ file, configId, isOpen, onClose, onSave }
     if (!isOpen) return
 
     const handleMessage = async (evt) => {
-      if (!DRAWIO_URL || !evt.origin.startsWith(DRAWIO_URL)) return
+      if (!DRAWIO_URL) return
+      // DRAWIO_URL có thể là full URL (https://drawio.domain.com) hoặc relative path (/drawio)
+      const isRelative = DRAWIO_URL.startsWith('/')
+      const originOk = isRelative
+        ? evt.origin === window.location.origin   // cùng domain (nginx proxy)
+        : evt.origin.startsWith(DRAWIO_URL)        // full URL riêng
+      if (!originOk) return
       let msg
       try { msg = JSON.parse(evt.data) } catch { return }
 
