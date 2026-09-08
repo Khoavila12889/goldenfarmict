@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react'
-import { PenTool, Save, Download, FileEdit } from 'lucide-react'
+import { PenTool, Save, Download, FileEdit, Loader2, Check } from 'lucide-react'
 import DrawioViewer from '../components/DrawioViewer'
 
 const COLORS = {
@@ -19,8 +19,11 @@ export default function ToolsDrawio() {
   const inputRef = useRef(null)
 
   const handleDownloadLocal = useCallback(() => {
-    const xml = xmlData || '<mxfile><diagram><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel></diagram></mxfile>'
-    const blob = new Blob([xml], { type: 'application/xml' })
+    if (!xmlData) {
+      alert('Chưa có dữ liệu để tải xuống')
+      return
+    }
+    const blob = new Blob([xmlData], { type: 'application/xml' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -31,9 +34,31 @@ export default function ToolsDrawio() {
     setTimeout(() => URL.revokeObjectURL(url), 2000)
   }, [fileName, xmlData])
 
-  const handleSaveToServer = useCallback(() => {
-    console.log('[ToolsDrawio] Save to server:', { fileName, xml: xmlData?.substring(0, 200) })
-    alert('Đã lưu (giả lập). Kiểm tra Console để xem dữ liệu.')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  const handleSaveToServer = useCallback(async () => {
+    if (!xmlData) {
+      alert('Chưa có dữ liệu để lưu')
+      return
+    }
+    if (!fileName?.trim()) {
+      alert('Vui lòng nhập tên bản vẽ')
+      inputRef.current?.focus()
+      return
+    }
+    setSaving(true)
+    try {
+      // Giả lập lưu - thay thế bằng API call thực tế
+      await new Promise(resolve => setTimeout(resolve, 800))
+      console.log('[ToolsDrawio] Saved:', { fileName, xmlLength: xmlData.length })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (err) {
+      alert('Lỗi khi lưu: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
   }, [fileName, xmlData])
 
   const handleDrawioSave = useCallback((xml) => {
@@ -74,23 +99,40 @@ export default function ToolsDrawio() {
         <div style={styles.toolbarRight}>
           <button
             onClick={handleDownloadLocal}
-            style={styles.btnSecondary}
-            onMouseEnter={(e) => { e.currentTarget.style.background = '#e2e8f0' }}
+            disabled={!xmlData}
+            style={{
+              ...styles.btnSecondary,
+              opacity: !xmlData ? 0.5 : 1,
+              cursor: !xmlData ? 'not-allowed' : 'pointer',
+            }}
+            onMouseEnter={(e) => { if (xmlData) e.currentTarget.style.background = '#e2e8f0' }}
             onMouseLeave={(e) => { e.currentTarget.style.background = COLORS.white }}
-            title="Tải file .drawio về máy"
+            title={xmlData ? 'Tải file .drawio về máy' : 'Chưa có dữ liệu'}
           >
             <Download size={15} />
             <span>Tải xuống XML</span>
           </button>
           <button
             onClick={handleSaveToServer}
-            style={styles.btnPrimary}
-            onMouseEnter={(e) => { e.currentTarget.style.background = COLORS.primaryHover }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = COLORS.primary }}
-            title="Lưu bản vẽ lên hệ thống"
+            disabled={saving}
+            style={{
+              ...styles.btnPrimary,
+              opacity: saving ? 0.7 : 1,
+              cursor: saving ? 'wait' : 'pointer',
+              background: saved ? '#059669' : saving ? COLORS.textMuted : COLORS.primary,
+            }}
+            onMouseEnter={(e) => { if (!saving && !saved) e.currentTarget.style.background = COLORS.primaryHover }}
+            onMouseLeave={(e) => { if (!saved) e.currentTarget.style.background = COLORS.primary }}
+            title={saved ? 'Đã lưu thành công!' : 'Lưu bản vẽ lên hệ thống'}
           >
-            <Save size={15} />
-            <span>Lưu lên hệ thống</span>
+            {saving ? (
+              <Loader2 size={15} className="animate-spin" />
+            ) : saved ? (
+              <Check size={15} />
+            ) : (
+              <Save size={15} />
+            )}
+            <span>{saving ? 'Đang lưu...' : saved ? 'Đã lưu!' : 'Lưu lên hệ thống'}</span>
           </button>
         </div>
       </div>

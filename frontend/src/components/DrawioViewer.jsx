@@ -74,11 +74,21 @@ export default function DrawioViewer({ file, configId, isOpen, onClose, onSave }
 
     const handleMessage = async (evt) => {
       if (!DRAWIO_URL) return
-      // DRAWIO_URL có thể là full URL (https://drawio.domain.com) hoặc relative path (/drawio)
+      // DRAWIO_URL có thể là full URL (https://drawio.domain.com/drawio) hoặc relative path (/drawio)
       const isRelative = DRAWIO_URL.startsWith('/')
-      const originOk = isRelative
-        ? evt.origin === window.location.origin   // cùng domain (nginx proxy)
-        : evt.origin.startsWith(DRAWIO_URL)        // full URL riêng
+      let originOk = false
+      if (isRelative) {
+        // cùng domain (nginx proxy)
+        originOk = evt.origin === window.location.origin
+      } else {
+        // Full URL: extract origin (protocol + host) từ DRAWIO_URL
+        try {
+          const drawioOrigin = new URL(DRAWIO_URL).origin
+          originOk = evt.origin === drawioOrigin
+        } catch {
+          originOk = false
+        }
+      }
       if (!originOk) return
       let msg
       try { msg = JSON.parse(evt.data) } catch { return }
