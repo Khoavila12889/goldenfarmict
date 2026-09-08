@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { PenTool, Save, Download, FileEdit, Loader2, Check } from 'lucide-react'
 import DrawioViewer from '../components/DrawioViewer'
 
@@ -13,21 +14,23 @@ const COLORS = {
 }
 
 export default function ToolsDrawio() {
+  const navigate = useNavigate()
   const [fileName, setFileName] = useState('Ban_ve_moi_1')
   const [xmlData, setXmlData] = useState(null)
   const [drawioOpen, setDrawioOpen] = useState(true)
   const inputRef = useRef(null)
 
-  const handleDownloadLocal = useCallback(() => {
-    if (!xmlData) {
+  const handleDownloadLocal = useCallback((xml = null, name = null) => {
+    const data = xml || xmlData
+    if (!data) {
       alert('Chưa có dữ liệu để tải xuống')
       return
     }
-    const blob = new Blob([xmlData], { type: 'application/xml' })
+    const blob = new Blob([data], { type: 'application/xml' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${fileName || 'ban_ve'}.drawio`
+    a.download = `${name || fileName || 'ban_ve'}.drawio`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -37,7 +40,7 @@ export default function ToolsDrawio() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
-  const handleSaveToServer = useCallback(async () => {
+  const handleSaveToDevice = useCallback(async () => {
     if (!xmlData) {
       alert('Chưa có dữ liệu để lưu')
       return
@@ -49,9 +52,7 @@ export default function ToolsDrawio() {
     }
     setSaving(true)
     try {
-      // Giả lập lưu - thay thế bằng API call thực tế
-      await new Promise(resolve => setTimeout(resolve, 800))
-      console.log('[ToolsDrawio] Saved:', { fileName, xmlLength: xmlData.length })
+      handleDownloadLocal(xmlData, fileName)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch (err) {
@@ -59,11 +60,19 @@ export default function ToolsDrawio() {
     } finally {
       setSaving(false)
     }
-  }, [fileName, xmlData])
+  }, [fileName, xmlData, handleDownloadLocal])
 
   const handleDrawioSave = useCallback((xml) => {
     setXmlData(xml)
   }, [])
+
+  const handleExitToDashboard = useCallback(() => {
+    if (xmlData) {
+      // Tự động lưu về thiết bị trước khi thoát
+      handleDownloadLocal(xmlData, fileName)
+    }
+    navigate('/')
+  }, [xmlData, fileName, handleDownloadLocal, navigate])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
@@ -110,10 +119,10 @@ export default function ToolsDrawio() {
             title={xmlData ? 'Tải file .drawio về máy' : 'Chưa có dữ liệu'}
           >
             <Download size={15} />
-            <span>Tải xuống XML</span>
+            <span>Tải xuống</span>
           </button>
           <button
-            onClick={handleSaveToServer}
+            onClick={handleSaveToDevice}
             disabled={saving}
             style={{
               ...styles.btnPrimary,
@@ -123,7 +132,7 @@ export default function ToolsDrawio() {
             }}
             onMouseEnter={(e) => { if (!saving && !saved) e.currentTarget.style.background = COLORS.primaryHover }}
             onMouseLeave={(e) => { if (!saved) e.currentTarget.style.background = COLORS.primary }}
-            title={saved ? 'Đã lưu thành công!' : 'Lưu bản vẽ lên hệ thống'}
+            title={saved ? 'Đã lưu vào thiết bị!' : 'Lưu về thiết bị'}
           >
             {saving ? (
               <Loader2 size={15} className="animate-spin" />
@@ -132,7 +141,7 @@ export default function ToolsDrawio() {
             ) : (
               <Save size={15} />
             )}
-            <span>{saving ? 'Đang lưu...' : saved ? 'Đã lưu!' : 'Lưu lên hệ thống'}</span>
+            <span>{saving ? 'Đang lưu...' : saved ? 'Đã lưu!' : 'Lưu về máy'}</span>
           </button>
         </div>
       </div>
@@ -141,7 +150,7 @@ export default function ToolsDrawio() {
       <div style={styles.canvasWrapper}>
         <DrawioViewer
           isOpen={drawioOpen}
-          onClose={() => setDrawioOpen(false)}
+          onClose={handleExitToDashboard}
           onSave={handleDrawioSave}
         />
       </div>
