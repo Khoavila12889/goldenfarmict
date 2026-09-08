@@ -54,13 +54,37 @@ export default function ToolsDrawio() {
     try {
       handleDownloadLocal(xmlData, fileName)
       setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
+      setTimeout(() => {
+        setSaved(false)
+        navigate('/')
+      }, 1000)
     } catch (err) {
       alert('Lỗi khi lưu: ' + err.message)
-    } finally {
       setSaving(false)
     }
-  }, [fileName, xmlData, handleDownloadLocal])
+  }, [fileName, xmlData, handleDownloadLocal, navigate])
+
+  const handleSaveAndExit = useCallback(async () => {
+    if (!xmlData) {
+      alert('Chưa có dữ liệu để lưu')
+      return
+    }
+    if (!fileName?.trim()) {
+      alert('Vui lòng nhập tên bản vẽ')
+      inputRef.current?.focus()
+      return
+    }
+    setSaving(true)
+    try {
+      handleDownloadLocal(xmlData, fileName)
+      setTimeout(() => {
+        navigate('/')
+      }, 300)
+    } catch (err) {
+      alert('Lỗi khi lưu: ' + err.message)
+      setSaving(false)
+    }
+  }, [fileName, xmlData, handleDownloadLocal, navigate])
 
   const handleDrawioSave = useCallback((xml) => {
     setXmlData(xml)
@@ -132,7 +156,7 @@ export default function ToolsDrawio() {
             }}
             onMouseEnter={(e) => { if (!saving && !saved) e.currentTarget.style.background = COLORS.primaryHover }}
             onMouseLeave={(e) => { if (!saved) e.currentTarget.style.background = COLORS.primary }}
-            title={saved ? 'Đã lưu vào thiết bị!' : 'Lưu về thiết bị'}
+            title={saved ? 'Đã lưu vào máy!' : 'Lưu bản vẽ'}
           >
             {saving ? (
               <Loader2 size={15} className="animate-spin" />
@@ -141,7 +165,23 @@ export default function ToolsDrawio() {
             ) : (
               <Save size={15} />
             )}
-            <span>{saving ? 'Đang lưu...' : saved ? 'Đã lưu!' : 'Lưu về máy'}</span>
+            <span>{saving ? 'Đang lưu...' : saved ? 'Đã lưu!' : 'Lưu'}</span>
+          </button>
+          <button
+            onClick={handleSaveAndExit}
+            disabled={saving}
+            style={{
+              ...styles.btnPrimary,
+              background: '#dc2626',
+              opacity: saving ? 0.7 : 1,
+              cursor: saving ? 'wait' : 'pointer',
+            }}
+            onMouseEnter={(e) => { if (!saving) e.currentTarget.style.background = '#b91c1c' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = '#dc2626' }}
+            title="Lưu và thoát về Dashboard"
+          >
+            <Save size={15} />
+            <span>Lưu & Thoát</span>
           </button>
         </div>
       </div>
