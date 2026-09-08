@@ -20,7 +20,7 @@ const MONTH_NAMES = [
 export default function SalarySlip() {
   const {
     selectedMonth, salaryData, isLoading, error, needPassword,
-    availableMonths, monthsLoading, pdfExporting, pdfEnabled,
+    availableMonths, monthsLoading, pdfExporting, pdfEnabled, uploadDate, paymentDate,
     fetchSalarySlip, fetchAvailableMonths, downloadPdf, changeMonth,
   } = useSalarySlip()
 
@@ -388,7 +388,7 @@ export default function SalarySlip() {
                   7 Đường số 5, Phường An Khánh, TP. Hồ Chí Minh
                 </div>
                 <div className="pdf-title">PHIẾU LƯƠNG THÁNG {d.MONTH}/{d.YEAR}</div>
-                <div className="pdf-date">Ngày thanh toán: 15/{String(Number(d.MONTH) + 1).padStart(2, '0')}/{d.YEAR}</div>
+                <div className="pdf-date">Ngày thanh toán: {paymentDate ? new Date(paymentDate).toLocaleDateString('vi-VN') : (uploadDate ? new Date(uploadDate).toLocaleDateString('vi-VN') : '--/--/----')}</div>
               </div>
               
               <table className="pdf-info-table">

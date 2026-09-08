@@ -5,6 +5,7 @@ import { formatDate } from '../utils/date'
 import {
   getEmployees, getDepartments, getEmployeeEquipment,
   createEmployee, updateEmployee, deleteEmployee, importEmployees,
+  deduplicateEmployees,
   transferEquipment, revokeEquipment,
   createDepartment, updateDepartment, deleteDepartment,
   adminResetPassword,
@@ -47,20 +48,17 @@ function mapStatusValue(raw) {
 export default function Employees() {
   const userRole = sessionStorage.getItem('user_role') || ''
   const userCode = sessionStorage.getItem('user_code') || ''
+  const authToken = sessionStorage.getItem('token') || ''
   const isAdmin = userRole === 'admin' || userRole === 'head'
-  const canEditEmployees = isAdmin || (() => {
-    try {
-      const perms = JSON.parse(sessionStorage.getItem('user_permissions') || '{}')
-      const p = perms['employees'] || {}
-      return !!p.can_edit
-    } catch { return false }
+  const _perms = (() => {
+    try { return JSON.parse(sessionStorage.getItem('user_permissions') || '{}') } catch { return {} }
   })()
+  const canEditEmployees = isAdmin || !!(_perms['employees'] || {}).can_edit
+  const canImportEmployees = isAdmin || !!(_perms['employees.import'] || {}).can_edit
+  const canDeleteEmployees = isAdmin || !!(_perms['employees.delete'] || {}).can_edit
   const canResetPw = isAdmin || (() => {
-    try {
-      const perms = JSON.parse(sessionStorage.getItem('user_permissions') || '{}')
-      const p = perms['password-reset'] || {}
-      return !!(p.can_edit || p.can_view)
-    } catch { return false }
+    const p = _perms['password-reset'] || {}
+    return !!(p.can_edit || p.can_view)
   })()
 
   const [emps, setEmps] = useState([])
@@ -151,8 +149,8 @@ export default function Employees() {
     if (!formData.full_name.trim()) { showMsg('Họ tên không được để trống', 'error'); return }
     if (!formData.employee_code.trim()) { showMsg('Mã NV không được để trống', 'error'); return }
     try {
-      if (editId) { await updateEmployee(editId, formData); showMsg('✅ Đã cập nhật thông tin nhân viên!') }
-      else { await createEmployee({ ...formData, department: formData.department.toUpperCase() }); showMsg('✅ Đã thêm nhân viên thành công!') }
+      if (editId) { await updateEmployee(editId, formData, userCode, authToken, userRole); showMsg('✅ Đã cập nhật thông tin nhân viên!') }
+      else { await createEmployee({ ...formData, department: formData.department.toUpperCase() }, userCode, authToken, userRole); showMsg('✅ Đã thêm nhân viên thành công!') }
       setFormOpen(false); load()
       if (selectedEmp && (editId === selectedEmp.id || !editId)) {
         const r = await getEmployeeEquipment(selectedEmp?.id)
@@ -165,7 +163,7 @@ export default function Employees() {
     const emp = emps.find(e => e.id === id)
     if (!window.confirm(`Xoá nhân viên ${emp?.full_name}? Toàn bộ thiết bị và license cũng sẽ bị thu hồi.`)) return
     try {
-      await deleteEmployee(id)
+      await deleteEmployee(id, userCode, authToken, userRole)
       showMsg('✅ Đã xoá nhân viên thành công')
       if (selectedEmp?.id === id) setSelectedEmp(null)
       load()
@@ -317,7 +315,7 @@ export default function Employees() {
 
           const get = idx => (idx >= 0 ? row[idx] : '')
 
-          const code = nor(get(colMap.code))
+          const code = nor(get(colMap.code)).replace(/\.0$/, '')
           if (!code) { parseErrors.push(`Dòng ${i + 1}: thiếu mã nhân viên`); continue }
 
           const finalStatus = mapStatusValue(get(colMap.status))
@@ -343,10 +341,11 @@ export default function Employees() {
         }
 
         // Gọi API lên server
-        const res = await importEmployees({ employees })
+        const res = await importEmployees({ employees }, userCode, authToken, userRole)
         const r = res.data
         let msg = `✅ Import xong: ${r.created} tạo mới, ${r.updated} cập nhật`
         if (r.users_created > 0) msg += `, ${r.users_created} tài khoản đã khởi tạo`
+        if (r.duplicates_in_file > 0) msg += `, ${r.duplicates_in_file} mã trùng trong file (đã giữ dòng cuối)`
         if (r.skipped) msg += `, ${r.skipped} bỏ qua`
         if (r.errors?.length > 0 || parseErrors.length > 0) {
           const allErrors = [...(r.errors || []), ...parseErrors]
@@ -426,14 +425,39 @@ export default function Employees() {
             border: '1px solid #e2e8f0', borderRadius: 8, fontWeight: 500, fontSize: '0.82rem',
             cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
           }}>📤 Export Excel</button>
-          {canEditEmployees && (
+          {(canEditEmployees || canImportEmployees) && (
             <>
-              <input ref={fileInputRef} type="file" accept=".xlsx, .xls" style={{ display: 'none' }} onChange={handleImportXLSX} />
-              <button onClick={() => fileInputRef.current?.click()} style={{
-                padding: '0.45rem 0.9rem', height: 36, background: '#fff', color: '#475569',
-                border: '1px solid #e2e8f0', borderRadius: 8, fontWeight: 500, fontSize: '0.82rem',
-                cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-              }}>📥 Import Excel</button>
+              {canImportEmployees && (
+                <input ref={fileInputRef} type="file" accept=".xlsx, .xls" style={{ display: 'none' }} onChange={handleImportXLSX} />
+              )}
+              {canImportEmployees && (
+                <button onClick={() => fileInputRef.current?.click()} style={{
+                  padding: '0.45rem 0.9rem', height: 36, background: '#fff', color: '#475569',
+                  border: '1px solid #e2e8f0', borderRadius: 8, fontWeight: 500, fontSize: '0.82rem',
+                  cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+                }}>📥 Import Excel</button>
+              )}
+              {canEditEmployees && (
+                <button onClick={async () => {
+                  if (!window.confirm('Kiểm tra và xóa các nhân viên trùng mã NV?')) return
+                  try {
+                    const res = await deduplicateEmployees(userCode, authToken, userRole)
+                    const r = res.data
+                    if (r.removed > 0) {
+                      showMsg(`✅ ${r.message}`)
+                      load()
+                    } else {
+                      showMsg('✅ Không có nhân viên trùng')
+                    }
+                  } catch (err) {
+                    showMsg(`❌ Lỗi: ${err?.response?.data?.detail || err.message}`, 'error')
+                  }
+                }} style={{
+                  padding: '0.45rem 0.9rem', height: 36, background: '#fff', color: '#dc2626',
+                  border: '1px solid #fca5a5', borderRadius: 8, fontWeight: 500, fontSize: '0.82rem',
+                  cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+                }}>🔗 Xử lý trùng</button>
+              )}
             </>
           )}
         </div>
@@ -763,10 +787,10 @@ export default function Employees() {
               {/* Actions */}
               <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
                 {canEditEmployees && (
-                  <>
-                    <button onClick={() => openEdit(selectedEmp)} style={panelBtnS}>✏️ Sửa</button>
-                    <button onClick={() => handleDelete(selectedEmp.id)} style={{ ...panelBtnS, background: '#fef2f2', color: '#dc2626', borderColor: '#fca5a5' }}>🗑️ Xoá</button>
-                  </>
+                  <button onClick={() => openEdit(selectedEmp)} style={panelBtnS}>✏️ Sửa</button>
+                )}
+                {canDeleteEmployees && (
+                  <button onClick={() => handleDelete(selectedEmp.id)} style={{ ...panelBtnS, background: '#fef2f2', color: '#dc2626', borderColor: '#fca5a5' }}>🗑️ Xoá</button>
                 )}
                 {canResetPw && (
                   <button onClick={() => openResetPw(selectedEmp)} style={{ ...panelBtnS, background: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe' }}>🔑 Reset Password</button>

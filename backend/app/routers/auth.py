@@ -323,6 +323,8 @@ def admin_reset_password(req: AdminResetRequest):
 
 ALL_MODULES = [
     {"key": "employees", "label": "Nhân viên", "group": "admin"},
+    {"key": "employees.import", "label": "NV — Import Excel", "group": "admin"},
+    {"key": "employees.delete", "label": "NV — Xóa", "group": "admin"},
     {"key": "equipment", "label": "Thiết bị", "group": "admin"},
     {"key": "licenses", "label": "License Keys", "group": "admin"},
     {"key": "todos", "label": "Công việc (Todos)", "group": "support"},

@@ -98,6 +98,7 @@ def _add_missing_columns(session):
         ("equipment_history", "old_status", "TEXT DEFAULT ''"),
         ("equipment_history", "new_status", "TEXT DEFAULT ''"),
         ("equipment_history", "changed_by", "TEXT DEFAULT ''"),
+        ("salary_upload_logs", "file_path", "TEXT DEFAULT ''"),
     ]
     
     for table_name, column_name, column_def in columns_to_add:
@@ -128,6 +129,67 @@ def _add_missing_columns(session):
         except Exception as e:
             session.rollback()
             print(f"Warning: Could not add constraint {cname} to {table}: {e}")
+
+    # Deduplicate employees by employee_code and add unique constraint
+    _deduplicate_employees(session)
+
+
+def _deduplicate_employees(session):
+    """Xóa bản ghi employees trùng employee_code, giữ lại bản ghi có id nhỏ nhất.
+    Cập nhật references trong equipment, tickets, bookings trước khi xóa.
+    Sau đó thêm UNIQUE constraint nếu chưa có.
+    """
+    try:
+        # Tìm các employee_code bị trùng
+        dupes = session.execute(text("""
+            SELECT employee_code, ARRAY_AGG(id ORDER BY id) AS ids
+            FROM employees
+            WHERE employee_code IS NOT NULL AND employee_code != ''
+            GROUP BY employee_code
+            HAVING COUNT(*) > 1
+        """)).fetchall()
+
+        if dupes:
+            print(f"Found {len(dupes)} duplicate employee_code groups, deduplicating...")
+            for row in dupes:
+                keep_id = row[1][0]  # id nhỏ nhất
+                remove_ids = row[1][1:]  # các id trùng cần xóa
+
+                # Cập nhật equipment trỏ tới keep_id
+                session.execute(text(
+                    "UPDATE equipment SET employee_id = :keep WHERE employee_id = ANY(:remove)"
+                ), {"keep": keep_id, "remove": remove_ids})
+
+                # Cập nhật tickets trỏ tới keep_id
+                session.execute(text(
+                    "UPDATE tickets SET employee_id = :keep WHERE employee_id = ANY(:remove)"
+                ), {"keep": keep_id, "remove": remove_ids})
+
+                # Cập nhật bookings trỏ tới keep_id
+                session.execute(text(
+                    "UPDATE bookings SET employee_id = :keep WHERE employee_id = ANY(:remove)"
+                ), {"keep": keep_id, "remove": remove_ids})
+
+                # Xóa bản ghi trùng
+                session.execute(text(
+                    "DELETE FROM employees WHERE id = ANY(:remove)"
+                ), {"remove": remove_ids})
+
+            session.commit()
+            print(f"Deduplication complete: removed {sum(len(r[1])-1 for r in dupes)} duplicate rows")
+
+        # Thêm UNIQUE constraint nếu chưa có
+        session.execute(text("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_employees_employee_code') THEN
+                    ALTER TABLE employees ADD CONSTRAINT uq_employees_employee_code UNIQUE (employee_code);
+                END IF;
+            END $$;
+        """))
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        print(f"Warning: Could not deduplicate employees: {e}")
 
 
 def _seed_default_data():

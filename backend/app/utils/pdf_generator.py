@@ -44,7 +44,8 @@ def format_value(value, is_password=False, keep_percentage=False):
     """Định dạng giá trị"""
     if pd.notna(value):
         if is_password:
-            return str(value)
+            s = str(value)
+            return s[:-2] if s.endswith('.0') else s
         elif keep_percentage:
             return str(value)
         elif isinstance(value, (float, int)):
@@ -93,9 +94,13 @@ def create_salary_context(row, current_date, previous_month, previous_year):
     ]
     total_deduction = sum(deduction_items)
 
+    # Normalize ID: strip .0 do pandas float
+    raw_id = row['ID']
+    id_str = str(int(raw_id)) if pd.notna(raw_id) and isinstance(raw_id, (int, float)) else str(raw_id)
+
     return {
         "NAME": str(row['NAME']),
-        "ID": row['ID'],
+        "ID": id_str,
         "PASSWORD": format_value(row['PASSWORD'], is_password=True),
         "CHUCVU": row['Chức vụ'],
         "PB": row['Phòng Ban'],

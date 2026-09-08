@@ -269,11 +269,11 @@ export default function Layout() {
 
     if (perms && typeof perms === 'object') {
       if (perms[moduleKey] !== undefined) return !!perms[moduleKey].can_view
-      // Được cấp module "Reset mật khẩu" → cho vào trang Nhân viên
-      // (chế độ giới hạn: chỉ xem danh sách + nút reset mật khẩu)
+      // Được cấp module con hoặc "Reset mật khẩu" → cho vào trang Nhân viên
       if (path === '/employees') {
         const pr = perms['password-reset']
         if (pr && (pr.can_view || pr.can_edit)) return true
+        if (perms['employees.import']?.can_edit || perms['employees.delete']?.can_edit) return true
       }
       return false
     }

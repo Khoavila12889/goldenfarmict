@@ -165,20 +165,24 @@ export function getDepartments() {
   return api.get('/employees/departments/list')
 }
 
-export function createEmployee(data) {
-  return api.post('/employees', data)
+export function createEmployee(data, admin_code, token, role) {
+  return api.post('/employees', data, { params: { admin_code, token, role } })
 }
 
-export function updateEmployee(id, data) {
-  return api.put(`/employees/${id}`, data)
+export function updateEmployee(id, data, admin_code, token, role) {
+  return api.put(`/employees/${id}`, data, { params: { admin_code, token, role } })
 }
 
-export function importEmployees(data) {
-  return api.post('/employees/import', data)
+export function importEmployees(data, admin_code, token, role) {
+  return api.post('/employees/import', data, { params: { admin_code, token, role } })
 }
 
-export function deleteEmployee(id) {
-  return api.delete(`/employees/${id}`)
+export function deduplicateEmployees(admin_code, token, role) {
+  return api.post('/employees/deduplicate', null, { params: { admin_code, token, role } })
+}
+
+export function deleteEmployee(id, admin_code, token, role) {
+  return api.delete(`/employees/${id}`, { params: { admin_code, token, role } })
 }
 
 export function createDepartment(data) {
@@ -845,10 +849,10 @@ export function downloadSalaryTemplate() {
   })
 }
 
-export function uploadSalaryExcel(file, month, admin_code, token, role, force = false) {
+export function uploadSalaryExcel(file, month, admin_code, token, role, force = false, payment_date = '') {
   const fd = new FormData()
   fd.append('excel_file', file)
-  const params = { admin_code, token, role, month }
+  const params = { admin_code, token, role, month, payment_date }
   if (force) params.force = 'true'
   return api.post('/salary-slips/admin/upload-salaries', fd, {
     params,
@@ -860,6 +864,12 @@ export function getSalaryUploadHistory(admin_code, token, role) {
   return api.get('/salary-slips/admin/upload-history', {
     params: { admin_code, token, role }
   })
+}
+
+export function getSalaryUploadFileUrl(logId, admin_code, token, role) {
+  const base = getApiBase()
+  const params = new URLSearchParams({ admin_code, token, role })
+  return `${base}/salary-slips/admin/download-upload/${logId}?${params}`
 }
 
 export function deleteSalarySlip(employee_code, month, admin_code, token, role) {

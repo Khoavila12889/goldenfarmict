@@ -51,29 +51,64 @@ def verify_salary(req: ViewSalaryReq):
     if not verify_token(req.employee_code, req.token, req.role):
         raise HTTPException(status_code=401, detail="Phiên đăng nhập không hợp lệ")
 
+    # Ưu tiên đọc từ salaries (full JSON)
     record = fetchone(
-        "SELECT password, data_json FROM salaries WHERE employee_code = :emp_code AND month = :month",
+        "SELECT password, data_json, created_at, payment_date FROM salaries WHERE employee_code = :emp_code AND month = :month",
         {"emp_code": req.employee_code, "month": req.month}
     )
 
-    if not record:
-        raise HTTPException(status_code=404, detail="Chưa có phiếu lương cho tháng này")
+    if record:
+        if record["password"] and req.password != record["password"]:
+            raise HTTPException(status_code=401, detail="Mật khẩu phiếu lương không đúng")
+        try:
+            salary_data = json.loads(record["data_json"])
+        except Exception:
+            raise HTTPException(status_code=500, detail="Dữ liệu lương bị lỗi")
+        return {
+            "status": "success",
+            "employee_code": req.employee_code,
+            "month": req.month,
+            "data": salary_data,
+            "upload_date": record.get("created_at", ""),
+            "payment_date": record.get("payment_date", ""),
+            "pdf_enabled": _check_pdf_permission(req.employee_code)
+        }
 
-    if record["password"] and req.password != record["password"]:
-        raise HTTPException(status_code=401, detail="Mật khẩu phiếu lương không đúng")
+    # Fallback: đọc từ salary_slips (admin import)
+    slip = fetchone(
+        """SELECT basic_salary, allowances, bonus, deductions, net_salary, notes, created_at
+           FROM salary_slips WHERE employee_code = :emp_code AND month = :month""",
+        {"emp_code": req.employee_code, "month": req.month}
+    )
 
-    try:
-        salary_data = json.loads(record["data_json"])
-    except Exception:
-        raise HTTPException(status_code=500, detail="Dữ liệu lương bị lỗi")
+    if slip:
+        # Lấy thông tin nhân viên
+        emp = fetchone(
+            "SELECT full_name, department, position FROM employees WHERE employee_code = :code",
+            {"code": req.employee_code}
+        )
+        salary_data = {
+            "ID": req.employee_code,
+            "NAME": emp.get("full_name", "") if emp else "",
+            "PB": emp.get("department", "") if emp else "",
+            "CHUCVU": emp.get("position", "") if emp else "",
+            "LUONGCB": slip.get("basic_salary", 0),
+            "PHUTCAP": slip.get("allowances", 0),
+            "THUONG": slip.get("bonus", 0),
+            "KHAOTRU": slip.get("deductions", 0),
+            "THUCNHAN": slip.get("net_salary", 0),
+            "GHICHU": slip.get("notes", ""),
+        }
+        return {
+            "status": "success",
+            "employee_code": req.employee_code,
+            "month": req.month,
+            "data": salary_data,
+            "upload_date": slip.get("created_at", ""),
+            "pdf_enabled": _check_pdf_permission(req.employee_code)
+        }
 
-    return {
-        "status": "success",
-        "employee_code": req.employee_code,
-        "month": req.month,
-        "data": salary_data,
-        "pdf_enabled": _check_pdf_permission(req.employee_code)
-    }
+    raise HTTPException(status_code=404, detail="Chưa có phiếu lương cho tháng này")
 
 
 @router.get("/available-months")
@@ -87,10 +122,13 @@ def get_available_months(
     if not verify_token(employee_code, token, role):
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    rows = fetchall(
-        "SELECT month, created_at FROM salaries WHERE employee_code = :emp_code ORDER BY month DESC",
-        {"emp_code": employee_code}
-    )
+    rows = fetchall("""
+        SELECT month, created_at FROM (
+            SELECT month, created_at FROM salaries WHERE employee_code = :emp_code
+            UNION
+            SELECT month, created_at FROM salary_slips WHERE employee_code = :emp_code
+        ) combined ORDER BY month DESC
+    """, {"emp_code": employee_code})
     return {"data": rows, "total": len(rows)}
 
 

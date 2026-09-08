@@ -9,7 +9,9 @@ import { PERM_KEYS, PERM_LABELS, EXTRA_PERMS, ALL_PERM_INFO, toPermObject, resol
 import { getApiBase } from '../services/api'
 
 const MODULES = [
-  { key: 'employees', label: 'Nhân viên', group: 'admin', desc: 'Quản lý thông tin nhân viên' },
+  { key: 'employees', label: 'Nhân viên', group: 'admin', desc: 'Quản lý thông tin nhân viên (xem, thêm, sửa)' },
+  { key: 'employees.import', label: 'NV — Import Excel', group: 'admin', desc: 'Cho phép import nhân viên từ file Excel' },
+  { key: 'employees.delete', label: 'NV — Xóa', group: 'admin', desc: 'Cho phép xóa nhân viên' },
   { key: 'equipment', label: 'Thiết bị', group: 'admin', desc: 'Quản lý tài sản thiết bị' },
   { key: 'licenses', label: 'License Keys', group: 'admin', desc: 'Quản lý bản quyền phần mềm' },
   { key: 'workflows', label: 'Quy trình', group: 'admin', desc: 'Tạo quy trình phê duyệt' },

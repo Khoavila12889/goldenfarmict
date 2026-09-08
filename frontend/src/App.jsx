@@ -35,9 +35,11 @@ function AdminRoute({ children, requiredModule }) {
   let perms = {}
   try { perms = JSON.parse(sessionStorage.getItem('user_permissions') || '{}') } catch (_) {}
   if (requiredModule && perms[requiredModule]?.can_view) return children
-  // Trang Nhân viên mở thêm cho người được cấp module "Reset mật khẩu"
-  // (chế độ giới hạn: chỉ xem danh sách + nút reset, không sửa dữ liệu NV)
-  if (requiredModule === 'employees' && (perms['password-reset']?.can_view || perms['password-reset']?.can_edit)) return children
+  // Trang Nhân viên mở thêm cho người được cấp module con (import, delete) hoặc "Reset mật khẩu"
+  if (requiredModule === 'employees') {
+    if (perms['password-reset']?.can_view || perms['password-reset']?.can_edit) return children
+    if (perms['employees.import']?.can_edit || perms['employees.delete']?.can_edit) return children
+  }
   return <Navigate to="/" replace />
 }
 
