@@ -38,6 +38,26 @@ def require_admin(employee_code: str, token: str, role: str):
     raise HTTPException(status_code=403, detail="Admin/Head access required")
 
 
+# ─── Salary file archive ───────────────────────────────────────────────
+
+_SALARY_UPLOAD_DIR = Path(__file__).parent.parent.parent / "uploads" / "salary"
+
+
+def _save_salary_file(content: bytes, original_filename: str, month: str) -> str:
+    """Lưu file Excel lương lên disk, trả về đường dẫn tương đối.
+    Cấu trúc: uploads/salary/{YYYY-MM}/{timestamp}_{filename}
+    """
+    month_dir = _SALARY_UPLOAD_DIR / month
+    month_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_name = "".join(c if c.isalnum() or c in "._- " else "_" for c in original_filename)
+    saved_name = f"{ts}_{safe_name}"
+    file_path = month_dir / saved_name
+    file_path.write_bytes(content)
+    # Trả về path tương đối từ thư mục backend
+    return str(file_path.relative_to(_SALARY_UPLOAD_DIR.parent.parent))
+
+
 # ─── View Own Salary Slip PDF (legacy fallback) ─────────────────────────
 
 @router.get("/my")
@@ -329,7 +349,8 @@ async def upload_salaries_excel(
     token: str = None,
     role: str = None,
     force: bool = False,
-    month: str = ""
+    month: str = "",
+    payment_date: str = ""
 ):
     """
     Upload Excel → parse create_salary_context → lưu JSON vào bảng salaries.
@@ -366,6 +387,9 @@ async def upload_salaries_excel(
         prev = current_date - relativedelta(months=1)
         month_str = f"{prev.year}-{prev.month:02d}"
 
+    # Lưu file gốc lên disk
+    saved_file_path = _save_salary_file(content, excel_file.filename, month_str)
+
     # Kiểm tra tháng đã có dữ liệu chưa
     existing_count_row = fetchone(
         "SELECT COUNT(*) AS cnt FROM salaries WHERE month=:month", {"month": month_str}
@@ -383,41 +407,47 @@ async def upload_salaries_excel(
             "message": f"Tháng {month_str} đã có {existing_count} bản ghi. Gửi lại với force=true để ghi đè."
         }
 
+    # Ngày thanh toán cứng: ngày 5 tháng sau tháng lương
+    # VD: import lương tháng 2026-08 → payment_date = 2026-09-05
+    pay_month = current_date + relativedelta(months=1)
+    payment_date = f"{pay_month.year}-{pay_month.month:02d}-05"
+
     success = 0; errors = []
 
     for idx, row in df.iterrows():
         try:
             emp_id = str(row.get('ID', '')).strip()
+            if emp_id.endswith('.0'):
+                emp_id = emp_id[:-2]
             if not emp_id:
                 continue
             month_num = int(month_str.split('-')[1])
             year_num = int(month_str.split('-')[0])
             context = create_salary_context(row, current_date, month_num, year_num)
             password = str(row.get('PASSWORD', '')) if pd.notna(row.get('PASSWORD')) else ''
+            if password.endswith('.0'):
+                password = password[:-2]
             salary_json = json.dumps(context, ensure_ascii=False)
 
             execute("""
-                INSERT INTO salaries (employee_code, month, password, data_json)
-                VALUES (:employee_code, :month, :password, :data_json)
+                INSERT INTO salaries (employee_code, month, password, data_json, payment_date)
+                VALUES (:employee_code, :month, :password, :data_json, :payment_date)
                 ON CONFLICT(employee_code, month) DO UPDATE SET
                     password=excluded.password, data_json=excluded.data_json,
-                    updated_at=CURRENT_TIMESTAMP
-            """, {"employee_code": emp_id, "month": month_str, "password": password, "data_json": salary_json})
+                    payment_date=:payment_date, updated_at=CURRENT_TIMESTAMP
+            """, {"employee_code": emp_id, "month": month_str, "password": password, "data_json": salary_json, "payment_date": payment_date})
 
             # Tự động tạo user account nếu chưa có
-            user = fetchone("SELECT id FROM users WHERE employee_code=:employee_code", {"employee_code": emp_id})
-            if not user:
-                execute(
-                    "INSERT INTO users (employee_code, password_hash, role) VALUES (:employee_code, :password_hash, :role) ON CONFLICT DO NOTHING",
-                    {"employee_code": emp_id, "password_hash": hashlib.sha256(emp_id.encode()).hexdigest(), "role": "user"}
-                )
+            execute(
+                "INSERT INTO users (employee_code, password_hash, role) VALUES (:employee_code, :password_hash, :role) ON CONFLICT DO NOTHING",
+                {"employee_code": emp_id, "password_hash": hashlib.sha256(emp_id.encode()).hexdigest(), "role": "user"}
+            )
             # Tự động tạo employee record nếu chưa có (để tìm kiếm được trên tab Nhân viên)
-            emp_row = fetchone("SELECT id FROM employees WHERE employee_code=:employee_code", {"employee_code": emp_id})
-            if not emp_row:
-                execute("""
-                    INSERT INTO employees (employee_code, full_name, department, position, start_date, status, created_at)
-                    VALUES (:employee_code, :full_name, :department, :position, :start_date, 'active', CURRENT_TIMESTAMP)
-                """, {"employee_code": context['ID'], "full_name": context['NAME'], "department": context.get('PB', ''), "position": context.get('CHUCVU', ''), "start_date": context.get('NVL', '')})
+            execute("""
+                INSERT INTO employees (employee_code, full_name, department, position, start_date, status, created_at, updated_at)
+                VALUES (:employee_code, :full_name, :department, :position, :start_date, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (employee_code) DO NOTHING
+            """, {"employee_code": context['ID'], "full_name": context['NAME'], "department": context.get('PB', ''), "position": context.get('CHUCVU', ''), "start_date": context.get('NVL', '')})
             success += 1
         except Exception as e:
             errors.append(f"Dòng {idx+2}: {str(e)}")
@@ -427,9 +457,10 @@ async def upload_salaries_excel(
         "SELECT full_name FROM employees WHERE employee_code=:admin_code", {"admin_code": admin_code}
     )
     execute("""
-        INSERT INTO salary_upload_logs (month, filename, uploaded_by, uploaded_by_name, record_count)
-        VALUES (:month, :filename, :uploaded_by, :uploaded_by_name, :record_count)
-    """, {"month": month_str, "filename": excel_file.filename, "uploaded_by": admin_code,
+        INSERT INTO salary_upload_logs (month, filename, file_path, uploaded_by, uploaded_by_name, record_count)
+        VALUES (:month, :filename, :file_path, :uploaded_by, :uploaded_by_name, :record_count)
+    """, {"month": month_str, "filename": excel_file.filename, "file_path": saved_file_path,
+          "uploaded_by": admin_code,
           "uploaded_by_name": uploader_name['full_name'] if uploader_name else admin_code, "record_count": success})
 
     return {"success": True, "month": month_str, "imported": success, "errors": errors}
@@ -452,6 +483,34 @@ async def list_upload_history(
         LIMIT 50
     """)
     return {"data": rows}
+
+
+@router.get("/admin/download-upload/{log_id}")
+async def download_upload_file(
+    log_id: int,
+    admin_code: str = None,
+    token: str = None,
+    role: str = None
+):
+    """Tải xuống file Excel gốc đã lưu khi upload."""
+    require_admin(admin_code, token, role)
+    log = fetchone("SELECT filename, file_path FROM salary_upload_logs WHERE id = :id", {"id": log_id})
+    if not log:
+        raise HTTPException(status_code=404, detail="Không tìm thấy log")
+    if not log.get("file_path"):
+        raise HTTPException(status_code=404, detail="File đã lưu không tồn tại (log cũ trước khi thêm tính năng lưu file)")
+
+    # file_path lưu tương đối từ backend/
+    backend_dir = Path(__file__).parent.parent.parent
+    full_path = backend_dir / log["file_path"]
+    if not full_path.exists():
+        raise HTTPException(status_code=404, detail="File không tồn tại trên disk")
+
+    return StreamingResponse(
+        full_path.open("rb"),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{log["filename"]}"'}
+    )
 
 
 # ─── Admin: Import Salary Slip Data from Excel ──────────────────────────
@@ -503,11 +562,16 @@ async def import_salary_from_excel(
         except Exception:
             raise HTTPException(status_code=400, detail="Month format must be YYYY-MM")
 
+    # Lưu file gốc lên disk
+    _save_salary_file(content, excel_file.filename, month)
+
     imported = 0; skipped = 0; errors = []; new_users = []
 
     for idx, row in df.iterrows():
         try:
             employee_code = str(row.get('ID', '')).strip()
+            if employee_code.endswith('.0'):
+                employee_code = employee_code[:-2]
             if not employee_code:
                 skipped += 1; errors.append(f"Dòng {idx+2}: ID trống"); continue
 
@@ -545,11 +609,18 @@ async def import_salary_from_excel(
                     VALUES (:employee_code, :month, :basic_salary, :allowances, :bonus, :deductions, :net_salary, :notes, :created_by)
                 """, {"employee_code": employee_code, "month": month, "basic_salary": basic_salary, "allowances": allowances, "bonus": bonus, "deductions": deductions, "net_salary": net_salary, "notes": f"Imported from Excel by {admin_code}", "created_by": admin_code})
 
-            user = fetchone("SELECT id FROM users WHERE employee_code=:employee_code", {"employee_code": employee_code})
-            if not user:
-                execute("INSERT INTO users (employee_code, password_hash, role) VALUES (:employee_code, :password_hash, :role) ON CONFLICT DO NOTHING",
-                    {"employee_code": employee_code, "password_hash": hashlib.sha256(employee_code.encode()).hexdigest(), "role": "user"})
-                new_users.append(employee_code)
+            # Tự động tạo user + employee nếu chưa có
+            execute("INSERT INTO users (employee_code, password_hash, role) VALUES (:employee_code, :password_hash, :role) ON CONFLICT DO NOTHING",
+                {"employee_code": employee_code, "password_hash": hashlib.sha256(employee_code.encode()).hexdigest(), "role": "user"})
+            new_users.append(employee_code)
+
+            execute("""
+                INSERT INTO employees (employee_code, full_name, department, position, status, created_at, updated_at)
+                VALUES (:employee_code, :full_name, :department, :position, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (employee_code) DO NOTHING
+            """, {"employee_code": employee_code, "full_name": str(row.get('Họ và tên', row.get('NAME', ''))).strip(),
+                  "department": str(row.get('Bộ phận', row.get('PB', ''))).strip(),
+                  "position": str(row.get('Chức vụ', row.get('CHUCVU', ''))).strip()})
 
             imported += 1
         except Exception as e:

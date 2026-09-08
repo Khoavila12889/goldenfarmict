@@ -9,6 +9,7 @@ import {
   getSalaryEmployees, getSalaryView, updateSalaryFields,
   exportSalaryPdf, batchExportSalaryPdf, uploadSalaryExcel,
   getSalaryUploadHistory, deleteSalarySlip, downloadSalaryTemplate, getApiBase,
+  getSalaryUploadFileUrl,
 } from '../services/api'
 import '../styles/booking.css'
 import './SalarySlip.css'
@@ -715,16 +716,16 @@ export default function SalarySlipAdmin() {
               <label className="bk-form-label" style={{ fontWeight: 600, display: 'block', marginBottom: '0.5rem', color: '#1e293b' }}>
                 2. Chọn file Excel bảng lương (Tháng {parseMonthLabel(selectedMonth)}):
               </label>
-              <div 
+              <div
                 className={`salary-file-zone ${file ? 'uploaded' : ''}`}
                 onClick={() => document.getElementById('salary-excel-input').click()}
               >
-                <input 
-                  id="salary-excel-input" 
-                  type="file" 
+                <input
+                  id="salary-excel-input"
+                  type="file"
                   accept=".xlsx,.xls"
                   style={{ display: 'none' }}
-                  onChange={(e) => { setFile(e.target.files[0]); setUploadResult(null); setUploadError(null) }} 
+                  onChange={(e) => { setFile(e.target.files[0]); setUploadResult(null); setUploadError(null) }}
                 />
                 {file ? (
                   <>
@@ -740,7 +741,24 @@ export default function SalarySlipAdmin() {
               </div>
             </div>
 
-            {/* Bước 3: Nút bấm Import */}
+            {/* Bước 3: Ngày thanh toán (tự động = ngày 5 tháng sau) */}
+            <div className="bk-form-group" style={{ marginBottom: '1.25rem' }}>
+              <label className="bk-form-label" style={{ fontWeight: 600, display: 'block', marginBottom: '0.5rem', color: '#1e293b' }}>
+                3. Ngày thanh toán:
+              </label>
+              <div style={{
+                padding: '0.5rem 0.75rem', borderRadius: 8, border: '1px solid #cbd5e1',
+                fontSize: '0.9rem', fontFamily: 'inherit', background: '#f1f5f9', color: '#334155',
+                display: 'inline-block',
+              }}>
+                Tự động: ngày 5 tháng sau
+              </div>
+              <span style={{ fontSize: '0.78rem', color: '#64748b', marginLeft: '0.5rem' }}>
+                (VD: import lương tháng 8 → ngày thanh toán 05/09)
+              </span>
+            </div>
+
+            {/* Bước 4: Nút bấm Import */}
             <button 
               className="bk-btn bk-btn-primary import-submit-btn" 
               disabled={!file || uploading} 
@@ -838,9 +856,23 @@ export default function SalarySlipAdmin() {
                         {h.filename} · {h.record_count} NV
                       </div>
                     </div>
-                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--bk-text-secondary)' }}>{h.uploaded_by_name || h.uploaded_by}</div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--bk-text-muted)' }}>{formatDate(h.created_at)}</div>
+                    <div style={{ textAlign: 'right', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--bk-text-secondary)' }}>{h.uploaded_by_name || h.uploaded_by}</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--bk-text-muted)' }}>{formatDate(h.created_at)}</div>
+                      </div>
+                      {h.file_path && (
+                        <a href={getSalaryUploadFileUrl(h.id, userCode, token, role)}
+                          title="Tải file Excel gốc"
+                          style={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            width: 28, height: 28, borderRadius: 6,
+                            background: 'var(--bk-primary)', color: '#fff', textDecoration: 'none',
+                            flexShrink: 0,
+                          }}>
+                          <Download size={14} />
+                        </a>
+                      )}
                     </div>
                   </div>
                 ))}
