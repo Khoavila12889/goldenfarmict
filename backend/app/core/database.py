@@ -99,6 +99,7 @@ def _add_missing_columns(session):
         ("equipment_history", "new_status", "TEXT DEFAULT ''"),
         ("equipment_history", "changed_by", "TEXT DEFAULT ''"),
         ("salary_upload_logs", "file_path", "TEXT DEFAULT ''"),
+        ("salaries", "payment_date", "TEXT DEFAULT ''"),
     ]
     
     for table_name, column_name, column_def in columns_to_add:
