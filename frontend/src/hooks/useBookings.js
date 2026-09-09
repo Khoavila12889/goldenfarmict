@@ -35,8 +35,9 @@ export default function useBookings() {
     try {
       await apiCreateBooking(data)
       return { success: true }
-    } catch {
-      return { success: false, error: 'Lỗi kết nối máy chủ.' }
+    } catch (err) {
+      const detail = err.response?.data?.detail || err.response?.data?.error
+      return { success: false, error: detail || 'Lỗi kết nối máy chủ.' }
     }
   }, [])
 

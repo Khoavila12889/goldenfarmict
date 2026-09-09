@@ -37,35 +37,25 @@ def execute(sql: str, params: dict | list | None = None):
 def insert(sql: str, params: dict | list | None = None):
     """
     Execute INSERT and return the new row's ID.
-    
-    For PostgreSQL with RETURNING clause, we use execute().scalar() 
-    to get the returned value directly.
+
+    For PostgreSQL with RETURNING clause, we fetch the returned value
+    before committing.
     """
     with SessionLocal() as sess:
         result = sess.execute(text(sql), params or {})
+        rows = result.fetchall()
         sess.commit()
-        
-        # For PostgreSQL with RETURNING, use scalar() to get the returned value
-        # This works because RETURNING returns a single scalar value for the id
-        try:
-            # Try to get the first column of the first row
-            rows = result.fetchall()
-            if rows:
-                # Get the first column value (should be the id)
-                first_row = rows[0]
-                if hasattr(first_row, '_mapping'):
-                    # RowMapping object
-                    items = dict(first_row._mapping)
-                else:
-                    # Regular tuple/dict
-                    items = dict(first_row)
-                
-                if 'id' in items:
-                    return items['id']
-        except Exception:
-            pass
-        
-        # Fallback: return None
+
+        if rows:
+            first_row = rows[0]
+            if hasattr(first_row, '_mapping'):
+                items = dict(first_row._mapping)
+            else:
+                items = dict(first_row)
+
+            if 'id' in items:
+                return items['id']
+
         return None
 
 

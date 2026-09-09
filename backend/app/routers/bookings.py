@@ -24,6 +24,16 @@ def _require_resource_admin(
     return user
 
 
+def _resolve_user_info(
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token"),
+) -> dict:
+    """Resolve authenticated user info for booking creation. Returns user dict."""
+    return verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
+
+
 @router.get("")
 def list_bookings(
     date: str = Query(""),
@@ -51,22 +61,56 @@ def list_bookings(
 
 
 @router.post("")
-def create_booking(body: dict):
+def create_booking(
+    body: dict,
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token"),
+):
+    # Authenticate user
+    user = _resolve_user_info(x_user_code, x_user_role, x_user_dept, x_user_token)
+    user_code = user["user_code"]
+    full_name = user["full_name"]
+    department = user["department"]
+
+    # Validate required fields
+    resource_id = body.get("resource_id")
+    book_date = body.get("book_date")
+    start_time = body.get("start_time")
+    end_time = body.get("end_time")
+    title = body.get("title", "").strip()
+
+    if not resource_id or not book_date or not start_time or not end_time:
+        raise HTTPException(status_code=400, detail="Thiếu thông tin bắt buộc: resource_id, book_date, start_time, end_time")
+    if not title:
+        raise HTTPException(status_code=400, detail="Vui lòng nhập mục đích đặt lịch")
+
+    # Resolve employee info from user_code
+    emp = fetchone(
+        "SELECT id, employee_code, full_name, department FROM employees WHERE employee_code = :code",
+        {"code": user_code}
+    )
+    employee_id = emp["id"] if emp else None
+    emp_full_name = emp["full_name"] if emp else full_name
+    emp_department = emp["department"] if emp else department
+
+    # Use authenticated user's info (overrides body data for security/accuracy)
     new_id = insert("""
         INSERT INTO bookings (resource_id, title, employee_id, full_name, department,
-                              book_date, start_time, end_time, status, notes)
-        VALUES (:rid, :title, :eid, :name, :dept, :date, :st, :et, 'active', :notes)
+                              book_date, start_time, end_time, status, notes, created_at)
+        VALUES (:rid, :title, :eid, :name, :dept, :date, :st, :et, 'active', :notes, CURRENT_TIMESTAMP)
         RETURNING id
     """, {
-        "rid": body["resource_id"],
-        "title": body.get("title", ""),
-        "eid": body.get("employee_id"),
-        "name": body.get("full_name", ""),
-        "dept": body.get("department", ""),
-        "date": body.get("book_date"),
-        "st": body.get("start_time"),
-        "et": body.get("end_time"),
-        "notes": body.get("notes", ""),
+        "rid": int(resource_id),
+        "title": title,
+        "eid": employee_id,
+        "name": emp_full_name,
+        "dept": emp_department,
+        "date": book_date,
+        "st": start_time,
+        "et": end_time,
+        "notes": body.get("notes", "").strip(),
     })
     publish_sync("booking_created", {"id": new_id})
     return {"success": True, "id": new_id}

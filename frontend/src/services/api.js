@@ -222,7 +222,7 @@ export function getBookings(date = '', resource_type = 'all', status = 'all') {
 }
 
 export function createBooking(data) {
-  return api.post('/bookings', data)
+  return api.post('/bookings', data, { headers: bookingAuthHeaders() })
 }
 
 export function finishBooking(id) {
