@@ -229,18 +229,39 @@ export default function SalarySlipAdmin() {
     try {
       const res = await uploadSalaryExcel(file, selectedMonth, userCode, token, role, force)
       const data = res.data
-      if (data.has_existing) { setPendingMonth(data); setUploading(false); return }
+      if (data.has_existing) {
+        setPendingMonth(data)
+        return
+      }
       setUploadResult(data)
       fetchHistory()
       fetchEmployees()
     } catch (err) {
       setUploadError(err.response?.data?.detail || 'Upload thất bại')
     } finally {
-      if (!pendingMonth) setUploading(false)
+      setUploading(false)
     }
   }
 
-  function confirmOverwrite() { handleUpload(true) }
+  async function confirmOverwrite() {
+    setPendingMonth(null)
+    setUploading(true)
+    try {
+      const res = await uploadSalaryExcel(file, selectedMonth, userCode, token, role, true)
+      const data = res.data
+      if (data.has_existing) {
+        setPendingMonth(data)
+        return
+      }
+      setUploadResult(data)
+      fetchHistory()
+      fetchEmployees()
+    } catch (err) {
+      setUploadError(err.response?.data?.detail || 'Upload thất bại')
+    } finally {
+      setUploading(false)
+    }
+  }
   function cancelOverwrite() { setPendingMonth(null); setUploading(false) }
   function resetUpload() { setFile(null); setUploadResult(null); setUploadError(null); setPendingMonth(null) }
 
@@ -741,22 +762,7 @@ export default function SalarySlipAdmin() {
               </div>
             </div>
 
-            {/* Bước 3: Ngày thanh toán (tự động = ngày 5 tháng sau) */}
-            <div className="bk-form-group" style={{ marginBottom: '1.25rem' }}>
-              <label className="bk-form-label" style={{ fontWeight: 600, display: 'block', marginBottom: '0.5rem', color: '#1e293b' }}>
-                3. Ngày thanh toán:
-              </label>
-              <div style={{
-                padding: '0.5rem 0.75rem', borderRadius: 8, border: '1px solid #cbd5e1',
-                fontSize: '0.9rem', fontFamily: 'inherit', background: '#f1f5f9', color: '#334155',
-                display: 'inline-block',
-              }}>
-                Tự động: ngày 5 tháng sau
-              </div>
-              <span style={{ fontSize: '0.78rem', color: '#64748b', marginLeft: '0.5rem' }}>
-                (VD: import lương tháng 8 → ngày thanh toán 05/09)
-              </span>
-            </div>
+           
 
             {/* Bước 4: Nút bấm Import */}
             <button 
@@ -825,6 +831,14 @@ export default function SalarySlipAdmin() {
               </div>
             )}
 
+            <div className="import-month-hint" style={{ marginTop: '0.75rem' }}>
+              <AlertCircle size={14} />
+              <span>
+                Chỉ import được tối đa tháng <strong>{parseMonthLabel(capMonth)}</strong>
+                (tháng hiện tại {parseMonthLabel(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)} chưa chốt lương).
+              </span>
+            </div>
+
           </div>
         </div>
       )}
@@ -878,13 +892,6 @@ export default function SalarySlipAdmin() {
                 ))}
               </div>
                 )}
-              </div>
-              <div className="import-month-hint">
-                <AlertCircle size={14} />
-                <span>
-                  Chỉ import được tối đa tháng <strong>{parseMonthLabel(capMonth)}</strong>
-                  (tháng hiện tại {parseMonthLabel(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)} chưa chốt lương).
-                </span>
               </div>
             </div>
       )}
