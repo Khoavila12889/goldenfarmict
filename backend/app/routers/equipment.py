@@ -43,13 +43,18 @@ def list_equipment(
 ):
     sql = """
         SELECT eq.*, emp.full_name, emp.department, emp.employee_code as emp_code,
-               lic.license_key, lic.product_name as license_product, lic.expiry_date as license_expiry,
-               lic.activated as license_activated,
+               (SELECT STRING_AGG(l.product_name || ': ' || l.license_key, ', ' ORDER BY l.id)
+                FROM licenses l WHERE l.equipment_id=eq.id) as license_product,
+               (SELECT STRING_AGG(l.license_key, ', ' ORDER BY l.id)
+                FROM licenses l WHERE l.equipment_id=eq.id) as license_key,
+               (SELECT STRING_AGG(l.expiry_date, ', ' ORDER BY l.id)
+                FROM licenses l WHERE l.equipment_id=eq.id) as license_expiry,
+               (SELECT STRING_AGG(l.activated, ', ' ORDER BY l.id)
+                FROM licenses l WHERE l.equipment_id=eq.id) as license_activated,
                (SELECT h.handover_date FROM equipment_history h WHERE h.equipment_id=eq.id ORDER BY h.id DESC LIMIT 1) as handover_date,
                (SELECT h.return_date FROM equipment_history h WHERE h.equipment_id=eq.id ORDER BY h.id DESC LIMIT 1) as return_date
         FROM equipment eq
         LEFT JOIN employees emp ON emp.id=eq.employee_id
-        LEFT JOIN licenses lic ON lic.equipment_id=eq.id
         WHERE 1=1
     """
     params = {}
