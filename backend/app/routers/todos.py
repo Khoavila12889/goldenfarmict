@@ -53,8 +53,9 @@ def verify_session(x_user_code: Optional[str], x_user_role: Optional[str], x_use
         "SELECT u.role FROM users u WHERE u.employee_code = :code",
         {"code": code}
     )
-    if not user:
-        raise HTTPException(status_code=401, detail="Người dùng không tồn tại trong hệ thống")
+    
+    # Nếu chưa có trong users table, gán role mặc định là 'user'
+    u_role_from_db = user['role'] if user else 'user'
 
     emp = fetchone(
         "SELECT e.full_name, e.department FROM employees e WHERE e.employee_code = :code",
@@ -63,15 +64,19 @@ def verify_session(x_user_code: Optional[str], x_user_role: Optional[str], x_use
     full_name = emp['full_name'] if emp else code
     emp_dept = emp['department'] if emp else ""
 
-    dept_entry = fetchone(
-        "SELECT name FROM departments WHERE LOWER(name) = LOWER(:emp_dept)",
-        {"emp_dept": emp_dept}
-    )
-    resolved_dept = dept_entry['name'] if dept_entry else emp_dept
+    # Chỉ resolve department khi có department cụ thể
+    resolved_dept = emp_dept
+    if emp_dept:
+        dept_entry = fetchone(
+            "SELECT name FROM departments WHERE LOWER(name) = LOWER(:emp_dept)",
+            {"emp_dept": emp_dept}
+        )
+        if dept_entry:
+            resolved_dept = dept_entry['name']
 
     return {
         "user_code": code,
-        "user_role": user['role'],
+        "user_role": u_role_from_db,
         "department": resolved_dept,
         "full_name": full_name
     }
@@ -226,35 +231,42 @@ def create_todo(
         raise HTTPException(400, "Phạm vi công việc không hợp lệ")
 
     # ── Phân quyền tạo nhiệm vụ ──────────────────────────────
-    is_dept_approved = 1  # Mặc định là đã duyệt (dành cho Cá nhân, hoặc Sếp tạo)
+    target_dept = ""
+    assignee_code = ""
+    assignee_name = ""
+    is_dept_approved = 1  # Mặc định đã duyệt (personal hoặc admin/head tạo)
 
-    if scope == "department":
-        if u_role not in ("admin", "head"):
-            # NHÂN VIÊN TẠO: Cho phép, nhưng phải chờ sếp duyệt
-            target_dept = creator_dept
-            assignee_code = data.assignee_code or ""
-            assignee_name = data.assignee_name or ""
-            is_dept_approved = 0
-        else:
-            # SẾP TẠO: Duyệt luôn
+    if scope == "personal":
+        # Cá nhân: chỉ giao cho chính mình
+        if data.assignee_code and data.assignee_code != creator_code:
+            raise HTTPException(403, "Công việc cá nhân chỉ giao cho chính bạn")
+        assignee_code = creator_code
+        assignee_name = creator_name
+        # target_dept đã là "" ở trên
+
+    elif scope == "department":
+        # Phòng ban: phân quyền theo role
+        target_dept = creator_dept  # Mặc định lấy phòng ban của người tạo
+        
+        if u_role in ("admin", "head"):
+            # SẾP/ADMIN: Duyệt luôn, có thể giao cho người khác
             if u_role == "head":
+                # Trưởng phòng chỉ tạo cho phòng của mình
                 if data.department and data.department != creator_dept:
                     raise HTTPException(403, f"Trưởng phòng chỉ có thể tạo công việc cho phòng {creator_dept}")
                 target_dept = creator_dept
             else:
-                target_dept = data.department or ""
+                # Admin có thể chọn phòng ban bất kỳ
+                target_dept = data.department or creator_dept
 
             assignee_code = data.assignee_code or ""
             assignee_name = data.assignee_name or ""
             is_dept_approved = 1
-
-    elif scope == "personal":
-        # Cá nhân
-        if data.assignee_code and data.assignee_code != creator_code:
-            raise HTTPException(403, "Công việc cá nhân chỉ giao cho chính bạn")
-        target_dept = ""
-        assignee_code = creator_code
-        assignee_name = creator_name
+        else:
+            # NHÂN VIÊN: Tạo việc phòng ban nhưng phải chờ sếp duyệt
+            assignee_code = data.assignee_code or ""
+            assignee_name = data.assignee_name or ""
+            is_dept_approved = 0
 
     todo_id = insert("""
         INSERT INTO todos (

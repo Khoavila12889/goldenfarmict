@@ -215,6 +215,8 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 - **Cảnh báo quá hạn (Overdue Alert)**: Đánh dấu đỏ các công việc trễ hạn cần ưu tiên xử lý.
 - **Quyền User**: Được tạo, chỉnh sửa, chuyển trạng thái công việc do mình tạo/được giao, và **xóa công việc do chính mình tạo** (frontend + backend enforce).
 - **Realtime SSE Sync**: Tự động cập nhật Kanban realtime giữa các thành viên cùng phòng ban khi có thay đổi.
+- **Xác thực linh hoạt**: Người dùng có thể tạo todos ngay cả khi chưa có trong bảng `users` (tự động gán role mặc định `user`) — không chặn workflow do thiếu bản ghi user.
+- **Tối ưu hiệu suất**: Giảm truy vấn database không cần thiết, khởi tạo biến rõ ràng, logic phân quyền dễ bảo trì.
 
 ### 💬 Chat Nội bộ (WebSocket — ĐỘC LẬP với SSE)
 
