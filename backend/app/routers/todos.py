@@ -53,9 +53,9 @@ def verify_session(x_user_code: Optional[str], x_user_role: Optional[str], x_use
         "SELECT u.role FROM users u WHERE u.employee_code = :code",
         {"code": code}
     )
-    
-    # Nếu chưa có trong users table, gán role mặc định là 'user'
-    u_role_from_db = user['role'] if user else 'user'
+
+    # Ưu tiên role từ frontend header, fallback về DB hoặc 'user'
+    u_role_from_db = x_user_role or (user['role'] if user else 'user')
 
     emp = fetchone(
         "SELECT e.full_name, e.department FROM employees e WHERE e.employee_code = :code",
@@ -314,19 +314,31 @@ def get_assignees(
 
     if u_role == 'admin':
         rows = fetchall(
-            "SELECT employee_code, full_name, department, position FROM employees WHERE status='active' ORDER BY department, full_name"
+            "SELECT id, employee_code, full_name, department, position FROM employees WHERE status='active' ORDER BY department, full_name"
         )
     elif u_role == 'head':
-        rows = fetchall(
-            "SELECT employee_code, full_name, department, position FROM employees WHERE status='active' AND department = :dept ORDER BY full_name",
-            {"dept": u_dept}
-        )
+        if u_dept:
+            rows = fetchall(
+                "SELECT id, employee_code, full_name, department, position FROM employees WHERE status='active' AND department = :dept ORDER BY full_name",
+                {"dept": u_dept}
+            )
+        else:
+            # Fallback: nếu head chưa có department, lấy tất cả
+            rows = fetchall(
+                "SELECT id, employee_code, full_name, department, position FROM employees WHERE status='active' ORDER BY department, full_name"
+            )
     else:
         # Nhân viên: chỉ thấy đồng nghiệp trong phòng ban của mình (để tạo việc phòng ban chờ duyệt)
-        rows = fetchall(
-            "SELECT employee_code, full_name, department, position FROM employees WHERE status='active' AND department = :dept ORDER BY full_name",
-            {"dept": u_dept}
-        )
+        if u_dept:
+            rows = fetchall(
+                "SELECT id, employee_code, full_name, department, position FROM employees WHERE status='active' AND department = :dept ORDER BY full_name",
+                {"dept": u_dept}
+            )
+        else:
+            # Fallback: nếu chưa có department, lấy tất cả
+            rows = fetchall(
+                "SELECT id, employee_code, full_name, department, position FROM employees WHERE status='active' ORDER BY department, full_name"
+            )
 
     return {"status": "success", "data": rows}
 

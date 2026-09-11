@@ -862,7 +862,7 @@ export default function Todos() {
                       >
                         <option value="">-- Chọn nhân viên --</option>
                         {employees.map(emp => (
-                          <option key={emp.id} value={emp.employee_code}>
+                          <option key={emp.employee_code} value={emp.employee_code}>
                             {emp.full_name} ({emp.employee_code}) - {emp.department}
                           </option>
                         ))}

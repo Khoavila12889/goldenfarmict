@@ -384,7 +384,7 @@ export default function SalarySlip() {
               {/* ... Toàn bộ nội dung PDF phiếu lương giữ nguyên ... */}
               <div className="pdf-header">
                 <div className="pdf-company-info">
-                  <strong>CÔNG TY TNHH CANH ĐỒNG VÀNG (GOLDEN FARM)</strong><br />
+                  <strong>CÔNG TY TNHH CÁNH ĐỒNG VÀNG (GOLDEN FARM)</strong><br />
                   7 Đường số 5, Phường An Khánh, TP. Hồ Chí Minh
                 </div>
                 <div className="pdf-title">PHIẾU LƯƠNG THÁNG {d.MONTH}/{d.YEAR}</div>
