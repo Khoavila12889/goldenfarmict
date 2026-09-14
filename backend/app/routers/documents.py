@@ -1438,7 +1438,8 @@ import threading
 import jwt as pyjwt
 
 _ONLYOFFICE_URL = os.environ.get('ONLYOFFICE_URL', 'http://onlyoffice:80')
-_ONLYOFFICE_PUBLIC_URL = os.environ.get('ONLYOFFICE_PUBLIC_URL', 'http://localhost:8080')
+# Use relative path so DocsAPI loads through the same-origin frontend nginx
+_ONLYOFFICE_PUBLIC_URL = os.environ.get('ONLYOFFICE_PUBLIC_URL', '/onlyoffice')
 _ONLYOFFICE_SECRET = os.environ.get('ONLYOFFICE_SECRET', 'MySuperSecret123456')
 _ONLYOFFICE_ENABLED = os.environ.get('ONLYOFFICE_ENABLED', 'true').lower() == 'true'
 _TEMP_TOKEN_EXPIRE = 3600  # 1 hour (download token — DS may retry)

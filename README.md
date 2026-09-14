@@ -190,7 +190,7 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 ### 📁 Quản lý tài liệu (Documents) — SMB / FTP / Google Drive
 - **User UI trực quan**: Giao diện dạng card grid (hiển thị file dạng thumbnail lớn) kết hợp list view, cho phép chuyển đổi linh hoạt
 - **File Preview**: Xem trước ảnh, PDF, video, audio, text, code ngay trong trình duyệt (FileViewer component)
-- **Online Office Editor**: Chỉnh sửa .docx/.xlsx/.pptx trực tuyến qua ONLYOFFICE Document Server (`office.goldenfarm.vn`)
+- **Online Office Editor**: Chỉnh sửa .docx/.xlsx/.pptx trực tuyến qua ONLYOFFICE Document Server (DocsAPI load qua frontend nginx proxy `/onlyoffice`, same-origin, không phụ thuộc external proxy)
 - **Draw.io Editor**: Vẽ sơ đồ trực tuyến (.drawio/.xml) qua Draw.io (Diagrams.net) — iframe embed, load/save qua postMessage
 - **Search file**: Tìm kiếm file/thư mục theo tên realtime
 - **Cấu hình storage**: SMB (Windows Share), FTP, Google Drive (Service Account)
@@ -467,7 +467,7 @@ docker compose up -d --build
 
 - Frontend: `http://<VPS_IP>:8088`
 - Backend API: `http://<VPS_IP>:8000`
-- OnlyOffice: `http://<VPS_IP>:8080`
+- OnlyOffice: `http://<VPS_IP>:8090`
 - Draw.io: `http://<VPS_IP>:8091`
 
 > Hệ thống sử dụng **PostgreSQL 16** duy nhất (service `db` trong docker-compose). Không còn hỗ trợ SQLite.
@@ -534,7 +534,7 @@ goldenfarm-ict-web/
 │   │   ├── main.jsx               # Entry point (BrowserRouter + React.StrictMode)
 │   │   ├── App.jsx                # Routing + ProtectedRoute / AdminRoute guards
 │   │   ├── components/
-│   │   │   ├── OnlyOfficeViewer.jsx # ONLYOFFICE document editor overlay
+│   │   │   ├── OnlyOfficeViewer.jsx # ONLYOFFICE editor overlay (timeout 25s, retry, dim-check, same-origin DocsAPI)
 │   │   │   └── DrawioViewer.jsx    # Draw.io diagram editor (iframe embed, 2 modes)
 │   │   ├── pages/
 │   │   │   ├── Login.jsx          # Đăng nhập (employee_code + password/email)
