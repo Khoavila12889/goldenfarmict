@@ -227,7 +227,6 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
             ref={placeholderRef}
             id={EDITOR_PLACEHOLDER_ID}
             className="oov-editor"
-            style={{ display: error ? 'none' : 'block' }}
           />
         </div>
       </div>
