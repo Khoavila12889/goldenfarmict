@@ -1,5 +1,6 @@
 import ftplib
 import hashlib
+import logging
 import os
 import re
 import json
@@ -1678,16 +1679,26 @@ def onlyoffice_config(
     if user_rows and user_rows[0].get('full_name'):
         user_name = user_rows[0]['full_name']
 
-    # URL that OnlyOffice Document Server uses to fetch the file + send callbacks.
-    # Must be reachable FROM the OnlyOffice container/server (not from the browser).
-    backend_public_url = os.environ.get('BACKEND_PUBLIC_URL', '').strip()
+    # URL mà OnlyOffice Document Server dùng để tải file + gửi callback.
+    # DS chạy trong container nên PHẢI là địa chỉ resolve được từ DS
+    # (thường là DNS nội bộ Docker: http://backend:8000).
+    # Suy ra từ header Host của browser là fallback cuối và gần như luôn sai —
+    # nó trỏ về frontend, DS sẽ báo "connect ECONNREFUSED" trong docservice/out.log.
+    backend_public_url = (
+        os.environ.get('BACKEND_PUBLIC_URL', '').strip()
+        or os.environ.get('ONLYOFFICE_BACKEND_URL', '').strip()
+    )
     if backend_public_url:
         base_url = backend_public_url.rstrip('/')
     else:
         forwarded_proto = request.headers.get("x-forwarded-proto", "http")
         forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "localhost:8000"
         base_url = f"{forwarded_proto}://{forwarded_host}".rstrip('/')
-    
+        logging.warning(
+            "[ONLYOFFICE] BACKEND_PUBLIC_URL chưa được cấu hình — dùng %s suy ra từ header. "
+            "Document Server nhiều khả năng KHÔNG gọi được địa chỉ này.", base_url
+        )
+
     # Public URL the BROWSER uses to load DocsAPI JS
     doc_service = _ONLYOFFICE_PUBLIC_URL.rstrip('/')
     document_type = _oo_document_type(ext)
@@ -1742,7 +1753,10 @@ def onlyoffice_config(
 
     # Sign the clean config, then attach token + internal helper field for the React client
     editor_config["token"] = _sign_doc_token(editor_config)
-    editor_config["_docsApiUrl"] = f"{doc_service}/web-apps/apps/api/documents/api.js"
+    # Đường dẫn tương đối (mặc định "/onlyoffice") để browser luôn load DocsAPI
+    # qua same-origin — nginx của frontend / Vite dev proxy sẽ chuyển tiếp tới DS.
+    # Chỉ đặt ONLYOFFICE_PUBLIC_URL thành URL tuyệt đối khi DS expose riêng.
+    editor_config["_docsApiUrl"] = f"{doc_service or '/onlyoffice'}/web-apps/apps/api/documents/api.js"
 
     return editor_config
 

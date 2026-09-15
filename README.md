@@ -462,15 +462,27 @@ Mở trình duyệt tại **`http://localhost:5173`**.
 ### Cách 2: Deploy bằng Docker (VPS)
 
 ```bash
+# Lần đầu / khi có thay đổi frontend
 docker compose up -d --build
+
+# Chỉ đổi code backend (backend/app được bind-mount → KHÔNG cần build lại)
+docker compose restart backend
+
+# Chỉ đổi frontend hoặc frontend/nginx.conf
+docker compose build frontend && docker compose up -d frontend
 ```
 
-- Frontend: `http://<VPS_IP>:8088`
-- Backend API: `http://<VPS_IP>:8000`
-- OnlyOffice: `http://<VPS_IP>:8090`
-- Draw.io: `http://<VPS_IP>:8091`
+| Service | Container port | Host port (mặc định) | Biến `.env` |
+|---------|---------------|----------------------|-------------|
+| Frontend (nginx) | 80 | 8088 | `FRONTEND_PORT` |
+| Backend (FastAPI) | 8000 | 8000 | `BACKEND_PORT` |
+| OnlyOffice DS | 80 | 8090 | `ONLYOFFICE_PORT` |
+| Draw.io | 8080 | 8091 | `DRAWIO_PORT` |
+| PostgreSQL 16 | 5432 | 5432 | `POSTGRES_PORT` |
 
 > Hệ thống sử dụng **PostgreSQL 16** duy nhất (service `db` trong docker-compose). Không còn hỗ trợ SQLite.
+
+> Chi tiết deploy production + chẩn đoán lỗi: xem **[🚀 Deploy & Bảo trì Server](#-deploy--bảo-trì-server)**.
 
 ## Hybrid Authentication (Argon2id + SHA-256)
 
@@ -1009,6 +1021,224 @@ Effective Permission = Role_Perm || Department_Perm || Individual_Override_Perm
 3. **Route Guard**: `App.jsx` — `AdminRoute` check `role` trước, nếu không phải admin/head thì check `user_permissions[requiredModule]?.can_view`
 4. **Refresh**: Layout gọi `GET /api/auth/permissions` khi mount, sync vào `sessionStorage` để dùng ngay lần sau
 5. **Debug log**: Backend ghi `[RBAC] effective permissions for {code}` mỗi khi merge
+
+## 🚀 Deploy & Bảo trì Server
+
+Phần này là **sổ tay vận hành**: đọc trước khi deploy lên VPS hoặc khi OnlyOffice /
+module Documents bị lỗi. Mọi lệnh dưới đây chạy từ thư mục gốc project.
+
+### 1. Biến môi trường (`.env` ở thư mục gốc)
+
+| Biến | Giá trị production | Ý nghĩa |
+|------|--------------------|---------|
+| `VPS_IP` | `10.0.0.114` | IP nội bộ VPS |
+| `APP_ENV` | `production` | |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | — | DB, **đổi mật khẩu thật khi deploy** |
+| `CORS_ORIGINS` | `https://noibo.canhdongvang.vn,http://localhost:5173` | |
+| `ONLYOFFICE_URL` | `http://onlyoffice:80` | Backend → DS (DNS nội bộ Docker) |
+| `ONLYOFFICE_PUBLIC_URL` | `/onlyoffice` | Browser load DocsAPI — **để relative** |
+| `ONLYOFFICE_BACKEND_URL` | *(bỏ trống)* | DS → backend. Trống thì mặc định `http://backend:8000` |
+| `ONLYOFFICE_SECRET` | — | JWT HS256, **phải khớp** secret trong DS |
+| `ONLYOFFICE_ENABLED` | `true` | |
+| `DRAWIO_PUBLIC_URL` | `https://noibo.canhdongvang.vn/drawio` | |
+
+`frontend/.env`:
+
+```env
+# BẮT BUỘC để trống ở CẢ local lẫn production → web dùng đường dẫn tương đối /api
+VITE_API_URL=
+```
+
+> ⚠️ Nếu nhúng `VITE_API_URL=https://domain/api` vào build, mọi request SSE/WebSocket
+> sẽ đi thẳng tới host đó → Chrome cảnh báo *Private Network Access* và báo lỗi
+> *Mixed Content* khi trang chạy HTTPS.
+
+### 2. Quy trình deploy lên VPS
+
+```bash
+cd /home/goldenfarmict
+git pull
+
+# 1) Kiểm tra .env production (VITE_API_URL phải TRỐNG, mật khẩu DB đã đổi)
+cat .env frontend/.env
+
+# 2) Build + khởi động
+docker compose up -d --build
+
+# 3) Kiểm tra
+docker compose ps                                   # tất cả phải healthy
+curl -s http://127.0.0.1:8000/api/health            # backend
+curl -sI http://127.0.0.1:8088/health               # frontend nginx
+curl -s http://127.0.0.1:8088/onlyoffice/healthcheck # DS qua proxy → "true"
+```
+
+**Khi nào cần build lại cái gì:**
+
+| Thay đổi | Lệnh |
+|----------|------|
+| `backend/app/**`, `backend/main.py` | `docker compose restart backend` *(code được bind-mount)* |
+| `frontend/src/**` | `docker compose build frontend && docker compose up -d frontend` |
+| `frontend/nginx.conf` | `docker compose build frontend && docker compose up -d frontend` |
+| `docker-compose.yml`, `.env` | `docker compose up -d` |
+| `backend/requirements.txt` | `docker compose build backend && docker compose up -d backend` |
+
+> Hot-patch nginx khẩn cấp (không rebuild):
+> `docker cp frontend/nginx.conf goldenfarm-frontend:/etc/nginx/conf.d/default.conf && docker exec goldenfarm-frontend nginx -t && docker exec goldenfarm-frontend nginx -s reload`
+> — **phải rebuild lại sau đó**, nếu không lần `up -d` kế tiếp sẽ mất bản vá.
+
+### 3. OnlyOffice reverse proxy — 3 điều kiện BẮT BUỘC
+
+OnlyOffice Document Server (DS) dựng URL redirect tuyệt đối theo công thức
+`$the_scheme://$the_host$the_prefix/<version>/web-apps/...`
+(xem `/etc/nginx/includes/http-common.conf` **bên trong** container DS).
+Nghĩa là `frontend/nginx.conf` phải gửi đúng 3 thứ:
+
+```nginx
+location /onlyoffice/ {
+    proxy_pass http://onlyoffice:80/;          # có "/" cuối → cắt prefix /onlyoffice
+    proxy_http_version 1.1;
+
+    proxy_set_header Host $oo_host;            # 1) PHẢI có PORT — dùng $http_host, KHÔNG dùng $host
+    proxy_set_header X-Forwarded-Host $oo_host;
+    proxy_set_header X-Forwarded-Proto $oo_scheme;  # 2) tôn trọng proxy HTTPS phía trước (NPM/Cloudflare)
+    proxy_set_header X-Forwarded-Prefix /onlyoffice; # 3) DS tự chèn prefix vào mọi URL nó sinh ra
+
+    proxy_set_header Upgrade $http_upgrade;    # websocket đồng tác giả (co-authoring)
+    proxy_set_header Connection $oo_connection;
+    proxy_buffering off;
+}
+```
+
+`$oo_host` / `$oo_scheme` / `$oo_connection` là các `map` khai báo ở đầu
+`frontend/nginx.conf` (file này được nạp trong khối `http` nên `map` hợp lệ).
+
+**Vì sao không được dùng `proxy_set_header Host $host;`**
+
+`$host` của nginx **luôn bỏ port**. DS sẽ sinh
+`Location: http://localhost/onlyoffice/9.4.0-xxx/web-apps/...` → browser gọi cổng 80 →
+không có gì lắng nghe → **iframe editor không bao giờ load → trang trắng**.
+Đây chính là lỗi đã gặp và đã sửa.
+
+**Vì sao không được dùng `proxy_redirect` để vá prefix**
+
+Cách cũ `proxy_redirect ~^http://[^/]+/(.+)$ /onlyoffice/$1;` chỉ sửa được path,
+không sửa được phần `scheme://host` đã mất port. Khi đã gửi `X-Forwarded-Prefix`
+thì **phải bỏ** `proxy_redirect` đó, nếu không sẽ bị nhân đôi prefix
+(`/onlyoffice/onlyoffice/...`).
+
+**Các location phụ bắt buộc phải giữ** — DS sinh URL file tạm ở cả hai dạng:
+
+- `location /cache/` và `location /onlyoffice/cache/` → tải file đã convert, có `secure_link` (md5 + expires). **Không được `proxy_buffering on`** ở đây.
+- `location ~ ^/[0-9]+\.[0-9]+\.[0-9]+-[a-f0-9]+/` → fallback cho URL versioned không có prefix.
+
+### 4. Luồng OnlyOffice & điểm gãy thường gặp
+
+```
+Browser ──1. GET /api/documents/onlyoffice/config──► Backend
+        ◄── config + JWT token + _docsApiUrl=/onlyoffice/.../api.js
+Browser ──2. GET /onlyoffice/web-apps/.../api.js──► nginx frontend ──► DS
+Browser ──3. new DocsAPI.DocEditor() → iframe /onlyoffice/<version>/web-apps/...
+DS      ──4. GET  {BACKEND_PUBLIC_URL}/api/documents/onlyoffice/download?token=…──► Backend ──► SMB/FTP/GDrive
+DS      ──5. POST {BACKEND_PUBLIC_URL}/api/documents/onlyoffice/callback (status 2/6)──► Backend → ghi ngược storage
+```
+
+| Bước gãy | Biểu hiện | Nguyên nhân / cách sửa |
+|----------|-----------|------------------------|
+| 1 | Popup đỏ "No permission…" / 403 | `storage_permissions` chưa cấp `can_read` cho folder cha |
+| 2 | "Không thể tải ONLYOFFICE API" | nginx thiếu `location /onlyoffice/`, hoặc `ONLYOFFICE_ENABLED=false` |
+| 3 | **Trang trắng, không lỗi** | `Location` thiếu port → xem mục 3 |
+| 4 | DS log `ECONNREFUSED` | `BACKEND_PUBLIC_URL` trỏ về frontend thay vì `http://backend:8000` |
+| 4 | DS log `Download failed` 502 | Backend không đọc được SMB/FTP (sai share name, firewall, pysmb) |
+| 5 | Sửa xong không lưu | `callbackUrl` sai host, hoặc `_put_file_bytes` thiếu quyền ghi |
+
+### 5. Chẩn đoán lỗi (copy-paste được ngay)
+
+```bash
+# ── Container & env ────────────────────────────────────────────
+docker compose ps
+docker exec goldenfarm-backend printenv BACKEND_PUBLIC_URL ONLYOFFICE_URL \
+       ONLYOFFICE_PUBLIC_URL ONLYOFFICE_ENABLED APP_ENV
+
+# ── DS có gọi được backend không? (chạy TỪ container DS) ───────
+docker exec goldenfarm-onlyoffice curl -sS -o /dev/null -w '%{http_code}\n' \
+       http://backend:8000/api/health            # kỳ vọng 200
+
+# ── Backend có đọc được SMB không? ──────────────────────────────
+docker exec goldenfarm-backend python -c "import socket;s=socket.socket();s.settimeout(6);\
+print('SMB connect_ex =', s.connect_ex(('10.0.0.90',445)))"    # kỳ vọng 0
+
+# ── Redirect của DS có đúng host:port + prefix không? ───────────
+curl -sSI -o /dev/null -D - http://localhost:8088/onlyoffice/web-apps/apps/spreadsheeteditor/main/index.html
+#   ĐÚNG : Location: http://localhost:8088/onlyoffice/9.4.0-<tag>/web-apps/...
+#   SAI  : Location: http://localhost/onlyoffice/...        ← thiếu port
+#   SAI  : Location: http://localhost/9.4.0-.../web-apps/... ← thiếu prefix
+
+# Giả lập truy cập qua NPM/HTTPS (production)
+curl -sS -o /dev/null -D - -H 'X-Forwarded-Host: noibo.canhdongvang.vn' \
+     -H 'X-Forwarded-Proto: https' \
+     http://localhost:8088/onlyoffice/web-apps/apps/documenteditor/main/index.html \
+  | grep -i '^location'
+#   kỳ vọng: https://noibo.canhdongvang.vn/onlyoffice/9.4.0-<tag>/...
+
+# ── Log ─────────────────────────────────────────────────────────
+docker compose logs -f --tail=100 backend
+docker exec goldenfarm-onlyoffice tail -n 100 /var/log/onlyoffice/documentserver/docservice/out.log
+docker exec goldenfarm-onlyoffice tail -n 100 /var/log/onlyoffice/documentserver/converter/out.log
+docker exec goldenfarm-onlyoffice tail -n 100 /var/log/onlyoffice/documentserver/nginx.error.log
+docker exec goldenfarm-frontend  tail -n 100 /var/log/nginx/api-error.log
+
+# ── Script chẩn đoán tổng hợp ───────────────────────────────────
+node debug-onlyoffice.js
+```
+
+**Vị trí log cần nhớ**
+
+| Log | Đường dẫn |
+|-----|-----------|
+| Backend | `docker compose logs backend` (và `backend/logs/`) |
+| DS — lỗi tải file / callback | `/var/log/onlyoffice/documentserver/docservice/out.log` |
+| DS — lỗi convert (.doc/.xls → OOXML) | `/var/log/onlyoffice/documentserver/converter/out.log` |
+| DS — nginx (thiếu file, secure_link 403) | `/var/log/onlyoffice/documentserver/nginx.error.log` |
+| Frontend nginx | `/var/log/nginx/api-access.log`, `/var/log/nginx/api-error.log` |
+
+### 6. Những bẫy đã gặp (đọc để khỏi mất thời gian)
+
+1. **Port 8090 trên máy dev Windows bị một `nginx.exe` chạy trên host chiếm.**
+   `netstat -ano | findstr :8090` sẽ thấy cả `com.docker.backend` (0.0.0.0:8090)
+   lẫn `nginx.exe` (127.0.0.1:8090). Windows ưu tiên binding cụ thể hơn →
+   `http://localhost:8090/...` đi vào nginx của host và trả **404**, dù container DS vẫn khoẻ.
+   Vì vậy `vite.config.js` proxy `/onlyoffice` tới **nginx của container frontend**
+   (`http://127.0.0.1:8088`) chứ không tới DS trực tiếp — dev và prod dùng chung một cấu hình.
+2. **`BACKEND_PUBLIC_URL` mà để trống** thì backend suy ra từ header `Host` của browser
+   → ra URL của *frontend* → DS gọi ngược về frontend và báo `ECONNREFUSED`.
+   Backend đã log cảnh báo `[ONLYOFFICE] BACKEND_PUBLIC_URL chưa được cấu hình…`; thấy dòng này là phải sửa `.env`.
+3. **DS đổi `cache_tag` sau mỗi lần restart** (`9.4.0-1a84804b…` → `9.4.0-48bcd1b6…`).
+   Trình duyệt cache URL cũ sẽ 404. Ép reload cứng (Ctrl+F5) sau khi restart DS.
+4. **Thêm cột mới vào model SQLAlchemy** thì phải thêm luôn vào `columns_to_add`
+   trong `backend/app/core/database.py` → `_add_missing_columns()`, kèm
+   `ALTER TABLE … ADD COLUMN IF NOT EXISTS` nếu có file migration chạy tay.
+   Không làm vậy production sẽ crash `column "X" does not exist`.
+5. **`docker compose up -d` không tự refresh port mapping** khi `.env` đổi port.
+   Phải `docker compose down && docker compose up -d`.
+6. **Đường dẫn SMB**: `storage_config.remote_path` là **tên share** (`3.TÀI LIỆU THAM KHẢO`),
+   không phải đường dẫn đầy đủ. Backend nối `share` + `file_path` và đổi `/` → `\`.
+
+### 7. Dev local (không dùng Docker cho frontend)
+
+```bash
+docker compose up -d            # db + backend + onlyoffice + drawio
+cd frontend && npm run dev      # http://localhost:5173
+```
+
+Vite proxy (cấu hình trong `frontend/vite.config.js`, override bằng biến môi trường):
+
+| Path | Mặc định | Biến override |
+|------|----------|---------------|
+| `/api` | `http://127.0.0.1:8000` | `VITE_DEV_API_TARGET` |
+| `/onlyoffice` | `http://127.0.0.1:8088` | `VITE_DEV_ONLYOFFICE_TARGET` |
+
+Proxy `/onlyoffice` đặt `changeOrigin: false` để DS nhìn thấy `Host: localhost:5173`
+và sinh redirect về đúng cổng của Vite → iframe editor vẫn same-origin.
 
 ## Maintenance
 

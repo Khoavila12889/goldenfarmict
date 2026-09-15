@@ -43,7 +43,11 @@ services:
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       - CORS_ORIGINS=${CORS_ORIGINS}
-      - BACKEND_PUBLIC_URL=${BACKEND_PUBLIC_URL}
+      # URL mà OnlyOffice Document Server dùng để tải file + gửi callback.
+      # BẮT BUỘC phải là địa chỉ DS resolve được (DNS nội bộ Docker).
+      # Nếu để backend tự suy ra từ header Host của browser, DS sẽ gọi ngược
+      # về frontend và báo "connect ECONNREFUSED" trong docservice/out.log.
+      - BACKEND_PUBLIC_URL=${ONLYOFFICE_BACKEND_URL:-http://backend:8000}
       - ONLYOFFICE_URL=${ONLYOFFICE_URL}
       - ONLYOFFICE_PUBLIC_URL=${ONLYOFFICE_PUBLIC_URL}
       - ONLYOFFICE_SECRET=${ONLYOFFICE_SECRET}
