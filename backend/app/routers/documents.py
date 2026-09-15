@@ -1720,7 +1720,6 @@ def onlyoffice_config(
             "customization": {
                 "autosave": can_edit,
                 "forcesave": can_edit,
-                "chat": False,
                 "compactHeader": False,
                 "compactToolbar": False,
                 "help": False,
