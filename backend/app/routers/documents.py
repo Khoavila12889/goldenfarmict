@@ -1748,7 +1748,7 @@ def onlyoffice_config(
 
     # Sign the clean config, then attach token + internal helper field for the React client
     editor_config["token"] = _sign_doc_token(editor_config)
-    editor_config["_docsApiUrl"] = f"{doc_service}/web-apps/apps/api/documents/api.js"
+    editor_config["_docsApiUrl"] = f"{doc_service}/web-apps/apps/api/documents/api.js?v=9.4.0"
 
     return editor_config
 
