@@ -1736,7 +1736,7 @@ def onlyoffice_config(
         "documentType": document_type,
         "height": "100%",
         "width": "100%",
-        "type": "desktop",
+        "type": "embedded",
     }
 
     # Sign the clean config, then attach token + internal helper field for the React client

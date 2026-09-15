@@ -467,7 +467,7 @@ def forum_onlyoffice_config(
         "documentType": document_type,
         "height": "100%",
         "width": "100%",
-        "type": "desktop",
+        "type": "embedded",
     }
 
     editor_config["token"] = _sign_doc_token(editor_config)
