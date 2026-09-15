@@ -11,6 +11,7 @@ import '../styles/shared.css'
 import './Documents.css'
 import FileViewer from '../components/FileViewer'
 import OnlyOfficeViewer from '../components/OnlyOfficeViewer'
+import OnlyOfficeErrorBoundary from '../components/OnlyOfficeErrorBoundary'
 import DrawioViewer from '../components/DrawioViewer'
 import PdfPagesViewer from '../components/PdfPagesViewer'
 import ShareDocument from '../components/ShareDocument'
@@ -1442,7 +1443,9 @@ export default function Documents() {
 
       <FileViewer file={viewerFile} isOpen={viewerOpen} onClose={() => { setViewerOpen(false); setViewerFile(null) }} />
       <PdfPagesViewer file={pdfPagesFile} isOpen={!!pdfPagesFile} onClose={() => setPdfPagesFile(null)} />
+      <OnlyOfficeErrorBoundary onClose={() => { setOoOpen(false); setOoFile(null); setOoConfigId(null) }}>
       <OnlyOfficeViewer file={ooFile} configId={ooConfigId} isOpen={ooOpen} onClose={() => { setOoOpen(false); setOoFile(null); setOoConfigId(null) }} />
+      </OnlyOfficeErrorBoundary>
       <DrawioViewer file={drawioFile} configId={drawioConfigId} isOpen={drawioOpen} onClose={() => { setDrawioOpen(false); setDrawioFile(null); setDrawioConfigId(null) }} />
       <ShareDocument file={shareFile} isOpen={shareOpen} onClose={() => { setShareOpen(false); setShareFile(null) }} />
       <ImageLightbox open={showLightbox} onClose={() => setShowLightbox(false)} slides={lightboxSlides} index={lightboxIndex} />
