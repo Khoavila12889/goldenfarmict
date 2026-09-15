@@ -293,8 +293,8 @@
 .oov-body {
   flex: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: flex-start;
   background: #f8fafc;
   position: relative;
   overflow: hidden;

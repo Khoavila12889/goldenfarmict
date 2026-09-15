@@ -20,6 +20,7 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
   const [editorKey, setEditorKey] = useState(0)
   const editorRef = useRef(null)
   const initAttemptedRef = useRef(false)
+  const isInitingRef = useRef(false)
   const initTimerRef = useRef(null)
 
   const userCode = sessionStorage.getItem('user_code') || ''
@@ -31,9 +32,16 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
       try { editorRef.current.destroyEditor() } catch (_) {}
       editorRef.current = null
     }
+    // Không dùng innerHTML = '' — OnlyOffice giữ tham chiếu đến DOM node
+    // chỉ xóa các node con (iframe) an toàn
     const el = document.getElementById(EDITOR_PLACEHOLDER_ID)
-    if (el) el.innerHTML = ''
+    if (el) {
+      while (el.firstChild) {
+        try { el.removeChild(el.firstChild) } catch (_) { break }
+      }
+    }
     initAttemptedRef.current = false
+    isInitingRef.current = false
     setEditorInited(false)
   }, [])
 
@@ -126,7 +134,7 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
 
   // ── Initialize editor sau khi script sẵn sàng ─────────────────
   const initEditor = useCallback(() => {
-    if (!editorConfig || initAttemptedRef.current) return
+    if (!editorConfig || initAttemptedRef.current || isInitingRef.current) return
     const DocsAPI = window.DocsAPI
     if (!DocsAPI || !DocsAPI.DocEditor) {
       setError('DocsAPI.DocEditor không khả dụng. Vui lòng tải lại trang và thử lại.')
@@ -140,13 +148,16 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
     }
 
     initAttemptedRef.current = true
+    isInitingRef.current = true
 
-    // Dọn sạch placeholder trước khi init — quan trọng để tránh React conflict
+    // Dọn sạch placeholder trước khi init
     if (editorRef.current) {
       try { editorRef.current.destroyEditor() } catch (_) {}
       editorRef.current = null
     }
-    placeholder.innerHTML = ''
+    while (placeholder.firstChild) {
+      try { placeholder.removeChild(placeholder.firstChild) } catch (_) { break }
+    }
 
     const config = cleanEditorConfig(editorConfig)
 
@@ -157,13 +168,16 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
           ...(config.events || {}),
           onAppReady: () => {
             if (initTimerRef.current) { clearTimeout(initTimerRef.current); initTimerRef.current = null }
+            isInitingRef.current = false
             setEditorInited(true)
           },
           onDocumentReady: () => {
             if (initTimerRef.current) { clearTimeout(initTimerRef.current); initTimerRef.current = null }
+            isInitingRef.current = false
             setEditorInited(true)
           },
           onError: (event) => {
+            isInitingRef.current = false
             const data = event?.data
             let msg = 'Lỗi ONLYOFFICE khi mở tài liệu'
             if (typeof data === 'string') {
@@ -181,15 +195,15 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
       })
 
       initTimerRef.current = setTimeout(() => {
-        if (!editorInited) {
-          setError('Không thể khởi tạo trình soạn thảo. Vui lòng thử lại hoặc tải file xuống để xem.')
-        }
+        isInitingRef.current = false
+        setError('Không thể khởi tạo trình soạn thảo. Vui lòng thử lại hoặc tải file xuống để xem.')
       }, INIT_TIMEOUT_MS)
     } catch (err) {
       initAttemptedRef.current = false
+      isInitingRef.current = false
       setError('Lỗi khởi tạo ONLYOFFICE: ' + (err.message || String(err)))
     }
-  }, [editorConfig, editorInited])
+  }, [editorConfig])
 
   useEffect(() => {
     if (!isOpen || !scriptReady || !editorConfig) return
