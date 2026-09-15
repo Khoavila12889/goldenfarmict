@@ -231,15 +231,13 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
               </div>
             </div>
           )}
-          <div
-            id={EDITOR_PLACEHOLDER_ID}
-            className="oov-editor"
-            style={{
-              visibility: error ? 'hidden' : 'visible',
-              width: '100%',
-              height: '100%',
-            }}
-          />
+          {/* Chỉ render editor khi không có error — tránh React conflict với OnlyOffice iframe */}
+          {!error && (
+            <div
+              id={EDITOR_PLACEHOLDER_ID}
+              className="oov-editor"
+            />
+          )}
         </div>
       </div>
     </div>

@@ -1,0 +1,24 @@
+Nguyên nhân gốc rễ: Docker Compose trên Windows đôi khi không reload .env file đúng cách khi container đã từng chạy trước đó (cached environment). Giải pháp: set env var explicit trong cmd session trước khi docker compose up.
+
+Giờ test lại OnlyOffice — docUrl sẽ bắt đầu bằng http://127.0.0.1:8000 thay vì https://noibo.canhdongvang.vn.
+
+---
+
+Tóm tắt toàn bộ fix:
+
+
+┌───────────────────────────┬──────────────────────────────────────┬────────────────────────────────────┐
+│ Vấn đề                    │ Nguyên nhân                          │ Fix                                │
+├───────────────────────────┼──────────────────────────────────────┼────────────────────────────────────┤
+│ insertBefore DOM error    │ innerHTML = '' phá hủy DOM node      │ Dùng useRef, chỉ xóa iframe con    │
+│                           │ OnlyOffice đang giữ reference        │                                    │
+├───────────────────────────┼──────────────────────────────────────┼────────────────────────────────────┤
+│ Double init log           │ initEditor trong useEffect deps →    │ Thêm isInitingRef guard, bỏ khỏi   │
+│                           │ re-trigger                           │ deps                               │
+├───────────────────────────┼──────────────────────────────────────┼────────────────────────────────────┤
+│ Container flex shrink     │ align-items: center → placeholder bị │ Đổi thành stretch                  │
+│                           │  co về 0                             │                                    │
+├───────────────────────────┼──────────────────────────────────────┼────────────────────────────────────┤
+│ docUrl sai production     │ Docker compose cache env cũ          │ Set env explicit trước up, hoặc    │
+│ domain trên local         │                                      │ down hoàn toàn rồi up lại          │
+└───────────────────────────┴──────────────────────────────────────┴────────────────────────────────────┘
