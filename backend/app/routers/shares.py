@@ -762,13 +762,17 @@ def share_onlyoffice_config(
     if ext not in _OO_MIME:
         raise HTTPException(400, f"Định dạng không hỗ trợ xem online: {ext}")
 
-    backend_public_url = os.environ.get('BACKEND_PUBLIC_URL', '').strip()
-    if backend_public_url:
-        base_url = backend_public_url.rstrip('/')
+    forwarded_proto = request.headers.get("x-forwarded-proto", "http")
+    if forwarded_proto == "https":
+        forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "noibo.canhdongvang.vn"
+        base_url = f"https://{forwarded_host}".rstrip('/')
     else:
-        forwarded_proto = request.headers.get("x-forwarded-proto", "http")
-        forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "localhost:8000"
-        base_url = f"{forwarded_proto}://{forwarded_host}".rstrip('/')
+        backend_public_url = os.environ.get('BACKEND_PUBLIC_URL', '').strip()
+        if backend_public_url:
+            base_url = backend_public_url.rstrip('/')
+        else:
+            forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "localhost:8000"
+            base_url = f"http://{forwarded_host}".rstrip('/')
 
     # For ALL/DEPT (or PUBLIC, for consistency) embed a short-lived signed
     # download token so OnlyOffice Document Server can fetch the file

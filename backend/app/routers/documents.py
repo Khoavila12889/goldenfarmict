@@ -1680,13 +1680,19 @@ def onlyoffice_config(
 
     # URL that OnlyOffice Document Server uses to fetch the file + send callbacks.
     # Must be reachable FROM the OnlyOffice container/server (not from the browser).
-    backend_public_url = os.environ.get('BACKEND_PUBLIC_URL', '').strip()
-    if backend_public_url:
-        base_url = backend_public_url.rstrip('/')
+    forwarded_proto = request.headers.get("x-forwarded-proto", "http")
+    if forwarded_proto == "https":
+        # Browser is on HTTPS → must use public HTTPS domain for document.url / callbackUrl
+        # otherwise browser blocks mixed content (NS_ERROR_INTERCEPTION_FAILED)
+        forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "noibo.canhdongvang.vn"
+        base_url = f"https://{forwarded_host}".rstrip('/')
     else:
-        forwarded_proto = request.headers.get("x-forwarded-proto", "http")
-        forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "localhost:8000"
-        base_url = f"{forwarded_proto}://{forwarded_host}".rstrip('/')
+        backend_public_url = os.environ.get('BACKEND_PUBLIC_URL', '').strip()
+        if backend_public_url:
+            base_url = backend_public_url.rstrip('/')
+        else:
+            forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or "localhost:8000"
+            base_url = f"http://{forwarded_host}".rstrip('/')
     
     # Public URL the BROWSER uses to load DocsAPI JS
     doc_service = _ONLYOFFICE_PUBLIC_URL.rstrip('/')
