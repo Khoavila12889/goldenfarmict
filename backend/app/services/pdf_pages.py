@@ -19,7 +19,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
-import fitz  # PyMuPDF
+import pymupdf as fitz  # PyMuPDF
 from PIL import Image
 
 from app.services.upload_service import FORUM_UPLOAD_BASE
