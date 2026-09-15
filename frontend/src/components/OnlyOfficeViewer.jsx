@@ -17,6 +17,7 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
   const [loading, setLoading] = useState(false)
   const [scriptReady, setScriptReady] = useState(false)
   const [editorInited, setEditorInited] = useState(false)
+  const [editorKey, setEditorKey] = useState(0)
   const editorRef = useRef(null)
   const initAttemptedRef = useRef(false)
   const initTimerRef = useRef(null)
@@ -51,9 +52,9 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
     setError(null)
     setEditorConfig(null)
     setScriptReady(false)
+    setEditorKey(k => k + 1)
     destroyEditor()
 
-    // Pre-check: nếu DocsAPI đã có sẵn từ lần mở trước
     if (window.DocsAPI && window.DocsAPI.DocEditor) {
       setScriptReady(true)
     }
@@ -89,7 +90,6 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
       return
     }
 
-    // Already loaded
     if (window.DocsAPI && window.DocsAPI.DocEditor) {
       setScriptReady(true)
       return
@@ -103,7 +103,7 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
       }
       const onLoad = () => setScriptReady(true)
       const onError = () => setError(
-        `Không thể tải ONLYOFFICE API. Vui lòng kiểm tra kết nối mạng và thử lại.\nURL: ${existing.src}`
+        `Không thể tải ONLYOFFICE API.\nURL: ${existing.src}`
       )
       existing.addEventListener('load', onLoad)
       existing.addEventListener('error', onError)
@@ -119,13 +119,9 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
     script.async = true
     script.onload = () => setScriptReady(true)
     script.onerror = () => setError(
-      `Không thể tải ONLYOFFICE API. Vui lòng kiểm tra kết nối mạng và thử lại.\nURL: ${apiUrl}`
+      `Không thể tải ONLYOFFICE API.\nURL: ${apiUrl}`
     )
     document.body.appendChild(script)
-
-    return () => {
-      // Cleanup script when unmounting
-    }
   }, [editorConfig, isOpen])
 
   // ── Initialize editor sau khi script sẵn sàng ─────────────────
@@ -143,68 +139,52 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
       return
     }
 
-    // Ensure placeholder has non-zero dimensions before initializing
-    const rect = placeholder.getBoundingClientRect()
-    if (rect.width === 0 || rect.height === 0) {
-      // Retry after a short delay — container may still be animating
-      initTimerRef.current = setTimeout(initEditor, 200)
-      return
-    }
-
     initAttemptedRef.current = true
+
+    // Dọn sạch placeholder trước khi init — quan trọng để tránh React conflict
+    if (editorRef.current) {
+      try { editorRef.current.destroyEditor() } catch (_) {}
+      editorRef.current = null
+    }
+    placeholder.innerHTML = ''
+
     const config = cleanEditorConfig(editorConfig)
 
     try {
-      if (editorRef.current) {
-        try { editorRef.current.destroyEditor() } catch (_) {}
-        editorRef.current = null
-      }
-      placeholder.innerHTML = ''
-
       editorRef.current = new DocsAPI.DocEditor(EDITOR_PLACEHOLDER_ID, {
         ...config,
         events: {
           ...(config.events || {}),
           onAppReady: () => {
-            console.log('[OO] onAppReady')
             if (initTimerRef.current) { clearTimeout(initTimerRef.current); initTimerRef.current = null }
             setEditorInited(true)
           },
           onDocumentReady: () => {
-            console.log('[OO] onDocumentReady')
             if (initTimerRef.current) { clearTimeout(initTimerRef.current); initTimerRef.current = null }
             setEditorInited(true)
           },
           onError: (event) => {
-            console.error('[OO] onError:', event)
             const data = event?.data
-            const msg = typeof data === 'string'
-              ? data
-              : (data?.errorDescription || data?.message || 'Lỗi ONLYOFFICE khi mở tài liệu')
-            setError(String(msg))
+            let msg = 'Lỗi ONLYOFFICE khi mở tài liệu'
+            if (typeof data === 'string') {
+              msg = data
+            } else if (data) {
+              msg = data.errorDescription || data.message || JSON.stringify(data, null, 2)
+            }
+            console.error('[OO] onError detail:', JSON.stringify(event?.data, null, 2))
+            setError(msg)
           },
           onRequestClose: () => {
-            console.log('[OO] onRequestClose')
             onClose()
           },
         },
       })
 
-      // Safety timeout: nếu editor không bao giờ báo ready, hiển thị lỗi
       initTimerRef.current = setTimeout(() => {
         if (!editorInited) {
           setError('Không thể khởi tạo trình soạn thảo. Vui lòng thử lại hoặc tải file xuống để xem.')
         }
       }, INIT_TIMEOUT_MS)
-
-      console.log('[OO] DocEditor created, config:', JSON.stringify({
-        docUrl: config.document?.url?.substring(0, 60) + '...',
-        key: config.document?.key,
-        title: config.document?.title,
-        fileType: config.document?.fileType,
-        mode: config.editorConfig?.mode,
-        hasToken: !!config.token,
-      }))
     } catch (err) {
       initAttemptedRef.current = false
       setError('Lỗi khởi tạo ONLYOFFICE: ' + (err.message || String(err)))
@@ -246,8 +226,6 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
   return (
     <div className="oov-overlay" onClick={onClose}>
       <div className="oov-container" onClick={e => e.stopPropagation()}>
-
-        {/* Nút Đóng lơ lửng góc phải đè lên giao diện ONLYOFFICE */}
         <button onClick={onClose} className="oov-close-btn-floating" title="Đóng (Esc)" type="button">
           <X size={12} />
           <span>Đóng</span>
@@ -262,9 +240,9 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
           )}
 
           {error && (
-            <div className="oov-error oov-overlay-state">
+            <div className="oov-error oov-overlay-state" style={{ zIndex: 2 }}>
               <AlertCircle size={32} />
-              <p style={{ whiteSpace: 'pre-wrap', maxWidth: '90%' }}>{error}</p>
+              <p style={{ whiteSpace: 'pre-wrap', maxWidth: '90%', fontSize: '0.85rem' }}>{error}</p>
               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
                 <button
                   className="doc-btn doc-btn-secondary"
@@ -272,8 +250,8 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
                     setError(null)
                     setEditorConfig(null)
                     setScriptReady(false)
+                    setEditorKey(k => k + 1)
                     destroyEditor()
-                    // Re-trigger config fetch by toggling state
                     setLoading(true)
                     const currentPath = file?.browsePath || '/'
                     const normalizedPath = currentPath === '/'
@@ -315,15 +293,14 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
             </div>
           )}
 
-          <div
-            id={EDITOR_PLACEHOLDER_ID}
-            className="oov-editor"
-            style={{
-              visibility: error ? 'hidden' : 'visible',
-              width: '100%',
-              height: '100%',
-            }}
-          />
+          {/* Chỉ render editor div khi không có error — tránh React conflict với OnlyOffice iframe */}
+          {!error && (
+            <div
+              key={editorKey}
+              id={EDITOR_PLACEHOLDER_ID}
+              className="oov-editor"
+            />
+          )}
         </div>
       </div>
     </div>
