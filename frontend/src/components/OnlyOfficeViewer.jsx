@@ -28,7 +28,11 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
       editorRef.current = null
     }
     const el = document.getElementById(EDITOR_PLACEHOLDER_ID)
-    if (el) el.innerHTML = ''
+    if (el) {
+      while (el.firstChild) {
+        try { el.removeChild(el.firstChild) } catch (_) { break }
+      }
+    }
     initAttemptedRef.current = false
     setEditorInited(false)
   }, [])
@@ -136,7 +140,9 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
         try { editorRef.current.destroyEditor() } catch (_) {}
         editorRef.current = null
       }
-      placeholder.innerHTML = ''
+      while (placeholder.firstChild) {
+        try { placeholder.removeChild(placeholder.firstChild) } catch (_) { break }
+      }
 
       editorRef.current = new DocsAPI.DocEditor(EDITOR_PLACEHOLDER_ID, {
         ...config,
