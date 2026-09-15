@@ -151,6 +151,7 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
           onAppReady: () => setEditorInited(true),
           onDocumentReady: () => setEditorInited(true),
           onError: (event) => {
+            destroyEditor()
             const data = event?.data
             const msg = typeof data === 'string'
               ? data
