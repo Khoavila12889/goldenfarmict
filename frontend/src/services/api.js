@@ -557,6 +557,23 @@ export function getTodoAssignees() {
   })
 }
 
+export function exportTodosReport(scope = 'all') {
+  const userCode = sessionStorage.getItem('user_code') || ''
+  const userRole = sessionStorage.getItem('user_role') || ''
+  const userDept = sessionStorage.getItem('user_department') || ''
+  const userToken = sessionStorage.getItem('token') || ''
+  return api.get('/todos/export', {
+    params: { scope },
+    headers: {
+      'X-User-Code': userCode,
+      'X-User-Role': userRole,
+      'X-User-Dept': userDept,
+      'X-User-Token': userToken
+    },
+    responseType: 'blob'
+  })
+}
+
 export function deleteTodo(id) {
   const userCode = sessionStorage.getItem('user_code') || ''
   const userRole = sessionStorage.getItem('user_role') || ''
