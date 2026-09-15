@@ -1,6 +1,7 @@
 import hashlib
+from typing import Optional, List
 from argon2 import PasswordHasher
-from .db import fetchone, execute
+from .db import fetchone, fetchall, execute
 
 SESSION_SALT = "goldenfarm_ict_2024"
 
@@ -61,6 +62,94 @@ def resolve_login(login_id: str):
     return emp["employee_code"] if emp else None
 
 
+def same_dept(a: Optional[str], b: Optional[str]) -> bool:
+    return bool(a) and bool(b) and str(a).strip().lower() == str(b).strip().lower()
+
+
+def canonical_dept_name(name: Optional[str]) -> str:
+    name = (name or "").strip()
+    if not name:
+        return ""
+    row = fetchone(
+        "SELECT name FROM departments WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name))",
+        {"name": name},
+    )
+    return row["name"] if row else name
+
+
+def headed_departments(employee_code: str) -> List[str]:
+    if not employee_code:
+        return []
+    rows = fetchall(
+        """
+        SELECT d.name
+        FROM departments d
+        JOIN employees e ON e.id = d.head_id
+        WHERE e.employee_code = :code
+        ORDER BY d.name
+        """,
+        {"code": employee_code},
+    )
+    return [r["name"] for r in rows if r.get("name")]
+
+
+def resolve_effective_identity(employee_code: str) -> dict:
+    """Role hiệu lực: admin giữ nguyên; người được gán departments.head_id → head."""
+    user = fetchone("SELECT role FROM users WHERE employee_code = :code", {"code": employee_code})
+    db_role = ((user["role"] if user else None) or "user").strip() or "user"
+
+    emp = fetchone(
+        "SELECT full_name, department FROM employees WHERE employee_code = :code",
+        {"code": employee_code},
+    )
+    full_name = emp["full_name"] if emp else employee_code
+    emp_dept = canonical_dept_name(emp["department"] if emp else "")
+    headed = headed_departments(employee_code)
+
+    role = db_role
+    if role != "admin" and headed:
+        role = "head"
+
+    department = emp_dept
+    if headed:
+        match = next((d for d in headed if same_dept(d, emp_dept)), None)
+        department = match or headed[0]
+
+    return {
+        "user_code": employee_code,
+        "user_role": role,
+        "department": department,
+        "full_name": full_name,
+        "headed_departments": headed,
+    }
+
+
+def sync_department_head_role(new_head_id=None, old_head_id=None):
+    """Gán trưởng phòng → role=head; bỏ gán và không còn head phòng nào → role=user."""
+    def _emp_code(emp_id):
+        if not emp_id:
+            return None
+        row = fetchone("SELECT employee_code FROM employees WHERE id = :id", {"id": emp_id})
+        return row["employee_code"] if row else None
+
+    new_code = _emp_code(new_head_id)
+    if new_code:
+        execute(
+            "UPDATE users SET role = 'head' WHERE employee_code = :code AND role = 'user'",
+            {"code": new_code},
+        )
+
+    if old_head_id and str(old_head_id) != str(new_head_id or ""):
+        still = fetchone("SELECT id FROM departments WHERE head_id = :id", {"id": old_head_id})
+        if not still:
+            old_code = _emp_code(old_head_id)
+            if old_code:
+                execute(
+                    "UPDATE users SET role = 'user' WHERE employee_code = :code AND role = 'head'",
+                    {"code": old_code},
+                )
+
+
 def authenticate(login_id: str, password: str):
     if not login_id or not password:
         return None
@@ -76,18 +165,13 @@ def authenticate(login_id: str, password: str):
 
     if row and verify_stored_password(row["password_hash"], password):
         rehash_if_argon2(employee_code, row["password_hash"], password)
-        emp = fetchone(
-            "SELECT department, full_name FROM employees WHERE employee_code = :code",
-            {"code": employee_code}
-        )
-        department = emp["department"] if emp else ""
-        full_name = emp["full_name"] if emp else employee_code
+        identity = resolve_effective_identity(employee_code)
         return {
             "employee_code": employee_code,
-            "role": row["role"],
-            "department": department,
-            "full_name": full_name,
-            "token": make_session_token(employee_code, row["role"]),
+            "role": identity["user_role"],
+            "department": identity["department"],
+            "full_name": identity["full_name"],
+            "token": make_session_token(employee_code, identity["user_role"]),
         }
     return None
 
@@ -97,7 +181,6 @@ def verify_token(user_code: str, token: str, role: str) -> bool:
     return token == expected
 
 
-from typing import Optional
 from fastapi import HTTPException
 
 
@@ -122,22 +205,4 @@ def verify_session(
     if not user:
         raise HTTPException(status_code=401, detail="Người dùng không tồn tại trong hệ thống")
 
-    emp = fetchone(
-        "SELECT e.full_name, e.department FROM employees e WHERE e.employee_code = :code",
-        {"code": code}
-    )
-    full_name = emp['full_name'] if emp else code
-    emp_dept = emp['department'] if emp else ""
-
-    dept_entry = fetchone(
-        "SELECT name FROM departments WHERE LOWER(name) = LOWER(:emp_dept)",
-        {"emp_dept": emp_dept}
-    )
-    resolved_dept = dept_entry['name'] if dept_entry else emp_dept
-
-    return {
-        "user_code": code,
-        "user_role": user['role'],
-        "department": resolved_dept,
-        "full_name": full_name
-    }
+    return resolve_effective_identity(code)
