@@ -4,13 +4,14 @@ import {
   Clock, AlertCircle, CheckCircle2, MoreVertical, Trash2, Edit2,
   Users, Building, ListTodo, Layers, RefreshCw, X, ChevronRight,
   MessageCircle, Paperclip, Link as LinkIcon, Send, ExternalLink, 
-  FileText, FileSpreadsheet, Image as ImageIcon
+  FileText, FileSpreadsheet, Image as ImageIcon, GripVertical
 } from 'lucide-react'
 import { 
   getTodos, getTodoStats, createTodo, updateTodo, updateTodoStatus, 
   deleteTodo, getTodoAssignees, getDepartments, approveTodo,
   getTodoComments, addTodoComment, getTodoAttachments,
   uploadTodoAttachment, addTodoUrl, deleteTodoAttachment,
+  exportTodosReport,
   apiUrl,
 } from '../services/api'
 import { formatDate } from '../utils/date'
@@ -191,6 +192,34 @@ export default function Todos() {
     }
   }
 
+  const handleExport = async () => {
+    try {
+      const res = await exportTodosReport(scopeFilter)
+      // Lấy filename từ header Content-Disposition
+      const cd = res.headers['content-disposition'] || ''
+      let filename = 'todos_report.xlsx'
+      const m = cd.match(/filename\*=UTF-8''(.+)/)
+      if (m) filename = decodeURIComponent(m[1])
+      else {
+        const m2 = cd.match(/filename="([^"]+)"/)
+        if (m2) filename = m2[1]
+      }
+      const blob = new Blob([res.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      alert('Không thể xuất báo cáo: ' + (err.response?.data?.detail || err.message))
+    }
+  }
+
   // --- ACTIONS FOR MODALS ---
   const openCreateModal = () => {
     setEditingTodo(null)
@@ -249,7 +278,8 @@ export default function Todos() {
       priority: formPriority,
       due_date: formDueDate,
       tags: formTags,
-      subtasks: formSubtasks
+      // Subtask giờ sửa trực tiếp được nên có thể bị bỏ trống — lọc trước khi lưu
+      subtasks: formSubtasks.filter(s => s.title.trim())
     }
 
     try {
@@ -303,6 +333,45 @@ export default function Todos() {
   }
   const handleRemoveSubtask = (index) => {
     setFormSubtasks(formSubtasks.filter((_, i) => i !== index))
+  }
+
+  // Kéo thả đổi thứ tự subtask. Backend lưu đúng thứ tự này vào
+  // todo_subtasks.sort_order (todos.py: for idx, sub in enumerate(data.subtasks))
+  // và đọc lại bằng ORDER BY sort_order ASC.
+  const dragItem = useRef(null)
+  const dragOverItem = useRef(null)
+  const [draggingIdx, setDraggingIdx] = useState(null)
+
+  const handleSubtaskDragStart = (e, index) => {
+    // Firefox vẫn có thể khởi động drag từ ô nhập chữ — chặn để còn bôi đen được
+    if (e.target.classList.contains('subtask-item-input')) { e.preventDefault(); return }
+    dragItem.current = index
+    setDraggingIdx(index)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', String(index))
+  }
+
+  const handleSubtaskDragEnter = (index) => {
+    dragOverItem.current = index
+  }
+
+  const handleSubtaskDragEnd = () => {
+    const from = dragItem.current
+    const to = dragOverItem.current
+    dragItem.current = null
+    dragOverItem.current = null
+    setDraggingIdx(null)
+    if (from === null || to === null || from === to) return
+    setFormSubtasks(prev => {
+      const next = [...prev]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return next
+    })
+  }
+
+  const handleEditSubtask = (index, newTitle) => {
+    setFormSubtasks(prev => prev.map((sub, i) => i === index ? { ...sub, title: newTitle } : sub))
   }
 
   // =========================================================
@@ -381,17 +450,25 @@ export default function Todos() {
     }
   }
 
-  const handleAddUrl = async () => {
-    if (!viewingTodo) return;
-    const url = prompt("Nhập đường dẫn liên kết (URL):");
-    if (!url || !url.trim()) return;
-    const title = prompt("Nhập tên hiển thị cho liên kết (tuỳ chọn):", url.trim()) || url.trim();
+  // Inline URL input states (hiển thị dưới nút, không dùng prompt)
+  const [showUrlInput, setShowUrlInput] = useState(false)
+  const [urlValue, setUrlValue] = useState('')
+  const [urlTitle, setUrlTitle] = useState('')
+
+  const handleAddUrl = async (e) => {
+    e?.preventDefault()
+    if (!viewingTodo || !urlValue.trim()) return
+    const url = urlValue.trim()
+    const title = urlTitle.trim() || url
     try {
-      const res = await addTodoUrl(viewingTodo.id, url.trim(), title === url.trim() ? '' : title);
-      const saved = res.data?.data;
-      if (saved) setTodoAttachments(prev => [normAtt(saved), ...prev]);
+      const res = await addTodoUrl(viewingTodo.id, url, title === url ? '' : title)
+      const saved = res.data?.data
+      if (saved) setTodoAttachments(prev => [normAtt(saved), ...prev])
+      setShowUrlInput(false)
+      setUrlValue('')
+      setUrlTitle('')
     } catch (err) {
-      alert(err.response?.data?.detail || 'Không thể thêm liên kết');
+      alert(err.response?.data?.detail || 'Không thể thêm liên kết')
     }
   }
 
@@ -511,6 +588,9 @@ export default function Todos() {
         </div>
         <button className="scope-btn" onClick={fetchData} title="Tải lại dữ liệu">
           <RefreshCw size={14} /> Tải lại
+        </button>
+        <button className="scope-btn" onClick={handleExport} title="Xuất báo cáo Excel (thống kê + chi tiết)">
+          <FileSpreadsheet size={14} /> Xuất Excel
         </button>
       </div>
 
@@ -692,9 +772,35 @@ export default function Todos() {
                         <Plus size={14}/> Thêm File
                         <input type="file" hidden accept=".jpg,.jpeg,.png,.webp,.xlsx,.doc,.docx,.pdf" onChange={handleAttachFile} />
                       </label>
-                      <button className="attach-btn" onClick={handleAddUrl}>
-                        <LinkIcon size={14}/> Thêm URL
-                      </button>
+                      {!showUrlInput ? (
+                        <button className="attach-btn" onClick={() => setShowUrlInput(true)} title="Thêm đường dẫn liên kết">
+                          <LinkIcon size={14}/> Thêm URL
+                        </button>
+                      ) : (
+                        <form className="url-inline-form" onSubmit={handleAddUrl}>
+                          <input
+                            type="url"
+                            className="url-input"
+                            placeholder="https://..."
+                            value={urlValue}
+                            onChange={(e) => setUrlValue(e.target.value)}
+                            autoFocus
+                          />
+                          <input
+                            type="text"
+                            className="url-title-input"
+                            placeholder="Tên hiển thị (tuỳ chọn)"
+                            value={urlTitle}
+                            onChange={(e) => setUrlTitle(e.target.value)}
+                          />
+                          <button type="submit" className="url-submit-btn" title="Thêm liên kết">
+                            <Plus size={14}/>
+                          </button>
+                          <button type="button" className="url-cancel-btn" onClick={() => { setShowUrlInput(false); setUrlValue(''); setUrlTitle(''); }} title="Hủy">
+                            <X size={14}/>
+                          </button>
+                        </form>
+                      )}
                     </div>
                   </div>
                   
@@ -933,16 +1039,32 @@ export default function Todos() {
 
                   <div className="subtask-list">
                     {formSubtasks.map((sub, idx) => (
-                      <div key={idx} className={`subtask-item${sub.is_completed ? ' completed' : ''}`}>
+                      <div
+                        key={idx}
+                        className={`subtask-item${sub.is_completed ? ' completed' : ''}${draggingIdx === idx ? ' dragging' : ''}`}
+                        draggable
+                        onDragStart={(e) => handleSubtaskDragStart(e, idx)}
+                        onDragEnter={() => handleSubtaskDragEnter(idx)}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDragEnd={handleSubtaskDragEnd}
+                      >
+                        <div className="subtask-grip" title="Kéo để đổi vị trí">
+                          <GripVertical size={14} />
+                        </div>
                         <div className="subtask-item-left">
                           <input
                             type="checkbox"
                             checked={!!sub.is_completed}
                             onChange={() => handleToggleSubtask(idx)}
                           />
-                          <span className={`subtask-item-text${sub.is_completed ? ' done' : ''}`}>
-                            {sub.title}
-                          </span>
+                          <input
+                            type="text"
+                            className={`subtask-item-input${sub.is_completed ? ' done' : ''}`}
+                            value={sub.title}
+                            placeholder="Nhập nội dung subtask..."
+                            onChange={(e) => handleEditSubtask(idx, e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
+                          />
                         </div>
                         <button type="button" className="subtask-remove-btn" onClick={() => handleRemoveSubtask(idx)}>
                           <X size={14} />

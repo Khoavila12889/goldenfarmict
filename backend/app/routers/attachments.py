@@ -77,6 +77,7 @@ async def create_attachment(
         """
         INSERT INTO attachments (todo_id, uploader_code, file_name, file_type, file_size, file_url, created_at)
         VALUES (:todo_id, :uploader_code, :file_name, :file_type, :file_size, :file_url, CURRENT_TIMESTAMP)
+        RETURNING id
         """,
         {
             "todo_id": todo_id,
@@ -128,6 +129,7 @@ def create_link_attachment(
         """
         INSERT INTO attachments (todo_id, uploader_code, file_name, file_type, file_size, file_url, created_at)
         VALUES (:todo_id, :uploader_code, :file_name, 'url', 0, :file_url, CURRENT_TIMESTAMP)
+        RETURNING id
         """,
         {
             "todo_id": todo_id,

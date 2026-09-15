@@ -75,6 +75,7 @@ def create_comment(
         """
         INSERT INTO comments (todo_id, user_code, content, created_at, updated_at)
         VALUES (:todo_id, :user_code, :content, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING id
         """,
         {
             "todo_id": todo_id,

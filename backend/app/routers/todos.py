@@ -2,8 +2,53 @@ from typing import Optional, List
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Query, Header
 from app.core.db import fetchall, fetchone, execute, insert
-from app.core.auth import verify_token
+from app.core.auth import verify_token, resolve_effective_identity, same_dept, canonical_dept_name
 from app.core import events
+
+ACTIVE_EMP_SQL = "COALESCE(NULLIF(TRIM(status), ''), 'active') = 'active'"
+
+
+def _dept_eq(column: str, param: str) -> str:
+    return f"LOWER(TRIM({column})) = LOWER(TRIM(:{param}))"
+
+
+def _active_employees_in_dept(dept_name: str):
+    if not (dept_name or "").strip():
+        return []
+    return fetchall(
+        f"""
+        SELECT id, employee_code, full_name, department, position
+        FROM employees
+        WHERE {ACTIVE_EMP_SQL}
+          AND {_dept_eq('department', 'dept')}
+        ORDER BY full_name
+        """,
+        {"dept": dept_name.strip()},
+    )
+
+
+def _active_employee(code: str):
+    if not code:
+        return None
+    return fetchone(
+        f"""
+        SELECT employee_code, full_name, department
+        FROM employees
+        WHERE employee_code = :code AND {ACTIVE_EMP_SQL}
+        """,
+        {"code": code},
+    )
+
+
+def _can_manage_dept(user: dict, dept_name: str) -> bool:
+    if user.get("user_role") == "admin":
+        return True
+    if user.get("user_role") != "head":
+        return False
+    headed = user.get("headed_departments") or []
+    if headed:
+        return any(same_dept(dept_name, d) for d in headed)
+    return same_dept(dept_name, user.get("department"))
 
 class SubTaskItem(BaseModel):
     id: Optional[int] = None
@@ -49,37 +94,7 @@ def verify_session(x_user_code: Optional[str], x_user_role: Optional[str], x_use
         if not verify_token(code, x_user_token, x_user_role or "user"):
             raise HTTPException(status_code=401, detail="Token không hợp lệ")
 
-    user = fetchone(
-        "SELECT u.role FROM users u WHERE u.employee_code = :code",
-        {"code": code}
-    )
-
-    # Ưu tiên role từ frontend header, fallback về DB hoặc 'user'
-    u_role_from_db = x_user_role or (user['role'] if user else 'user')
-
-    emp = fetchone(
-        "SELECT e.full_name, e.department FROM employees e WHERE e.employee_code = :code",
-        {"code": code}
-    )
-    full_name = emp['full_name'] if emp else code
-    emp_dept = emp['department'] if emp else ""
-
-    # Chỉ resolve department khi có department cụ thể
-    resolved_dept = emp_dept
-    if emp_dept:
-        dept_entry = fetchone(
-            "SELECT name FROM departments WHERE LOWER(name) = LOWER(:emp_dept)",
-            {"emp_dept": emp_dept}
-        )
-        if dept_entry:
-            resolved_dept = dept_entry['name']
-
-    return {
-        "user_code": code,
-        "user_role": u_role_from_db,
-        "department": resolved_dept,
-        "full_name": full_name
-    }
+    return resolve_effective_identity(code)
 
 @router.get("")
 def get_todos(
@@ -112,10 +127,10 @@ def get_todos(
             query += " AND scope = 'personal' AND (creator_code = :u_code OR assignee_code = :u_code)"
             params['u_code'] = u_code
         elif scope == 'department':
-            query += " AND scope = 'department' AND department = :u_dept"
+            query += f" AND scope = 'department' AND {_dept_eq('department', 'u_dept')}"
             params['u_dept'] = u_dept
         else:
-            query += " AND ((scope = 'personal' AND (creator_code = :u_code OR assignee_code = :u_code)) OR (scope = 'department' AND department = :u_dept))"
+            query += f" AND ((scope = 'personal' AND (creator_code = :u_code OR assignee_code = :u_code)) OR (scope = 'department' AND {_dept_eq('department', 'u_dept')}))"
             params['u_code'] = u_code
             params['u_dept'] = u_dept
 
@@ -125,11 +140,11 @@ def get_todos(
             params['u_code'] = u_code
         elif scope == 'department':
             # CHỈ XEM TASK ĐÃ DUYỆT HOẶC DO CHÍNH MÌNH TẠO
-            query += " AND scope = 'department' AND department = :u_dept AND (is_dept_approved = 1 OR creator_code = :u_code)"
+            query += f" AND scope = 'department' AND {_dept_eq('department', 'u_dept')} AND (is_dept_approved = 1 OR creator_code = :u_code)"
             params['u_dept'] = u_dept
             params['u_code'] = u_code
         else:
-            query += " AND ((scope = 'personal' AND (creator_code = :u_code OR assignee_code = :u_code)) OR (scope = 'department' AND department = :u_dept AND (is_dept_approved = 1 OR creator_code = :u_code)))"
+            query += f" AND ((scope = 'personal' AND (creator_code = :u_code OR assignee_code = :u_code)) OR (scope = 'department' AND {_dept_eq('department', 'u_dept')} AND (is_dept_approved = 1 OR creator_code = :u_code)))"
             params['u_code'] = u_code
             params['u_dept'] = u_dept
 
@@ -182,8 +197,13 @@ def get_todo_stats(
 
     base_where = ""
     params = {}
-    if u_role != 'admin':
-        base_where = " WHERE ((scope = 'personal' AND (creator_code = :u_code OR assignee_code = :u_code)) OR (scope = 'department' AND department = :u_dept AND (is_dept_approved = 1 OR creator_code = :u_code)))"
+    if u_role == 'admin':
+        pass
+    elif u_role == 'head':
+        base_where = f" WHERE ((scope = 'personal' AND (creator_code = :u_code OR assignee_code = :u_code)) OR (scope = 'department' AND {_dept_eq('department', 'u_dept')}))"
+        params = {"u_code": u_code, "u_dept": u_dept}
+    else:
+        base_where = f" WHERE ((scope = 'personal' AND (creator_code = :u_code OR assignee_code = :u_code)) OR (scope = 'department' AND {_dept_eq('department', 'u_dept')} AND (is_dept_approved = 1 OR creator_code = :u_code)))"
         params = {"u_code": u_code, "u_dept": u_dept}
 
     total = fetchone(f"SELECT COUNT(*) AS cnt FROM todos{base_where}", params)["cnt"]
@@ -211,6 +231,241 @@ def get_todo_stats(
             "overdue": overdue
         }
     }
+
+@router.get("/export")
+def export_todos_report(
+    scope: str = Query("all", description="all, personal, department"),
+    x_user_code: str = Header(None, alias="X-User-Code"),
+    x_user_role: str = Header(None, alias="X-User-Role"),
+    x_user_dept: str = Header(None, alias="X-User-Dept"),
+    x_user_token: str = Header(None, alias="X-User-Token")
+):
+    """Xuất báo cáo Excel thống kê + chi tiết todos.
+    User: chỉ xuất todos cá nhân mình.
+    Head: xuất todos phòng ban mình phụ trách.
+    Admin: xuất toàn bộ."""
+    user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
+    u_code = user["user_code"]
+    u_role = user["user_role"]
+    u_dept = user["department"]
+    u_name = user["full_name"]
+
+    # Xây WHERE clause giống get_todos
+    where = " WHERE 1=1"
+    params = {}
+    if u_role == 'admin':
+        if scope == 'personal':
+            where += " AND scope = 'personal' AND (creator_code = :u_code OR assignee_code = :u_code)"
+            params = {"u_code": u_code}
+        elif scope == 'department':
+            where += " AND scope = 'department'"
+    elif u_role == 'head':
+        headed = user.get("headed_departments") or []
+        allowed = headed or ([u_dept] if u_dept else [])
+        if scope == 'personal':
+            where += " AND ((scope = 'personal' AND (creator_code = :u_code OR assignee_code = :u_code)) OR (scope = 'department' AND creator_code = :u_code))"
+            params = {"u_code": u_code}
+        elif scope == 'department' and allowed:
+            dept_conds = " OR ".join([f"{_dept_eq('department', f'd{i}')}" for i, _ in enumerate(allowed)])
+            where += f" AND scope = 'department' AND ({dept_conds})"
+            params = {f"d{i}": d for i, d in enumerate(allowed)}
+        else:
+            where += f" AND ((scope = 'personal' AND (creator_code = :u_code OR assignee_code = :u_code)) OR (scope = 'department' AND {_dept_eq('department', 'u_dept')}))"
+            params = {"u_code": u_code, "u_dept": u_dept}
+    else:
+        if scope == 'personal':
+            where += " AND (creator_code = :u_code OR assignee_code = :u_code)"
+            params = {"u_code": u_code}
+        elif scope == 'department':
+            where += f" AND scope = 'department' AND {_dept_eq('department', 'u_dept')} AND (is_dept_approved = 1 OR creator_code = :u_code)"
+            params = {"u_code": u_code, "u_dept": u_dept}
+        else:
+            where += f" AND ((scope = 'personal' AND (creator_code = :u_code OR assignee_code = :u_code)) OR (scope = 'department' AND {_dept_eq('department', 'u_dept')} AND (is_dept_approved = 1 OR creator_code = :u_code)))"
+            params = {"u_code": u_code, "u_dept": u_dept}
+
+    rows = fetchall(f"SELECT * FROM todos{where} ORDER BY created_at DESC", params)
+
+    # Gắn subtask count
+    todos_list = []
+    for row in rows:
+        t = dict(row)
+        subs = fetchall("SELECT * FROM todo_subtasks WHERE todo_id = :id ORDER BY sort_order", {"id": t["id"]})
+        t["subtask_count"] = len(subs)
+        t["subtask_done"] = sum(1 for s in subs if s["is_completed"])
+        todos_list.append(t)
+
+    # Thống kê
+    total = len(todos_list)
+    by_status = {}
+    by_priority = {}
+    overdue = 0
+    import datetime
+    today = datetime.date.today().isoformat()
+    for t in todos_list:
+        s = t.get("status", "unknown")
+        by_status[s] = by_status.get(s, 0) + 1
+        p = t.get("priority", "medium")
+        by_priority[p] = by_priority.get(p, 0) + 1
+        if t.get("due_date") and t["due_date"] < today and t["status"] not in ("completed", "cancelled"):
+            overdue += 1
+
+    # Tạo Excel
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+    from io import BytesIO
+
+    wb = Workbook()
+
+    # ── Sheet 1: Thống kê ──
+    ws1 = wb.active
+    ws1.title = "Thống kê"
+    ws1.sheet_properties.tabColor = "4472C4"
+
+    title_font = Font(name="Calibri", size=14, bold=True, color="1F4E79")
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    label_font = Font(name="Calibri", size=11, bold=True)
+    thin_border = Border(
+        left=Side(style="thin"), right=Side(style="thin"),
+        top=Side(style="thin"), bottom=Side(style="thin")
+    )
+
+    ws1.merge_cells("A1:B1")
+    ws1["A1"] = "BÁO CÁO THỐNG KÊ CÔNG VIỆC (TODOS)"
+    ws1["A1"].font = title_font
+
+    ws1.merge_cells("A2:B2")
+    scope_label = "Toàn hệ thống" if u_role == "admin" and scope == "all" else (f"Phòng ban: {u_dept}" if u_role == "head" else f"Cá nhân: {u_name} ({u_code})")
+    ws1["A2"] = f"Phạm vi: {scope_label}  |  Ngày xuất: {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}"
+    ws1["A2"].font = Font(name="Calibri", size=10, italic=True, color="666666")
+
+    stats_start = 4
+    ws1.merge_cells(f"A{stats_start}:B{stats_start}")
+    ws1[f"A{stats_start}"] = "TỔNG QUAN"
+    ws1[f"A{stats_start}"].font = Font(name="Calibri", size=12, bold=True, color="2E75B6")
+
+    stat_rows = [
+        ("Tổng công việc", total),
+        ("Đang xử lý", by_status.get("in_progress", 0)),
+        ("Cần làm", by_status.get("todo", 0)),
+        ("Chờ duyệt", by_status.get("review", 0)),
+        ("Đã hoàn thành", by_status.get("completed", 0)),
+        ("Đã hủy", by_status.get("cancelled", 0)),
+        ("Quá hạn", overdue),
+    ]
+
+    r = stats_start + 1
+    for label, val in stat_rows:
+        ws1[f"A{r}"] = label
+        ws1[f"A{r}"].font = label_font
+        ws1[f"B{r}"] = val
+        ws1[f"B{r}"].font = Font(name="Calibri", size=11, bold=True)
+        for col in ("A", "B"):
+            ws1[f"{col}{r}"].border = thin_border
+            ws1[f"{col}{r}"].alignment = Alignment(horizontal="center" if col == "B" else "left")
+        r += 1
+
+    r += 1
+    ws1.merge_cells(f"A{r}:B{r}")
+    ws1[f"A{r}"] = "THEO ĐỘ ƯU TIÊN"
+    ws1[f"A{r}"].font = Font(name="Calibri", size=12, bold=True, color="2E75B6")
+    r += 1
+    prio_labels = {"urgent": "Khẩn cấp", "high": "Cao", "medium": "Trung bình", "low": "Thấp"}
+    for key in ["urgent", "high", "medium", "low"]:
+        ws1[f"A{r}"] = prio_labels.get(key, key)
+        ws1[f"A{r}"].font = label_font
+        ws1[f"B{r}"] = by_priority.get(key, 0)
+        ws1[f"B{r}"].font = Font(name="Calibri", size=11, bold=True)
+        for col in ("A", "B"):
+            ws1[f"{col}{r}"].border = thin_border
+            ws1[f"{col}{r}"].alignment = Alignment(horizontal="center" if col == "B" else "left")
+        r += 1
+
+    ws1.column_dimensions["A"].width = 28
+    ws1.column_dimensions["B"].width = 14
+
+    # ── Sheet 2: Chi tiết ──
+    ws2 = wb.create_sheet(title="Chi tiết công việc")
+    ws2.sheet_properties.tabColor = "70AD47"
+
+    detail_headers = ["STT", "Tiêu đề", "Người tạo", "Người nhận", "Phòng ban",
+                      "Phạm vi", "Trạng thái", "Độ ưu tiên", "Hạn chót", "Subtask",
+                      "Tags", "Ngày tạo"]
+    header_row = 1
+    for ci, h in enumerate(detail_headers, 1):
+        cell = ws2.cell(row=header_row, column=ci, value=h)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        cell.border = thin_border
+
+    status_map = {"todo": "Cần làm", "in_progress": "Đang xử lý", "review": "Chờ duyệt",
+                  "completed": "Đã hoàn thành", "cancelled": "Đã hủy"}
+    prio_map = {"urgent": "Khẩn cấp", "high": "Cao", "medium": "Trung bình", "low": "Thấp"}
+    scope_map = {"personal": "Cá nhân", "department": "Phòng ban"}
+
+    for idx, t in enumerate(todos_list, 1):
+        due = t.get("due_date", "")
+        if due and len(due) >= 10:
+            try:
+                due = datetime.datetime.strptime(due[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+            except Exception:
+                pass
+        created = t.get("created_at", "")
+        if created and len(created) >= 10:
+            try:
+                created = datetime.datetime.strptime(created[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+            except Exception:
+                pass
+
+        row_data = [
+            idx,
+            t.get("title", ""),
+            t.get("creator_name", ""),
+            t.get("assignee_name", ""),
+            t.get("department", ""),
+            scope_map.get(t.get("scope", ""), t.get("scope", "")),
+            status_map.get(t.get("status", ""), t.get("status", "")),
+            prio_map.get(t.get("priority", ""), t.get("priority", "")),
+            due,
+            f"{t.get('subtask_done', 0)}/{t.get('subtask_count', 0)}",
+            t.get("tags", ""),
+            created,
+        ]
+        for ci, val in enumerate(row_data, 1):
+            cell = ws2.cell(row=idx + 1, column=ci, value=val)
+            cell.border = thin_border
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+            if t.get("status") == "completed":
+                cell.fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+            elif t.get("status") == "cancelled":
+                cell.fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+
+    # Auto column widths
+    for ci, h in enumerate(detail_headers, 1):
+        max_len = len(str(h))
+        for row in ws2.iter_rows(min_col=ci, max_col=ci, min_row=2, max_row=len(todos_list) + 1):
+            for cell in row:
+                if cell.value:
+                    max_len = max(max_len, min(len(str(cell.value)), 40))
+        ws2.column_dimensions[ws2.cell(row=1, column=ci).column_letter].width = max_len + 2
+
+    # Lưu vào BytesIO
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    from fastapi.responses import StreamingResponse
+    filename = f"todos_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    safe_name = filename.encode("ascii", "ignore").decode("ascii") or "report.xlsx"
+    from urllib.parse import quote
+    cd = f"attachment; filename=\"{safe_name}\"; filename*=UTF-8''{quote(filename)}"
+
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": cd, "Content-Length": str(buf.getbuffer().nbytes)}
+    )
 
 @router.post("")
 def create_todo(
@@ -246,27 +501,31 @@ def create_todo(
 
     elif scope == "department":
         # Phòng ban: phân quyền theo role
-        target_dept = creator_dept  # Mặc định lấy phòng ban của người tạo
-        
-        if u_role in ("admin", "head"):
-            # SẾP/ADMIN: Duyệt luôn, có thể giao cho người khác
-            if u_role == "head":
-                # Trưởng phòng chỉ tạo cho phòng của mình
-                if data.department and data.department != creator_dept:
-                    raise HTTPException(403, f"Trưởng phòng chỉ có thể tạo công việc cho phòng {creator_dept}")
-                target_dept = creator_dept
-            else:
-                # Admin có thể chọn phòng ban bất kỳ
-                target_dept = data.department or creator_dept
+        headed = user.get("headed_departments") or []
 
-            assignee_code = data.assignee_code or ""
-            assignee_name = data.assignee_name or ""
+        if u_role == "admin":
+            target_dept = canonical_dept_name(data.department or creator_dept)
+            is_dept_approved = 1
+        elif u_role == "head":
+            allowed = headed or ([creator_dept] if creator_dept else [])
+            requested = (data.department or "").strip() or creator_dept
+            if requested and allowed and not any(same_dept(requested, d) for d in allowed):
+                raise HTTPException(403, f"Trưởng phòng chỉ có thể tạo công việc cho phòng {', '.join(allowed)}")
+            target_dept = canonical_dept_name(requested or (allowed[0] if allowed else creator_dept))
             is_dept_approved = 1
         else:
-            # NHÂN VIÊN: Tạo việc phòng ban nhưng phải chờ sếp duyệt
-            assignee_code = data.assignee_code or ""
-            assignee_name = data.assignee_name or ""
+            target_dept = canonical_dept_name(creator_dept)
             is_dept_approved = 0
+
+        assignee_code = (data.assignee_code or "").strip()
+        assignee_name = (data.assignee_name or "").strip()
+        if assignee_code:
+            emp = _active_employee(assignee_code)
+            if not emp:
+                raise HTTPException(400, "Nhân viên không tồn tại hoặc không còn làm việc")
+            if target_dept and not same_dept(emp.get("department"), target_dept):
+                raise HTTPException(403, "Chỉ có thể giao việc cho nhân viên trong phòng ban đã chọn")
+            assignee_name = emp.get("full_name") or assignee_name
 
     todo_id = insert("""
         INSERT INTO todos (
@@ -302,6 +561,7 @@ def create_todo(
 
 @router.get("/assignees")
 def get_assignees(
+    department: str = Query("", description="Lọc nhân viên theo phòng ban"),
     x_user_code: str = Header(None, alias="X-User-Code"),
     x_user_role: str = Header(None, alias="X-User-Role"),
     x_user_dept: str = Header(None, alias="X-User-Dept"),
@@ -309,36 +569,42 @@ def get_assignees(
 ):
     user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
     u_role = user["user_role"]
-    u_code = user["user_code"]
     u_dept = user["department"]
+    headed = user.get("headed_departments") or []
+    requested = (department or "").strip()
+
+    def _all_active():
+        return fetchall(
+            f"""
+            SELECT id, employee_code, full_name, department, position
+            FROM employees
+            WHERE {ACTIVE_EMP_SQL}
+            ORDER BY department, full_name
+            """
+        )
 
     if u_role == 'admin':
-        rows = fetchall(
-            "SELECT id, employee_code, full_name, department, position FROM employees WHERE status='active' ORDER BY department, full_name"
-        )
+        rows = _active_employees_in_dept(requested) if requested else _all_active()
     elif u_role == 'head':
-        if u_dept:
-            rows = fetchall(
-                "SELECT id, employee_code, full_name, department, position FROM employees WHERE status='active' AND department = :dept ORDER BY full_name",
-                {"dept": u_dept}
-            )
+        allowed = headed or ([u_dept] if u_dept else [])
+        if requested:
+            if allowed and not any(same_dept(requested, d) for d in allowed):
+                raise HTTPException(403, "Trưởng phòng chỉ xem nhân viên trong phòng ban mình phụ trách")
+            rows = _active_employees_in_dept(requested)
+        elif len(allowed) == 1:
+            rows = _active_employees_in_dept(allowed[0])
+        elif allowed:
+            seen = set()
+            rows = []
+            for d in allowed:
+                for emp in _active_employees_in_dept(d):
+                    if emp["employee_code"] not in seen:
+                        seen.add(emp["employee_code"])
+                        rows.append(emp)
         else:
-            # Fallback: nếu head chưa có department, lấy tất cả
-            rows = fetchall(
-                "SELECT id, employee_code, full_name, department, position FROM employees WHERE status='active' ORDER BY department, full_name"
-            )
+            rows = []
     else:
-        # Nhân viên: chỉ thấy đồng nghiệp trong phòng ban của mình (để tạo việc phòng ban chờ duyệt)
-        if u_dept:
-            rows = fetchall(
-                "SELECT id, employee_code, full_name, department, position FROM employees WHERE status='active' AND department = :dept ORDER BY full_name",
-                {"dept": u_dept}
-            )
-        else:
-            # Fallback: nếu chưa có department, lấy tất cả
-            rows = fetchall(
-                "SELECT id, employee_code, full_name, department, position FROM employees WHERE status='active' ORDER BY department, full_name"
-            )
+        rows = _active_employees_in_dept(u_dept) if u_dept else []
 
     return {"status": "success", "data": rows}
 
