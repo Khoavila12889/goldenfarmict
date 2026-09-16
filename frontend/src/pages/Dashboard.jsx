@@ -201,29 +201,36 @@ export default function Dashboard() {
     return () => { isMounted = false }
   }, [loadData])
 
+  const loadDataRef = useRef(loadData)
+  loadDataRef.current = loadData
+
   // 3. SSE — Realtime EventSource với Token Xác thực
   useEffect(() => {
     let es = null
     let reconnectTimer = null
+    let closed = false
 
     function connect() {
+      if (closed) return
+      if (es) { es.close(); es = null }
       try {
         const sseUrl = apiUrl(`/events${token ? `?token=${token}` : ''}`)
         es = new EventSource(sseUrl)
 
-        const handleReload = () => loadData()
+        es.addEventListener('connected', () => { loadDataRef.current() })
 
-        es.addEventListener('update_ticket', handleReload)
-        es.addEventListener('new_ticket', handleReload)
-        es.addEventListener('delete_ticket', handleReload)
-        es.addEventListener('booking_created', handleReload)
-        es.addEventListener('booking_updated', handleReload)
+        es.addEventListener('update_ticket', () => loadDataRef.current())
+        es.addEventListener('new_ticket', () => loadDataRef.current())
+        es.addEventListener('delete_ticket', () => loadDataRef.current())
+        es.addEventListener('booking_created', () => loadDataRef.current())
+        es.addEventListener('booking_updated', () => loadDataRef.current())
+        es.addEventListener('trip_created', () => loadDataRef.current())
 
-        // ─── Đơn nghỉ phép / công tác vừa gửi → trưởng phòng: báo có đơn mới ───
+        // ─── Đơn nghỉ phép / công tác ───
         es.addEventListener('request_submitted', (ev) => {
           loadPendingApprovals()
           loadMyApprovals()
-          loadData()
+          loadDataRef.current()
           if (isHead) {
             try {
               const d = JSON.parse(ev.data || '{}')
@@ -232,11 +239,10 @@ export default function Dashboard() {
           }
         })
 
-        // ─── Đơn được duyệt / từ chối → người gửi: cập nhật trạng thái + thông báo ───
         es.addEventListener('request_approved', (ev) => {
           loadPendingApprovals()
           loadMyApprovals()
-          loadData()
+          loadDataRef.current()
           try {
             const d = JSON.parse(ev.data || '{}')
             if (d.requester_code && d.requester_code === userCode) {
@@ -244,10 +250,11 @@ export default function Dashboard() {
             }
           } catch (_) { }
         })
+
         es.addEventListener('request_rejected', (ev) => {
           loadPendingApprovals()
           loadMyApprovals()
-          loadData()
+          loadDataRef.current()
           try {
             const d = JSON.parse(ev.data || '{}')
             if (d.requester_code && d.requester_code === userCode) {
@@ -257,7 +264,9 @@ export default function Dashboard() {
         })
 
         es.onerror = () => {
-          if (es) es.close()
+          if (closed) return
+          if (es) { es.close(); es = null }
+          if (reconnectTimer) clearTimeout(reconnectTimer)
           reconnectTimer = setTimeout(connect, 3000)
         }
       } catch (_) {
@@ -267,10 +276,21 @@ export default function Dashboard() {
 
     connect()
     return () => {
+      closed = true
       if (reconnectTimer) clearTimeout(reconnectTimer)
       if (es) es.close()
     }
-  }, [loadData, token, isHead, userCode, showToast, loadPendingApprovals, loadMyApprovals])
+  }, [token, isHead, userCode, showToast, loadPendingApprovals, loadMyApprovals])
+
+  // 3b. Polling fallback — đảm bảo leaves_today / pending_absences luôn mới
+  useEffect(() => {
+    const poll = setInterval(() => {
+      loadDataRef.current()
+      loadPendingApprovals()
+      loadMyApprovals()
+    }, 15000)
+    return () => clearInterval(poll)
+  }, [loadPendingApprovals, loadMyApprovals])
 
   // 4. Memoize lọc dữ liệu
   const pendingTickets = useMemo(() =>
