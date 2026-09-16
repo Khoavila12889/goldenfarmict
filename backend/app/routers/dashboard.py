@@ -29,9 +29,12 @@ def dashboard_stats(user_code: str = Query(""), user_role: str = Query("")):
         "ORDER BY b.start_time"
     )
 
-    # Lọc danh sách công tác / nghỉ phép đang hoạt động hôm nay
-    # Status active hoặc approved (hỗ trợ cả active và approved)
-    # Loại bỏ bản ghi có start_date hoặc end_date rỗng (không match với CURRENT_DATE)
+    # ── Lọc danh sách công tác / nghỉ phép đang hoạt động hôm nay ──
+    # Nguồn 1: business_trips (đã materialize từ approval_requests)
+    # Nguồn 2 (FALLBACK): approval_requests đã approved mà chưa materialize
+    # → Đảm bảo hiển thị ngay cả khi _materialize_trip_from_request fail silent
+    today_str = fetchone("SELECT CURRENT_DATE::text as d")["d"]
+
     active_absences = fetchall(
         "SELECT bt.id, bt.employee_code, bt.destination, bt.purpose, bt.start_date, bt.end_date, bt.status, bt.type, "
         "COALESCE(e.full_name, bt.full_name) as full_name, "
@@ -40,11 +43,18 @@ def dashboard_stats(user_code: str = Query(""), user_role: str = Query("")):
         "LEFT JOIN employees e ON bt.employee_code = e.employee_code "
         "WHERE bt.start_date IS NOT NULL AND bt.start_date != '' "
         "AND bt.end_date IS NOT NULL AND bt.end_date != '' "
-        "AND bt.start_date <= CURRENT_DATE::text "
-        "AND bt.end_date >= CURRENT_DATE::text "
+        "AND bt.start_date <= :today "
+        "AND bt.end_date >= :today "
         "AND bt.status IN ('active', 'approved') "
-        "ORDER BY bt.start_date ASC"
+        "ORDER BY bt.start_date ASC",
+        {"today": today_str}
     )
+
+    #── Track IDs đã có trong business_trips để tránh duplicate fallback ──
+    materialized_request_ids = set()
+    for r in active_absences:
+        if r.get("approval_request_id"):
+            materialized_request_ids.add(r["approval_request_id"])
 
     trips_today = []
     leaves_today = []
@@ -65,6 +75,41 @@ def dashboard_stats(user_code: str = Query(""), user_role: str = Query("")):
             leaves_today.append(item)
         else:
             trips_today.append(item)
+
+    # ── FALLBACK: lấy approved requests từ approval_requests nếu business_trips thiếu ──
+    if not leaves_today:
+        approved_leaves = fetchall(
+            "SELECT ar.id, ar.requester_code, ar.requester_name, ar.requester_dept, ar.metadata_json "
+            "FROM approval_requests ar "
+            "WHERE ar.status = 'approved' "
+            "AND ar.metadata_json IS NOT NULL "
+            "AND ar.metadata_json != '' "
+            "AND ar.metadata_json != 'null'",
+        )
+        for ar in approved_leaves:
+            if ar["id"] in materialized_request_ids:
+                continue
+            try:
+                meta = json.loads(ar.get("metadata_json") or "{}")
+            except Exception:
+                meta = {}
+            if meta.get("kind") != "leave":
+                continue
+            sd = meta.get("start_date", "")
+            ed = meta.get("end_date", "")
+            if not sd or not ed:
+                continue
+            if sd <= today_str and ed >= today_str:
+                leaves_today.append({
+                    "id": ar["id"],
+                    "employee_code": meta.get("employee_code", "") or ar.get("requester_code", ""),
+                    "full_name": meta.get("full_name", "") or ar.get("requester_name", ""),
+                    "department": meta.get("department", "") or ar.get("requester_dept", ""),
+                    "destination": meta.get("destination", "") or "Nghỉ phép",
+                    "purpose": meta.get("purpose", "") or "",
+                    "start_date": sd,
+                    "end_date": ed,
+                })
 
     # ── Nhân viên ĐANG XIN nghỉ phép / công tác (approval_request chờ duyệt) ──
     # - admin: toàn công ty
