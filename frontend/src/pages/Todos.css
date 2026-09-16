@@ -1165,6 +1165,12 @@ select.form-control:hover {
   margin-bottom: 0.75rem;
 }
 
+.detail-subtask-count {
+  font-size: 0.8rem;
+  color: var(--todo-text-muted);
+  font-weight: 500;
+}
+
 .attach-actions {
   display: flex;
   gap: 8px;

@@ -8,8 +8,13 @@ import json
 from fastapi import APIRouter, Query, HTTPException
 from ..core.db import fetchall, fetchone, execute, insert
 from ..core.events import publish_sync
+from ..core.auth import same_dept, headed_departments
 
 router = APIRouter(prefix="/api", tags=["approvals"])
+
+
+def _norm(s):
+    return (s or "").strip().lower()
 
 
 def _employee(code):
@@ -29,27 +34,33 @@ def _materialize_trip_from_request(req):
     kind = meta.get("kind", "")
     if kind not in ("leave", "business_trip"):
         return
-    existing = fetchone(
-        "SELECT id FROM business_trips WHERE approval_request_id=:rid",
-        {"rid": rid}
-    )
-    if existing:
+    # Việc ghi nhận lịch (business_trips) là 1 side-effect hỗ trợ hiển thị.
+    # Không được để lỗi ở đây làm hỏng luồng phê duyệt (đơn đã được duyệt xong).
+    try:
+        existing = fetchone(
+            "SELECT id FROM business_trips WHERE approval_request_id=:rid",
+            {"rid": rid}
+        )
+        if existing:
+            return
+        insert(
+            "INSERT INTO business_trips (employee_code, full_name, department, destination, purpose, start_date, end_date, notes, status, type, approval_request_id) VALUES (:employee_code, :full_name, :department, :destination, :purpose, :start_date, :end_date, :notes, 'active', :type, :rid)",
+            {
+                "employee_code": meta.get("employee_code", ""),
+                "full_name": meta.get("full_name", "") or req.get("requester_name", ""),
+                "department": meta.get("department", "") or req.get("requester_dept", ""),
+                "destination": meta.get("destination", ""),
+                "purpose": meta.get("purpose", "") or req.get("description", ""),
+                "start_date": meta.get("start_date", ""),
+                "end_date": meta.get("end_date", ""),
+                "notes": json.dumps(meta, ensure_ascii=False),
+                "type": meta.get("kind", "business_trip"),
+                "rid": rid,
+            }
+        )
+    except Exception as e:
+        print(f"  → materialize trip from request #{rid} failed: {e}")
         return
-    insert(
-        "INSERT INTO business_trips (employee_code, full_name, department, destination, purpose, start_date, end_date, notes, status, type, approval_request_id) VALUES (:employee_code, :full_name, :department, :destination, :purpose, :start_date, :end_date, :notes, 'active', :type, :rid)",
-        {
-            "employee_code": meta.get("employee_code", ""),
-            "full_name": meta.get("full_name", "") or req.get("requester_name", ""),
-            "department": meta.get("department", "") or req.get("requester_dept", ""),
-            "destination": meta.get("destination", ""),
-            "purpose": meta.get("purpose", "") or req.get("description", ""),
-            "start_date": meta.get("start_date", ""),
-            "end_date": meta.get("end_date", ""),
-            "notes": json.dumps(meta, ensure_ascii=False),
-            "type": meta.get("kind", "business_trip"),
-            "rid": rid,
-        }
-    )
     publish_sync("trip_created", {"id": rid, "approval_request_id": rid})
 
 
@@ -241,6 +252,7 @@ def pending_requests(user_code: str = Query("")):
     emp = _employee(user_code)
     if not emp:
         return {"data": []}
+    headed = headed_departments(user_code)
     rows = []
     all_reqs = fetchall(
         "SELECT * FROM approval_requests WHERE status IN ('pending','in_progress') ORDER BY id DESC"
@@ -253,7 +265,7 @@ def pending_requests(user_code: str = Query("")):
         current = next((s for s in steps if s["step_order"] == req["current_step"]), None)
         if not current:
             continue
-        if _is_approver(current, req, emp):
+        if _is_approver(current, req, emp, headed):
             req["logs"] = fetchall(
                 "SELECT * FROM approval_logs WHERE request_id=:id ORDER BY id",
                 {"id": req["id"]}
@@ -263,15 +275,32 @@ def pending_requests(user_code: str = Query("")):
     return {"data": rows}
 
 
-def _is_approver(step, request, emp):
+def _is_approver(step, request, emp, headed=None):
     if step["approver_type"] == "specific":
-        return emp["employee_code"] == step["approver_value"]
-    elif step["approver_type"] == "role":
-        pos_match = emp["position"] == step["approver_value"]
-        if step["department_match"]:
-            return pos_match and emp["department"] == request["requester_dept"]
+        return _norm(emp["employee_code"]) == _norm(step["approver_value"])
+
+    if step["approver_type"] != "role":
+        return False
+
+    # So khớp chức vụ (không phân biệt hoa/thường, khoảng trắng thừa)
+    want = _norm(step["approver_value"])
+    pos_match = _norm(emp["position"]) == want
+
+    # Trưởng phòng có thể được nhận diện qua departments.head_id thay vì chuỗi
+    # chức vụ. Điều này đồng bộ với resolve_effective_identity (role=head).
+    if not pos_match and want in ("trưởng phòng", "truong phong"):
+        if headed is None:
+            headed = headed_departments(emp["employee_code"])
+        pos_match = bool(headed)
+
+    if not step["department_match"]:
         return pos_match
-    return False
+
+    if headed is None:
+        headed = headed_departments(emp["employee_code"])
+    req_dept = request.get("requester_dept", "")
+    dept_match = same_dept(emp["department"], req_dept) or any(same_dept(d, req_dept) for d in headed)
+    return pos_match and dept_match
 
 
 def _get_approval_request(req_id):
@@ -368,7 +397,7 @@ def approve_request(req_id: int, body: dict):
     emp = _employee(approver_code)
     if not emp:
         raise HTTPException(400, "Approver not found")
-    if not _is_approver(current_step, req, emp):
+    if not _is_approver(current_step, req, emp, headed_departments(approver_code)):
         raise HTTPException(403, "User is not the assigned approver for this step")
     execute(
         "INSERT INTO approval_logs (request_id, step_order, approver_code, approver_name, action, comment) VALUES (:request_id, :step_order, :approver_code, :approver_name, :action, :comment)",
@@ -401,7 +430,7 @@ def reject_request(req_id: int, body: dict):
     emp = _employee(approver_code)
     if not emp:
         raise HTTPException(400, "Approver not found")
-    if not _is_approver(current_step, req, emp):
+    if not _is_approver(current_step, req, emp, headed_departments(approver_code)):
         raise HTTPException(403, "User is not the assigned approver for this step")
     execute(
         "INSERT INTO approval_logs (request_id, step_order, approver_code, approver_name, action, comment) VALUES (:request_id, :step_order, :approver_code, :approver_name, :action, :comment)",

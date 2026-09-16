@@ -138,11 +138,13 @@ export default function Dashboard() {
         await rejectRequest(req.id, { approver_code: userCode, comment: '' })
         showToast('error', '❌ Đã từ chối đơn #' + req.id)
       }
-      await loadData()
-      await loadPendingApprovals()
-      await loadMyApprovals()
-    } catch (_) { }
-    setApprovingId(null)
+    } catch (err) {
+      showToast('error', '⚠️ ' + (err.response?.data?.detail || err.response?.data?.error || 'Không thể xử lý đơn'))
+    } finally {
+      // Luôn làm mới danh sách (kể cả khi backend báo lỗi một phần) để giao diện đồng bộ
+      await Promise.allSettled([loadPendingApprovals(), loadMyApprovals(), loadData()])
+      setApprovingId(null)
+    }
   }
 
   // Tạo danh sách chi tiết để mở modal (khi > 10 dòng)

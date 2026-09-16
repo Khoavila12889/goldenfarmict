@@ -50,6 +50,9 @@ export default function Todos() {
   const [commentText, setCommentText] = useState('')
   const [todoAttachments, setTodoAttachments] = useState([])
   const [detailBusy, setDetailBusy] = useState(false)
+  const [detailSubtasks, setDetailSubtasks] = useState([])
+  const [detailNewSubtask, setDetailNewSubtask] = useState('')
+  const [detailSubtaskBusy, setDetailSubtaskBusy] = useState(false)
   
   // Auxiliary data
   const [employees, setEmployees] = useState([])
@@ -90,6 +93,18 @@ export default function Todos() {
       if (todo.scope === 'department' && String(todo.department) === userDept) return true
       if (todo.scope === 'personal' && String(todo.creator_code) === userCode) return true
       return false
+    }
+    return String(todo.creator_code) === userCode
+  }
+
+  // Quản lý subtask (thêm/xóa): admin, trưởng phòng (trong phòng ban) hoặc người tạo.
+  // Nhân viên được giao việc (assignee) chỉ tick hoàn thành, KHÔNG thêm/xóa subtask.
+  const canManageSubtasks = (todo) => {
+    if (!todo) return false
+    if (userRole === 'admin') return true
+    if (userRole === 'head') {
+      if (todo.scope === 'department' && String(todo.department) === userDept) return true
+      return String(todo.creator_code) === userCode
     }
     return String(todo.creator_code) === userCode
   }
@@ -378,11 +393,61 @@ export default function Todos() {
   // JIRA/TRELLO STYLE DETAIL & DISCUSSION LOGIC
   // =========================================================
 
+  // Subtask trong modal chi tiết: nhân viên được giao việc có thể xem + tick hoàn thành
+  const persistDetailSubtasks = async (next, prev) => {
+    if (!viewingTodo) return
+    setDetailSubtaskBusy(true)
+    try {
+      const payload = next
+        .filter(s => (s.title || '').trim())
+        .map(s => ({ title: (s.title || '').trim(), is_completed: s.is_completed ? 1 : 0 }))
+      await updateTodo(viewingTodo.id, { subtasks: payload })
+      const done = next.filter(s => s.is_completed).length
+      setViewingTodo(p => p ? {
+        ...p,
+        subtasks: next,
+        subtask_count: next.length,
+        subtask_done: done,
+        progress_pct: next.length ? Math.round(done / next.length * 100) : (p.status === 'completed' ? 100 : 0)
+      } : p)
+      fetchData()
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Không thể cập nhật subtask')
+      setDetailSubtasks(prev)
+    } finally {
+      setDetailSubtaskBusy(false)
+    }
+  }
+
+  const handleDetailAddSubtask = () => {
+    const title = detailNewSubtask.trim()
+    if (!title) return
+    const next = [...detailSubtasks, { title, is_completed: 0 }]
+    setDetailSubtasks(next)
+    setDetailNewSubtask('')
+    persistDetailSubtasks(next, detailSubtasks)
+  }
+
+  const handleDetailToggleSubtask = (idx) => {
+    const next = detailSubtasks.map((s, i) => i === idx ? { ...s, is_completed: s.is_completed ? 0 : 1 } : s)
+    setDetailSubtasks(next)
+    persistDetailSubtasks(next, detailSubtasks)
+  }
+
+  const handleDetailRemoveSubtask = (idx) => {
+    const next = detailSubtasks.filter((_, i) => i !== idx)
+    setDetailSubtasks(next)
+    persistDetailSubtasks(next, detailSubtasks)
+  }
+
   const openTodoDetail = async (todo) => {
     setViewingTodo(todo)
     setTodoComments([])
     setTodoAttachments([])
     setCommentText('')
+    setDetailSubtasks((todo.subtasks || []).map(s => ({ ...s })))
+    setDetailNewSubtask('')
+    setDetailSubtaskBusy(false)
     setDetailBusy(true)
     try {
       const [cmtRes, attRes] = await Promise.allSettled([
@@ -495,6 +560,10 @@ export default function Todos() {
     const today = new Date().toISOString().split('T')[0]
     return dateStr < today
   }
+
+  // Trong form: khi tạo mới luôn được quản lý subtask; khi sửa chỉ người quản lý được thêm/xóa
+  const canManageFormSubtasks = !editingTodo || canManageSubtasks(editingTodo)
+  const canToggleFormSubtasks = !editingTodo || canEditTodo(editingTodo)
 
   return (
     <div className="todos-container">
@@ -763,6 +832,58 @@ export default function Todos() {
                   <div className="todo-desc-text">{viewingTodo.description || 'Không có mô tả chi tiết.'}</div>
                 </div>
 
+                {/* Danh sách việc nhỏ (Subtasks) */}
+                <div className="todo-detail-section">
+                  <div className="section-header-flex">
+                    <h3><ListTodo size={16}/> Danh sách việc nhỏ</h3>
+                    <span className="detail-subtask-count">
+                      {detailSubtasks.filter(s => s.is_completed).length}/{detailSubtasks.length}
+                    </span>
+                  </div>
+
+                  {canManageSubtasks(viewingTodo) && (
+                    <div className="subtask-add-row" style={{ marginBottom: 10 }}>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Thêm mục việc cần hoàn thành..."
+                        value={detailNewSubtask}
+                        onChange={(e) => setDetailNewSubtask(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleDetailAddSubtask(); } }}
+                        disabled={detailSubtaskBusy}
+                      />
+                      <button type="button" className="btn-primary" onClick={handleDetailAddSubtask} disabled={detailSubtaskBusy || !detailNewSubtask.trim()}>
+                        Thêm
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="subtask-list" style={{ maxHeight: 'none' }}>
+                    {detailSubtasks.length === 0 ? (
+                      <div className="empty-state" style={{ padding: '0.75rem' }}>Chưa có việc nhỏ nào.</div>
+                    ) : (
+                      detailSubtasks.map((sub, idx) => (
+                        <div key={sub.id ?? idx} className={`subtask-item${sub.is_completed ? ' completed' : ''}`}>
+                          <div className="subtask-item-left">
+                            <input
+                              type="checkbox"
+                              checked={!!sub.is_completed}
+                              onChange={() => { if (canEditTodo(viewingTodo)) handleDetailToggleSubtask(idx); }}
+                              disabled={!canEditTodo(viewingTodo) || detailSubtaskBusy}
+                            />
+                            <span className={`subtask-item-input${sub.is_completed ? ' done' : ''}`}>{sub.title}</span>
+                          </div>
+                          {canManageSubtasks(viewingTodo) && (
+                            <button type="button" className="subtask-remove-btn" onClick={() => handleDetailRemoveSubtask(idx)} disabled={detailSubtaskBusy} title="Xóa">
+                              <X size={14} />
+                            </button>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
                 {/* Khu vực đính kèm (URL, File) */}
                 <div className="todo-detail-section">
                   <div className="section-header-flex">
@@ -1023,52 +1144,60 @@ export default function Todos() {
                 {/* Subtask / Checklist Manager */}
                 <div className="subtask-panel">
                   <label className="subtask-panel-label">Danh sách việc nhỏ (Subtasks Checklist)</label>
-                  <div className="subtask-add-row">
-                    <input
-                      type="text"
-                      className="form-control"
-                      placeholder="Thêm mục việc cần hoàn thành..."
-                      value={newSubtaskTitle}
-                      onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddSubtask(); } }}
-                    />
-                    <button type="button" className="btn-primary" onClick={handleAddSubtask}>
-                      Thêm
-                    </button>
-                  </div>
+                  {canManageFormSubtasks && (
+                    <div className="subtask-add-row">
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Thêm mục việc cần hoàn thành..."
+                        value={newSubtaskTitle}
+                        onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddSubtask(); } }}
+                      />
+                      <button type="button" className="btn-primary" onClick={handleAddSubtask}>
+                        Thêm
+                      </button>
+                    </div>
+                  )}
 
                   <div className="subtask-list">
                     {formSubtasks.map((sub, idx) => (
                       <div
                         key={idx}
                         className={`subtask-item${sub.is_completed ? ' completed' : ''}${draggingIdx === idx ? ' dragging' : ''}`}
-                        draggable
+                        draggable={canManageFormSubtasks}
                         onDragStart={(e) => handleSubtaskDragStart(e, idx)}
                         onDragEnter={() => handleSubtaskDragEnter(idx)}
                         onDragOver={(e) => e.preventDefault()}
                         onDragEnd={handleSubtaskDragEnd}
                       >
-                        <div className="subtask-grip" title="Kéo để đổi vị trí">
-                          <GripVertical size={14} />
-                        </div>
+                        {canManageFormSubtasks && (
+                          <div className="subtask-grip" title="Kéo để đổi vị trí">
+                            <GripVertical size={14} />
+                          </div>
+                        )}
                         <div className="subtask-item-left">
                           <input
                             type="checkbox"
                             checked={!!sub.is_completed}
-                            onChange={() => handleToggleSubtask(idx)}
+                            disabled={!canToggleFormSubtasks}
+                            onChange={() => { if (canToggleFormSubtasks) handleToggleSubtask(idx) }}
                           />
                           <input
                             type="text"
                             className={`subtask-item-input${sub.is_completed ? ' done' : ''}`}
                             value={sub.title}
                             placeholder="Nhập nội dung subtask..."
+                            readOnly={!canManageFormSubtasks}
                             onChange={(e) => handleEditSubtask(idx, e.target.value)}
                             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur() } }}
                           />
                         </div>
-                        <button type="button" className="subtask-remove-btn" onClick={() => handleRemoveSubtask(idx)}>
-                          <X size={14} />
-                        </button>
+                        {canManageFormSubtasks && (
+                          <button type="button" className="subtask-remove-btn" onClick={() => handleRemoveSubtask(idx)}>
+                            <X size={14} />
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>

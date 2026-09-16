@@ -14,10 +14,11 @@ import { getEmployees, getDepartments } from '../services/api'
 import './Chat.css'
 
 const PAGE_SIZE = 50
-
 const ALLOWED_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'xlsx', 'pdf', 'doc', 'docx']
 const MAX_SIZE = 10 * 1024 * 1024
+const TIME_ZONE = 'Asia/Ho_Chi_Minh'
 
+// ─── HELPER FUNCTIONS ──────────────────────────────────────────
 function noAccent(s) {
   return (s || '')
     .toString()
@@ -27,10 +28,6 @@ function noAccent(s) {
     .replace(/Đ/g, 'D')
     .toLowerCase()
 }
-
-// Chuỗi API trả về kiểu UTC không có 'Z' (vd "2026-08-10T06:53:00")
-// → thêm 'Z' để JS hiểu đúng giờ UTC, rồi ép hiển thị theo Asia/Ho_Chi_Minh
-const TIME_ZONE = 'Asia/Ho_Chi_Minh'
 
 function parseUtc(iso) {
   if (!iso) return null
@@ -44,11 +41,8 @@ export function formatChatMessageTime(dateString) {
   if (!d) return ''
   return d.toLocaleString('vi-VN', {
     timeZone: TIME_ZONE,
-    day: '2-digit',
-    month: '2-digit',
-    year: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
+    day: '2-digit', month: '2-digit', year: '2-digit',
+    hour: '2-digit', minute: '2-digit',
   })
 }
 
@@ -95,16 +89,165 @@ function attachmentFileName(m) {
   return parts[parts.length - 1] || 'Tệp đính kèm'
 }
 
-// Chấm trạng thái online — xanh nhấp nháy nếu online, xám nếu offline
-function PresenceDot({ online, title }) {
-  return (
-    <span
-      className={`presence-dot${online ? '' : ' offline'}`}
-      title={title || (online ? 'Đang trực tuyến' : 'Đang ngoại tuyến')}
-    />
-  )
-}
+const PresenceDot = React.memo(({ online, title }) => (
+  <span
+    className={`presence-dot${online ? '' : ' offline'}`}
+    title={title || (online ? 'Đang trực tuyến' : 'Đang ngoại tuyến')}
+  />
+))
 
+// ─── MEMOIZED SUB-COMPONENTS ───────────────────────────────────
+
+// 1. Tách khung nhập liệu (Ngăn chặn gõ phím làm giật toàn bộ khung chat)
+const ChatInput = React.memo(({ wsStatus, uploading, attachment, setAttachment, onFileChange, handlePaste, onSend, attachError }) => {
+  const [text, setText] = useState('')
+  const fileInputRef = useRef(null)
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    const content = text.trim()
+    if ((!content && !attachment) || uploading) return
+    onSend(content)
+    setText('')
+  }
+
+  return (
+    <>
+      {(attachment || uploading) && (
+        <div className="chat-pending-attach">
+          {attachment && isImageType(attachment.type) && (
+            <img className="chat-pending-thumb" src={attachment.url} alt="" />
+          )}
+          <span className="chat-pending-icon">
+            {attachment && !isImageType(attachment.type) && (
+              (() => {
+                const t = (attachment.type || '').toLowerCase()
+                if (t === 'pdf') return <FileText size={18} />
+                if (t === 'xlsx' || t === 'xls') return <FileSpreadsheet size={18} />
+                return <FileIcon size={18} />
+              })()
+            )}
+            {uploading && !attachment && <Loader2 size={18} className="chat-spin" />}
+          </span>
+          <div className="chat-pending-meta">
+            <span className="chat-pending-name">
+              {uploading && !attachment ? 'Đang tải file lên...' : attachment.name}
+            </span>
+            {attachment && <span className="chat-pending-size">{formatFileSize(attachment.size)}</span>}
+          </div>
+          {!uploading && (
+            <button type="button" className="chat-pending-remove" onClick={() => setAttachment(null)} title="Bỏ đính kèm">
+              <X size={16} />
+            </button>
+          )}
+        </div>
+      )}
+      <form className="chat-input-bar" onSubmit={handleSubmit}>
+        <button
+          type="button"
+          className="chat-attach-btn"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={wsStatus !== 'open' || uploading}
+          title="Đính kèm ảnh / PDF / Excel"
+        >
+          <Paperclip size={18} />
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".jpg,.jpeg,.png,.webp,.xlsx,.pdf,.doc,.docx,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          hidden
+          onChange={onFileChange}
+        />
+        <input
+          className="chat-input-text"
+          type="text"
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onPaste={handlePaste}
+          placeholder="Nhập tin nhắn... (Ctrl+V để dán ảnh)"
+          disabled={wsStatus !== 'open'}
+        />
+        <button
+          type="submit"
+          className="chat-send-btn"
+          disabled={wsStatus !== 'open' || uploading || (!text.trim() && !attachment)}
+          title="Gửi tin nhắn"
+        >
+          <Send size={18} />
+        </button>
+      </form>
+      {attachError && <div className="chat-attach-error">{attachError}</div>}
+    </>
+  )
+})
+
+// 2. Tách bóng chat (Ngăn chặn re-render hàng loạt 50+ tin nhắn)
+const MessageItem = React.memo(({ m, mine, showDay, pinBusy, handleTogglePin, setPreview, senderName }) => {
+  return (
+    <React.Fragment>
+      {showDay && (
+        <div className="chat-day-sep">
+          <span>{formatDay(m.created_at)}</span>
+        </div>
+      )}
+      <div className={`chat-msg${mine ? ' mine' : ''}`}>
+        <div className="chat-bubble">
+          {!mine && <div className="chat-msg-sender">{senderName}</div>}
+          {m.content && <div className="chat-msg-text">{m.content}</div>}
+          {m.attachment_url && isImageType(m.attachment_type) ? (
+            <button
+              type="button"
+              className="chat-msg-img-btn"
+              onClick={() => setPreview({ url: m.attachment_url, name: attachmentFileName(m), type: m.attachment_type })}
+              title="Xem ảnh"
+            >
+              <img className="chat-msg-img" src={m.attachment_url} alt={attachmentFileName(m)} loading="lazy" />
+            </button>
+          ) : (
+            m.attachment_url && (
+              <a className="chat-msg-attach" href={m.attachment_url} target="_blank" rel="noreferrer">
+                <span className="chat-file-card">
+                  <span className="chat-file-icon">
+                    {(() => {
+                      const t = (m.attachment_type || '').toLowerCase()
+                      if (t === 'pdf') return <FileText size={22} />
+                      if (t === 'xlsx' || t === 'xls') return <FileSpreadsheet size={22} />
+                      if (t === 'doc' || t === 'docx') return <FileText size={22} />
+                      return <FileIcon size={22} />
+                    })()}
+                  </span>
+                  <span className="chat-file-meta">
+                    <span className="chat-file-name">{attachmentFileName(m)}</span>
+                    <span className="chat-file-size">
+                      {formatFileSize(m.attachment_size)}
+                      {m.attachment_type ? ` · ${m.attachment_type.toUpperCase()}` : ''}
+                    </span>
+                  </span>
+                </span>
+              </a>
+            )
+          )}
+        </div>
+        <div className="chat-msg-meta">
+          {m.is_pinned && <span className="chat-msg-pinned-flag" title="Tin nhắn đã ghim"><Pin size={11} /></span>}
+          <span className="chat-msg-time">{formatDayShort(m.created_at)} · {formatTime(m.created_at)}</span>
+          <button
+            type="button"
+            className={`chat-msg-pin${m.is_pinned ? ' active' : ''}`}
+            onClick={() => handleTogglePin(m)}
+            disabled={pinBusy === m.id}
+            title={m.is_pinned ? 'Bỏ ghim tin nhắn' : 'Ghim tin nhắn quan trọng'}
+          >
+            {pinBusy === m.id ? <Loader2 size={13} className="chat-spin" /> : (m.is_pinned ? <PinOff size={13} /> : <Pin size={13} />)}
+          </button>
+        </div>
+      </div>
+    </React.Fragment>
+  )
+})
+
+// ─── MAIN COMPONENT ────────────────────────────────────────────
 export default function Chat() {
   const userCode = sessionStorage.getItem('user_code') || ''
   const userRole = sessionStorage.getItem('user_role') || 'user'
@@ -114,6 +257,7 @@ export default function Chat() {
   const isHead = userRole === 'head'
   const canCreateDeptRoom = isAdmin || isHead
 
+  // State
   const [rooms, setRooms] = useState([])
   const [employees, setEmployees] = useState([])
   const [departments, setDepartments] = useState([])
@@ -124,29 +268,19 @@ export default function Chat() {
   const [hasMore, setHasMore] = useState(false)
   const [loadingRooms, setLoadingRooms] = useState(true)
   const [loadingMsgs, setLoadingMsgs] = useState(false)
-  const [wsStatus, setWsStatus] = useState('connecting') // connecting | open | closed
-  const [text, setText] = useState('')
-  const [attachment, setAttachment] = useState(null) // { url, name, type, size }
+  const [wsStatus, setWsStatus] = useState('connecting')
+
+  const [attachment, setAttachment] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [attachError, setAttachError] = useState('')
   const [newMessageRooms, setNewMessageRooms] = useState(new Set())
-  const [preview, setPreview] = useState(null) // { url, name, type } — lightbox xem ảnh
+  const [preview, setPreview] = useState(null)
 
-  // Pinned messages
   const [pinnedMessages, setPinnedMessages] = useState([])
-  const [showPinsList, setShowPinsList] = useState(false);
+  const [showPinsList, setShowPinsList] = useState(false)
+  const [pinBusy, setPinBusy] = useState(null)
 
-  // Play login sound on mobile when WebSocket opens
-  useEffect(() => {
-    const isMobile = /Mobi|Android/i.test(navigator.userAgent);
-    if (isMobile && wsStatus === 'open') {
-      const audio = new Audio('https://www.soundjay.com/buttons/sounds/button-3.mp3');
-      audio.play().catch(() => {});
-    }
-  }, [wsStatus]);
-  const [pinBusy, setPinBusy] = useState(null) // message id đang xử lý ghim/bỏ ghim
-
-  // Create room modal
+  // Modals
   const [showCreate, setShowCreate] = useState(false)
   const [roomType, setRoomType] = useState('direct')
   const [groupName, setGroupName] = useState('')
@@ -156,27 +290,34 @@ export default function Chat() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
 
-  // Manage room modal
-  const [manageRoom, setManageRoom] = useState(null) // { room }
-  const [manageTab, setManageTab] = useState('members') // members | settings
+  const [manageRoom, setManageRoom] = useState(null)
+  const [manageTab, setManageTab] = useState('members')
   const [memberList, setMemberList] = useState([])
   const [memberSearch, setMemberSearch] = useState('')
   const [renameName, setRenameName] = useState('')
   const [managing, setManaging] = useState(false)
   const [manageError, setManageError] = useState('')
 
-  // Delete confirm modal
-  const [deleteTarget, setDeleteTarget] = useState(null) // room
+  const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
 
+  // Refs
   const wsRef = useRef(null)
   const reconnectTimerRef = useRef(null)
   const shouldReconnectRef = useRef(true)
   const activeRoomIdRef = useRef(activeRoomId)
   const msgsBoxRef = useRef(null)
-  const fileInputRef = useRef(null)
+  const retryCountRef = useRef(0)
 
   useEffect(() => { activeRoomIdRef.current = activeRoomId }, [activeRoomId])
+
+  useEffect(() => {
+    const isMobile = /Mobi|Android/i.test(navigator.userAgent)
+    if (isMobile && wsStatus === 'open') {
+      const audio = new Audio('https://www.soundjay.com/buttons/sounds/button-3.mp3')
+      audio.play().catch(() => {})
+    }
+  }, [wsStatus])
 
   const displayNameOf = useCallback((code) => nameMap[code] || code || 'Nhân viên', [nameMap])
 
@@ -203,18 +344,13 @@ export default function Chat() {
     try {
       const res = await getChatRooms()
       setRooms(res.data?.data || [])
-    } catch (_) { /* giữ danh sách cũ */ }
+    } catch (_) { }
   }, [])
 
-  // ─── Tải danh sách nhân viên + phòng ban + phòng chat ─────────
   useEffect(() => {
     let cancelled = false
     Promise.allSettled([
-      getEmployees(),
-      getChatContacts(),
-      getChatRooms(),
-      getDepartments(),
-      getChatOnline(),
+      getEmployees(), getChatContacts(), getChatRooms(), getDepartments(), getChatOnline(),
     ]).then(([empRes, contactRes, roomRes, deptRes, onlineRes]) => {
       if (cancelled) return
       const emps = empRes.status === 'fulfilled' ? (empRes.value.data?.data || []) : []
@@ -235,12 +371,10 @@ export default function Chat() {
     return () => { cancelled = true }
   }, [userDept])
 
-  // ─── WebSocket ────────────────────────────────────────────────
   const handleWsMessage = useCallback((raw) => {
     let msg
     try { msg = JSON.parse(raw) } catch (_) { return }
     if (!msg) return
-    // Server heartbeat — reply pong để dead-connection sweeper không xoá nhầm.
     if (msg.event === 'ping') {
       try {
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -251,9 +385,7 @@ export default function Chat() {
     }
     if (msg.event === 'pong') return
     if (msg.event === 'pin_updated') {
-      if (msg.room_id === activeRoomIdRef.current) {
-        setPinnedMessages(msg.pinned || [])
-      }
+      if (msg.room_id === activeRoomIdRef.current) setPinnedMessages(msg.pinned || [])
       return
     }
     if (msg.event === 'presence') {
@@ -270,55 +402,42 @@ export default function Chat() {
     if (msg.room_id === activeRoomIdRef.current) {
       setMessages(prev => (prev.some(m => m.id === msg.id) ? prev : [...prev, msg]))
     }
-      // Notify user of new message in other rooms
-      if (msg.room_id !== activeRoomIdRef.current) {
-        setNewMessageRooms(prev => {
-          const newSet = new Set(prev);
-          newSet.add(msg.room_id);
-          return newSet;
-        });
-      }
+    if (msg.room_id !== activeRoomIdRef.current) {
+      setNewMessageRooms(prev => {
+        const newSet = new Set(prev)
+        newSet.add(msg.room_id)
+        return newSet
+      })
+    }
   }, [])
 
-  const retryCountRef = useRef(0);
   const connectWs = useCallback(() => {
     if (!shouldReconnectRef.current) return
     setWsStatus('connecting')
-    let url
-    let ws
+    let url, ws
     try {
       url = chatWebSocketUrl()
       ws = new WebSocket(url)
     } catch (err) {
       setWsStatus('closed')
-      console.error('[Chat WS] Không thể tạo WebSocket:', err, ' | URL:', url)
-      // URL sai sẽ không bao giờ connect được → KHÔNG reconnect vô hạn.
       return
     }
 
     wsRef.current = ws
     ws.onopen = () => {
       setWsStatus('open')
-      // Reset retry count on successful connection
       retryCountRef.current = 0
     }
     ws.onmessage = (e) => handleWsMessage(e.data)
     ws.onclose = (ev) => {
       setWsStatus('closed')
-      console.error('[Chat WS] Đóng kết nối:', ev.code, ev.reason, ' | URL:', url)
       if (shouldReconnectRef.current && ev.code !== 1008) {
-        // Increment retry count and schedule reconnection with backoff
         retryCountRef.current += 1
         const delay = Math.min(3000 * Math.pow(2, retryCountRef.current - 1), 30000)
         reconnectTimerRef.current = setTimeout(connectWs, delay)
-      } else {
-        console.error('[Chat WS] Dừng reconnect (mã', ev.code + ') — kiểm tra token/user_code ở backend.')
       }
     }
-    ws.onerror = (ev) => {
-      console.error('[Chat WS] Lỗi kết nối (Connection Refused / CORS / 403):', ev && ev.message ? ev.message : ev)
-      try { ws.close() } catch (_) {}
-    }
+    ws.onerror = (ev) => { try { ws.close() } catch (_) {} }
   }, [handleWsMessage])
 
   useEffect(() => {
@@ -331,14 +450,13 @@ export default function Chat() {
     }
   }, [connectWs])
 
-  // ─── Chọn phòng / tải tin nhắn ────────────────────────────────
   const selectRoom = useCallback(async (roomId) => {
-    setActiveRoomId(roomId);
+    setActiveRoomId(roomId)
     setNewMessageRooms(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(roomId);
-      return newSet;
-    });
+      const newSet = new Set(prev)
+      newSet.delete(roomId)
+      return newSet
+    })
     setMessages([])
     setHasMore(false)
     setLoadingMsgs(true)
@@ -353,12 +471,8 @@ export default function Chat() {
         const rows = msgRes.value.data?.data || []
         setMessages(rows)
         setHasMore(rows.length === PAGE_SIZE)
-      } else {
-        setHasMore(false)
       }
-      if (pinRes.status === 'fulfilled') {
-        setPinnedMessages(pinRes.value.data?.data || [])
-      }
+      if (pinRes.status === 'fulfilled') setPinnedMessages(pinRes.value.data?.data || [])
     } catch (_) {
       setHasMore(false)
     } finally {
@@ -381,18 +495,14 @@ export default function Chat() {
     }
   }
 
-  // Auto-scroll xuống cuối khi mở phòng / có tin mới
   useEffect(() => {
     const box = msgsBoxRef.current
     if (box) box.scrollTop = box.scrollHeight
   }, [activeRoomId, messages.length])
 
-  // ─── Gửi tin nhắn ─────────────────────────────────────────────
-  const sendMessage = (e) => {
-    e.preventDefault()
-    const content = text.trim()
-    if ((!content && !attachment) || !activeRoomId) return
-    if (wsStatus !== 'open') return
+  // ─── Tương tác tin nhắn ─────────────────────────────────────
+  const handleSend = useCallback((content) => {
+    if (!activeRoomId || wsStatus !== 'open') return
     wsRef.current.send(JSON.stringify({
       room_id: activeRoomId,
       content,
@@ -401,12 +511,10 @@ export default function Chat() {
       attachment_type: attachment?.type || null,
       attachment_size: attachment?.size ?? null,
     }))
-    setText('')
     setAttachment(null)
     setAttachError('')
-  }
+  }, [activeRoomId, wsStatus, attachment])
 
-  // ─── Đính kèm file (ảnh / pdf / doc / xlsx) ───────────────────
   const uploadAndAttach = async (file) => {
     const ext = (file.name.split('.').pop() || '').toLowerCase()
     if (!ALLOWED_EXTS.includes(ext)) {
@@ -422,12 +530,7 @@ export default function Chat() {
     try {
       const res = await uploadChatFile(file)
       const data = res.data?.data || {}
-      setAttachment({
-        url: data.file_url,
-        name: data.file_name,
-        type: data.file_type,
-        size: data.file_size,
-      })
+      setAttachment({ url: data.file_url, name: data.file_name, type: data.file_type, size: data.file_size })
       return true
     } catch (_) {
       setAttachError('Tải file lên thất bại. Vui lòng thử lại.')
@@ -443,7 +546,6 @@ export default function Chat() {
     if (file) await uploadAndAttach(file)
   }
 
-  // Dán ảnh chụp màn hình (Ctrl+V / Shift+Insert) vào box chat
   const handlePaste = async (e) => {
     const items = e.clipboardData?.items
     if (!items) return
@@ -460,29 +562,61 @@ export default function Chat() {
     }
   }
 
-  // ─── Tạo phòng chat (user / head / admin) ─────────────────────
-  const toggleSelect = (code) => {
-    setSelectedCodes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code])
-  }
+  const handleTogglePin = useCallback(async (m) => {
+    if (!m || pinBusy) return
+    setPinBusy(m.id)
+    try {
+      if (m.is_pinned) await unpinChatMessage(m.id)
+      else await pinChatMessage(m.id)
+      setMessages(prev => prev.map(x => x.id === m.id ? { ...x, is_pinned: !m.is_pinned } : x))
+    } catch (err) {
+      const detail = err.response?.data?.detail
+      window.alert(typeof detail === 'string' ? detail : 'Không thể thao tác ghim tin nhắn.')
+    } finally {
+      setPinBusy(null)
+    }
+  }, [pinBusy])
+
+  // ─── Lọc dùng useMemo ─────────────────────────────────────────
+  const activeRoom = useMemo(() => rooms.find(r => r.id === activeRoomId), [rooms, activeRoomId])
+  const deptRooms = useMemo(() => rooms.filter(r => r.type === 'department'), [rooms])
+  const groupRooms = useMemo(() => rooms.filter(r => r.type === 'group'), [rooms])
+  const directRooms = useMemo(() => rooms.filter(r => r.type === 'direct'), [rooms])
+
+  const availableEmps = useMemo(() => {
+    const qNorm = noAccent(empSearch.trim())
+    return employees.filter(e =>
+      e.employee_code !== userCode &&
+      e.status !== 'resigned' &&
+      (!qNorm ||
+        noAccent(e.full_name).includes(qNorm) ||
+        noAccent(e.employee_code).includes(qNorm) ||
+        noAccent(e.department).includes(qNorm))
+    )
+  }, [employees, empSearch, userCode])
+
+  const memberSet = useMemo(() => new Set(memberList.map(m => m.employee_code)), [memberList])
+  const addableEmps = useMemo(() => {
+    const mqNorm = noAccent(memberSearch.trim())
+    return employees.filter(e =>
+      !memberSet.has(e.employee_code) &&
+      e.status !== 'resigned' &&
+      (!mqNorm ||
+        noAccent(e.full_name).includes(mqNorm) ||
+        noAccent(e.employee_code).includes(mqNorm) ||
+        noAccent(e.department).includes(mqNorm))
+    )
+  }, [employees, memberSet, memberSearch])
+
+  // ─── Quản lý Modal & Handler ──────────────────────────────────
+  const toggleSelect = (code) => setSelectedCodes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code])
 
   const handleCreateRoom = async () => {
     setCreateError('')
-    if (roomType === 'direct' && selectedCodes.length !== 1) {
-      setCreateError('Phòng chat 1-1 cần chọn đúng 1 người.')
-      return
-    }
-    if (roomType === 'group' && selectedCodes.length < 2) {
-      setCreateError('Phòng nhóm cần chọn ít nhất 2 người.')
-      return
-    }
-    if (roomType === 'group' && !groupName.trim()) {
-      setCreateError('Vui lòng nhập tên nhóm.')
-      return
-    }
-    if (roomType === 'department' && !deptSelect.trim()) {
-      setCreateError('Vui lòng chọn phòng ban.')
-      return
-    }
+    if (roomType === 'direct' && selectedCodes.length !== 1) { setCreateError('Phòng chat 1-1 cần chọn đúng 1 người.'); return }
+    if (roomType === 'group' && selectedCodes.length < 2) { setCreateError('Phòng nhóm cần chọn ít nhất 2 người.'); return }
+    if (roomType === 'group' && !groupName.trim()) { setCreateError('Vui lòng nhập tên nhóm.'); return }
+    if (roomType === 'department' && !deptSelect.trim()) { setCreateError('Vui lòng chọn phòng ban.'); return }
 
     setCreating(true)
     try {
@@ -509,16 +643,6 @@ export default function Chat() {
     }
   }
 
-  const qNorm = noAccent(empSearch.trim())
-  const availableEmps = employees.filter(e =>
-    e.employee_code !== userCode &&
-    (!qNorm ||
-      noAccent(e.full_name).includes(qNorm) ||
-      noAccent(e.employee_code).includes(qNorm) ||
-      noAccent(e.department).includes(qNorm))
-  )
-
-  // ─── Quản lý phòng (admin / trưởng phòng / chủ nhóm) ─────────
   const openManage = async (room) => {
     setManageError('')
     setManageTab('members')
@@ -530,23 +654,7 @@ export default function Chat() {
     try {
       const res = await getChatRoomMembers(room.id)
       setMemberList(res.data?.data || [])
-    } catch (_) {
-      setMemberList([])
-    }
-  }
-
-  const memberSet = useMemo(() => new Set(memberList.map(m => m.employee_code)), [memberList])
-  const mqNorm = noAccent(memberSearch.trim())
-  const addableEmps = employees.filter(e =>
-    !memberSet.has(e.employee_code) &&
-    (!mqNorm ||
-      noAccent(e.full_name).includes(mqNorm) ||
-      noAccent(e.employee_code).includes(mqNorm) ||
-      noAccent(e.department).includes(mqNorm))
-  )
-
-  const toggleAddMember = (code) => {
-    setSelectedCodes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code])
+    } catch (_) {}
   }
 
   const handleAddMembers = async () => {
@@ -557,15 +665,12 @@ export default function Chat() {
       const res = await addChatRoomMembers(manageRoom.id, selectedCodes)
       setSelectedCodes([])
       setMemberSearch('')
-      setMemberList([])
       await Promise.all([
         getChatRoomMembers(manageRoom.id).then(r => setMemberList(r.data?.data || [])),
         refreshRooms(),
       ])
       if (res.data?.member_codes) {
-        setRooms(prev => prev.map(r => r.id === manageRoom.id
-          ? { ...r, member_codes: res.data.member_codes, member_count: res.data.member_codes.length }
-          : r))
+        setRooms(prev => prev.map(r => r.id === manageRoom.id ? { ...r, member_codes: res.data.member_codes, member_count: res.data.member_codes.length } : r))
       }
     } catch (err) {
       const detail = err.response?.data?.detail
@@ -579,15 +684,12 @@ export default function Chat() {
     if (!manageRoom || m.is_owner) return
     if (!window.confirm(`Xoá ${m.full_name || m.employee_code} khỏi nhóm?`)) return
     setManaging(true)
-    setManageError('')
     try {
       const res = await removeChatRoomMember(manageRoom.id, m.employee_code)
       setMemberList(prev => prev.filter(x => x.employee_code !== m.employee_code))
       await refreshRooms()
       if (res.data?.member_codes) {
-        setRooms(prev => prev.map(r => r.id === manageRoom.id
-          ? { ...r, member_codes: res.data.member_codes, member_count: res.data.member_codes.length }
-          : r))
+        setRooms(prev => prev.map(r => r.id === manageRoom.id ? { ...r, member_codes: res.data.member_codes, member_count: res.data.member_codes.length } : r))
       }
     } catch (err) {
       const detail = err.response?.data?.detail
@@ -602,12 +704,9 @@ export default function Chat() {
     const name = renameName.trim()
     if (!name) { setManageError('Tên phòng không được để trống.'); return }
     setManaging(true)
-    setManageError('')
     try {
       await renameChatRoom(manageRoom.id, name)
-      setRooms(prev => prev.map(r => r.id === manageRoom.id
-        ? { ...r, name, department: r.type === 'department' ? name : r.department }
-        : r))
+      setRooms(prev => prev.map(r => r.id === manageRoom.id ? { ...r, name, department: r.type === 'department' ? name : r.department } : r))
       setManageRoom(null)
     } catch (err) {
       const detail = err.response?.data?.detail
@@ -636,26 +735,6 @@ export default function Chat() {
     }
   }
 
-  // ─── Ghim / bỏ ghim tin nhắn ──────────────────────────────────
-  const handleTogglePin = async (m) => {
-    if (!m || pinBusy) return
-    setPinBusy(m.id)
-    try {
-      if (m.is_pinned) {
-        await unpinChatMessage(m.id)
-      } else {
-        await pinChatMessage(m.id)
-      }
-      setMessages(prev => prev.map(x => x.id === m.id ? { ...x, is_pinned: !m.is_pinned } : x))
-    } catch (err) {
-      const detail = err.response?.data?.detail
-      window.alert(typeof detail === 'string' ? detail : 'Không thể thao tác ghim tin nhắn.')
-    } finally {
-      setPinBusy(null)
-    }
-  }
-
-  // Đóng preview khi nhấn phím Escape
   useEffect(() => {
     if (!preview) return
     const onKey = (e) => { if (e.key === 'Escape') setPreview(null) }
@@ -663,21 +742,11 @@ export default function Chat() {
     return () => window.removeEventListener('keydown', onKey)
   }, [preview])
 
-  const activeRoom = rooms.find(r => r.id === activeRoomId)
-  const deptRooms = rooms.filter(r => r.type === 'department')
-  const groupRooms = rooms.filter(r => r.type === 'group')
-  const directRooms = rooms.filter(r => r.type === 'direct')
-
   const renderRoomItem = (room) => {
     const last = room.last_message
-    const lastContent = last
-      ? (last.sender_id === userCode ? 'Bạn: ' : '')
-        + (last.content || (last.attachment_url ? `📎 ${attachmentFileName(last)}` : ''))
-      : 'Chưa có tin nhắn'
+    const lastContent = last ? (last.sender_id === userCode ? 'Bạn: ' : '') + (last.content || (last.attachment_url ? `📎 ${attachmentFileName(last)}` : '')) : 'Chưa có tin nhắn'
     const isDirect = room.type === 'direct'
-    const otherOnline = isDirect
-      ? (room.member_codes || []).filter(c => c !== userCode).some(c => onlineUsers.includes(c))
-      : false
+    const otherOnline = isDirect ? (room.member_codes || []).filter(c => c !== userCode).some(c => onlineUsers.includes(c)) : false
     return (
       <button
         key={room.id}
@@ -687,9 +756,7 @@ export default function Chat() {
         <div className={`chat-avatar ${room.type === 'group' ? 'group' : room.type === 'department' ? 'dept' : ''}`}>
           {room.type === 'group' ? <Users size={17} /> : room.type === 'department' ? <Building2 size={17} /> : <UserIcon size={17} />}
         </div>
-        {newMessageRooms.has(room.id) && activeRoomId !== room.id && (
-          <span className="chat-new-bubble" title="Có tin mới"></span>
-        )}
+        {newMessageRooms.has(room.id) && activeRoomId !== room.id && <span className="chat-new-bubble" title="Có tin mới"></span>}
         <div className="chat-room-meta">
           <div className="chat-room-name">
             {room.type === 'direct' && <PresenceDot online={otherOnline} />}
@@ -697,9 +764,7 @@ export default function Chat() {
             {room.type === 'department' && <span className="chat-room-tag">Phòng ban</span>}
             {room.type === 'group' && <span className="chat-room-tag">Nhóm</span>}
           </div>
-          <div className="chat-room-last">
-            {last ? lastContent : 'Chưa có tin nhắn'}
-          </div>
+          <div className="chat-room-last">{last ? lastContent : 'Chưa có tin nhắn'}</div>
         </div>
         {last && <div className="chat-room-time">{formatDay(last.created_at)}</div>}
       </button>
@@ -715,26 +780,18 @@ export default function Chat() {
             <MessageSquare size={18} />
             <span>Chat nội bộ</span>
           </div>
-          <button className="chat-icon-btn" onClick={() => setShowCreate(true)} title="Tạo phòng chat">
-            <Plus size={18} />
-          </button>
+          <button className="chat-icon-btn" onClick={() => setShowCreate(true)} title="Tạo phòng chat"><Plus size={18} /></button>
         </div>
 
         <div className="chat-rooms-list">
-          {loadingRooms && (
-            <div className="chat-loading"><Loader2 size={18} className="chat-spin" /> Đang tải phòng...</div>
-          )}
-
+          {loadingRooms && <div className="chat-loading"><Loader2 size={18} className="chat-spin" /> Đang tải phòng...</div>}
           {!loadingRooms && rooms.length === 0 && (
             <div className="chat-empty">
               <MessageCircle size={32} />
               <p>Chưa có phòng chat nào.</p>
-              <button className="chat-btn-primary" onClick={() => setShowCreate(true)}>
-                <Plus size={15} /> Tạo phòng chat
-              </button>
+              <button className="chat-btn-primary" onClick={() => setShowCreate(true)}><Plus size={15} /> Tạo phòng chat</button>
             </div>
           )}
-
           {deptRooms.length > 0 && <div className="chat-section-label">Phòng ban</div>}
           {deptRooms.map(renderRoomItem)}
           {groupRooms.length > 0 && <div className="chat-section-label">Nhóm</div>}
@@ -750,9 +807,7 @@ export default function Chat() {
           <div className="chat-window-empty">
             <MessageSquare size={48} />
             <p>Chọn một phòng chat để bắt đầu trò chuyện</p>
-            <button className="chat-btn-primary" onClick={() => setShowCreate(true)}>
-              <Plus size={15} /> Tạo phòng chat
-            </button>
+            <button className="chat-btn-primary" onClick={() => setShowCreate(true)}><Plus size={15} /> Tạo phòng chat</button>
           </div>
         ) : (
           <>
@@ -828,146 +883,30 @@ export default function Chat() {
                 const mine = m.sender_id === userCode
                 const showDay = i === 0 || !isSameDay(messages[i - 1].created_at, m.created_at)
                 return (
-                  <React.Fragment key={m.id}>
-                    {showDay && (
-                      <div className="chat-day-sep">
-                        <span>{formatDay(m.created_at)}</span>
-                      </div>
-                    )}
-                    <div className={`chat-msg${mine ? ' mine' : ''}`}>
-                      <div className="chat-bubble">
-                        {!mine && <div className="chat-msg-sender">{displayNameOf(m.sender_id)}</div>}
-                        {m.content && <div className="chat-msg-text">{m.content}</div>}
-                        {m.attachment_url && isImageType(m.attachment_type) ? (
-                          <button
-                            type="button"
-                            className="chat-msg-img-btn"
-                            onClick={() => setPreview({ url: m.attachment_url, name: attachmentFileName(m), type: m.attachment_type })}
-                            title="Xem ảnh"
-                          >
-                            <img
-                              className="chat-msg-img"
-                              src={m.attachment_url}
-                              alt={attachmentFileName(m)}
-                              loading="lazy"
-                            />
-                          </button>
-                        ) : (
-                          m.attachment_url && (
-                            <a
-                              className="chat-msg-attach"
-                              href={m.attachment_url}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              <span className="chat-file-card">
-                                <span className="chat-file-icon">
-                                  {(() => {
-                                    const t = (m.attachment_type || '').toLowerCase()
-                                    if (t === 'pdf') return <FileText size={22} />
-                                    if (t === 'xlsx' || t === 'xls') return <FileSpreadsheet size={22} />
-                                    if (t === 'doc' || t === 'docx') return <FileText size={22} />
-                                    return <FileIcon size={22} />
-                                  })()}
-                                </span>
-                                <span className="chat-file-meta">
-                                  <span className="chat-file-name">{attachmentFileName(m)}</span>
-                                  <span className="chat-file-size">
-                                    {formatFileSize(m.attachment_size)}
-                                    {m.attachment_type ? ` · ${m.attachment_type.toUpperCase()}` : ''}
-                                  </span>
-                                </span>
-                              </span>
-                            </a>
-                          )
-                        )}
-                      </div>
-                      <div className="chat-msg-meta">
-                        {m.is_pinned && <span className="chat-msg-pinned-flag" title="Tin nhắn đã ghim"><Pin size={11} /></span>}
-                        <span className="chat-msg-time">{formatDayShort(m.created_at)} · {formatTime(m.created_at)}</span>
-                        <button
-                          type="button"
-                          className={`chat-msg-pin${m.is_pinned ? ' active' : ''}`}
-                          onClick={() => handleTogglePin(m)}
-                          disabled={pinBusy === m.id}
-                          title={m.is_pinned ? 'Bỏ ghim tin nhắn' : 'Ghim tin nhắn quan trọng'}
-                        >
-                          {pinBusy === m.id
-                            ? <Loader2 size={13} className="chat-spin" />
-                            : (m.is_pinned ? <PinOff size={13} /> : <Pin size={13} />)}
-                        </button>
-                      </div>
-                    </div>
-                  </React.Fragment>
+                  <MessageItem
+                    key={m.id}
+                    m={m}
+                    mine={mine}
+                    showDay={showDay}
+                    pinBusy={pinBusy}
+                    handleTogglePin={handleTogglePin}
+                    setPreview={setPreview}
+                    senderName={displayNameOf(m.sender_id)}
+                  />
                 )
               })}
             </div>
 
-            {(attachment || uploading) && (
-              <div className="chat-pending-attach">
-                {attachment && isImageType(attachment.type) && (
-                  <img className="chat-pending-thumb" src={attachment.url} alt="" />
-                )}
-                <span className="chat-pending-icon">
-                  {attachment && !isImageType(attachment.type) && (
-                    (() => {
-                      const t = (attachment.type || '').toLowerCase()
-                      if (t === 'pdf') return <FileText size={18} />
-                      if (t === 'xlsx' || t === 'xls') return <FileSpreadsheet size={18} />
-                      return <FileIcon size={18} />
-                    })()
-                  )}
-                  {uploading && !attachment && <Loader2 size={18} className="chat-spin" />}
-                </span>
-                <div className="chat-pending-meta">
-                  <span className="chat-pending-name">
-                    {uploading && !attachment ? 'Đang tải file lên...' : attachment.name}
-                  </span>
-                  {attachment && <span className="chat-pending-size">{formatFileSize(attachment.size)}</span>}
-                </div>
-                {!uploading && (
-                  <button type="button" className="chat-pending-remove" onClick={() => setAttachment(null)} title="Bỏ đính kèm">
-                    <X size={16} />
-                  </button>
-                )}
-              </div>
-            )}
-            <form className="chat-input-bar" onSubmit={sendMessage}>
-              <button
-                type="button"
-                className="chat-attach-btn"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={wsStatus !== 'open' || uploading}
-                title="Đính kèm ảnh / PDF / Excel"
-              >
-                <Paperclip size={18} />
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".jpg,.jpeg,.png,.webp,.xlsx,.pdf,.doc,.docx,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                hidden
-                onChange={handleFileChange}
-              />
-              <input
-                className="chat-input-text"
-                type="text"
-                value={text}
-                onChange={e => setText(e.target.value)}
-                onPaste={handlePaste}
-                placeholder="Nhập tin nhắn... (Ctrl+V để dán ảnh)"
-                disabled={wsStatus !== 'open'}
-              />
-              <button
-                type="submit"
-                className="chat-send-btn"
-                disabled={wsStatus !== 'open' || uploading || (!text.trim() && !attachment)}
-                title="Gửi tin nhắn"
-              >
-                <Send size={18} />
-              </button>
-            </form>
-            {attachError && <div className="chat-attach-error">{attachError}</div>}
+            <ChatInput
+              wsStatus={wsStatus}
+              uploading={uploading}
+              attachment={attachment}
+              setAttachment={setAttachment}
+              onFileChange={handleFileChange}
+              handlePaste={handlePaste}
+              onSend={handleSend}
+              attachError={attachError}
+            />
             {wsStatus !== 'open' && (
               <div className="chat-offline">Kết nối chat đang mất — hệ thống đang tự kết nối lại...</div>
             )}
@@ -975,7 +914,7 @@ export default function Chat() {
         )}
       </section>
 
-      {/* ── Create room modal ── */}
+      {/* ── Modals (Dữ nguyên logic và cấu trúc UI) ── */}
       {showCreate && (
         <>
           <div className="chat-modal-overlay" onClick={() => setShowCreate(false)} />
@@ -983,46 +922,21 @@ export default function Chat() {
             <div className="chat-modal-header">
               <div>
                 <div className="chat-modal-title">Tạo phòng chat</div>
-                <div className="chat-modal-sub">
-                  {canCreateDeptRoom ? 'Chọn loại phòng: 1-1, nhóm hoặc phòng ban' : 'Chọn loại phòng và thành viên'}
-                </div>
+                <div className="chat-modal-sub">{canCreateDeptRoom ? 'Chọn loại phòng: 1-1, nhóm hoặc phòng ban' : 'Chọn loại phòng và thành viên'}</div>
               </div>
               <button className="chat-icon-btn" onClick={() => setShowCreate(false)}><X size={18} /></button>
             </div>
-
             <div className="chat-modal-body">
               <div className={`chat-type-tabs${canCreateDeptRoom ? ' three' : ''}`}>
-                <button
-                  className={`chat-type-tab${roomType === 'direct' ? ' active' : ''}`}
-                  onClick={() => setRoomType('direct')}
-                >
-                  <UserIcon size={16} /> 1-1 (Direct)
-                </button>
-                <button
-                  className={`chat-type-tab${roomType === 'group' ? ' active' : ''}`}
-                  onClick={() => setRoomType('group')}
-                >
-                  <Users size={16} /> Nhóm (Group)
-                </button>
-                {canCreateDeptRoom && (
-                  <button
-                    className={`chat-type-tab${roomType === 'department' ? ' active' : ''}`}
-                    onClick={() => setRoomType('department')}
-                  >
-                    <Building2 size={16} /> Phòng ban
-                  </button>
-                )}
+                <button className={`chat-type-tab${roomType === 'direct' ? ' active' : ''}`} onClick={() => setRoomType('direct')}><UserIcon size={16} /> 1-1</button>
+                <button className={`chat-type-tab${roomType === 'group' ? ' active' : ''}`} onClick={() => setRoomType('group')}><Users size={16} /> Nhóm</button>
+                {canCreateDeptRoom && <button className={`chat-type-tab${roomType === 'department' ? ' active' : ''}`} onClick={() => setRoomType('department')}><Building2 size={16} /> Phòng ban</button>}
               </div>
 
               {roomType === 'group' && (
                 <div className="chat-field">
                   <label>Tên nhóm</label>
-                  <input
-                    type="text"
-                    value={groupName}
-                    onChange={e => setGroupName(e.target.value)}
-                    placeholder="VD: Phòng IT, Dự án ABC..."
-                  />
+                  <input type="text" value={groupName} onChange={e => setGroupName(e.target.value)} placeholder="VD: Phòng IT, Dự án ABC..." />
                 </div>
               )}
 
@@ -1030,52 +944,28 @@ export default function Chat() {
                 <div className="chat-field">
                   <label>Chọn phòng ban</label>
                   {isAdmin ? (
-                    <select
-                      className="chat-field-select"
-                      value={deptSelect}
-                      onChange={e => setDeptSelect(e.target.value)}
-                    >
-                      {departments.map(d => (
-                        <option key={d.name} value={d.name}>{d.name}</option>
-                      ))}
+                    <select className="chat-field-select" value={deptSelect} onChange={e => setDeptSelect(e.target.value)}>
+                      {departments.map(d => <option key={d.name} value={d.name}>{d.name}</option>)}
                     </select>
                   ) : (
-                    <div className="chat-dept-fixed">
-                      <Building2 size={16} />
-                      <span>{userDept}</span>
-                    </div>
+                    <div className="chat-dept-fixed"><Building2 size={16} /><span>{userDept}</span></div>
                   )}
-                  <div className="chat-dept-hint">
-                    Toàn bộ nhân viên của phòng ban sẽ tự động tham gia phòng này. Chỉ admin và trưởng phòng mới quản lý được phòng.
-                  </div>
+                  <div className="chat-dept-hint">Toàn bộ nhân viên của phòng ban sẽ tự động tham gia phòng này.</div>
                 </div>
               )}
 
               {roomType !== 'department' && (
                 <div className="chat-field">
-                  <label>
-                    {roomType === 'direct'
-                      ? 'Chọn 1 đồng nghiệp'
-                      : `Chọn thành viên (đã chọn ${selectedCodes.length})`}
-                  </label>
+                  <label>{roomType === 'direct' ? 'Chọn 1 đồng nghiệp' : `Chọn thành viên (đã chọn ${selectedCodes.length})`}</label>
                   <div className="chat-emp-search">
                     <Search size={15} />
-                    <input
-                      type="text"
-                      value={empSearch}
-                      onChange={e => setEmpSearch(e.target.value)}
-                      placeholder="Tìm theo tên / mã NV / phòng ban..."
-                    />
+                    <input type="text" value={empSearch} onChange={e => setEmpSearch(e.target.value)} placeholder="Tìm theo tên / mã NV / phòng ban..." />
                   </div>
                   <div className="chat-emp-list">
                     {availableEmps.map(emp => {
                       const sel = selectedCodes.includes(emp.employee_code)
                       return (
-                        <button
-                          key={emp.employee_code}
-                          className={`chat-emp-item${sel ? ' selected' : ''}`}
-                          onClick={() => toggleSelect(emp.employee_code)}
-                        >
+                        <button key={emp.employee_code} className={`chat-emp-item${sel ? ' selected' : ''}`} onClick={() => toggleSelect(emp.employee_code)}>
                           <span className="chat-emp-check">{sel ? '✓' : ''}</span>
                           <span className="chat-emp-name">
                             <PresenceDot online={onlineUsers.includes(emp.employee_code)} />
@@ -1086,16 +976,12 @@ export default function Chat() {
                         </button>
                       )
                     })}
-                    {availableEmps.length === 0 && (
-                      <div className="chat-empty">Không tìm thấy nhân viên phù hợp.</div>
-                    )}
+                    {availableEmps.length === 0 && <div className="chat-empty">Không tìm thấy nhân viên.</div>}
                   </div>
                 </div>
               )}
-
               {createError && <div className="chat-error">{createError}</div>}
             </div>
-
             <div className="chat-modal-footer">
               <button className="chat-btn-secondary" onClick={() => setShowCreate(false)}>Huỷ</button>
               <button className="chat-btn-primary" onClick={handleCreateRoom} disabled={creating}>
@@ -1106,7 +992,6 @@ export default function Chat() {
         </>
       )}
 
-      {/* ── Manage room modal (admin / trưởng phòng / chủ nhóm) ── */}
       {manageRoom && (
         <>
           <div className="chat-modal-overlay" onClick={() => setManageRoom(null)} />
@@ -1118,21 +1003,10 @@ export default function Chat() {
               </div>
               <button className="chat-icon-btn" onClick={() => setManageRoom(null)}><X size={18} /></button>
             </div>
-
             <div className="chat-modal-body">
               <div className="chat-manage-tabs">
-                <button
-                  className={`chat-manage-tab${manageTab === 'members' ? ' active' : ''}`}
-                  onClick={() => setManageTab('members')}
-                >
-                  <Users size={15} /> Thành viên ({memberList.length})
-                </button>
-                <button
-                  className={`chat-manage-tab${manageTab === 'settings' ? ' active' : ''}`}
-                  onClick={() => setManageTab('settings')}
-                >
-                  <Settings size={15} /> Cài đặt
-                </button>
+                <button className={`chat-manage-tab${manageTab === 'members' ? ' active' : ''}`} onClick={() => setManageTab('members')}><Users size={15} /> Thành viên ({memberList.length})</button>
+                <button className={`chat-manage-tab${manageTab === 'settings' ? ' active' : ''}`} onClick={() => setManageTab('settings')}><Settings size={15} /> Cài đặt</button>
               </div>
 
               {manageTab === 'members' && (
@@ -1142,44 +1016,26 @@ export default function Chat() {
                       <label>Thêm thành viên</label>
                       <div className="chat-emp-search">
                         <Search size={15} />
-                        <input
-                          type="text"
-                          value={memberSearch}
-                          onChange={e => setMemberSearch(e.target.value)}
-                          placeholder="Tìm theo tên / mã NV / phòng ban..."
-                        />
+                        <input type="text" value={memberSearch} onChange={e => setMemberSearch(e.target.value)} placeholder="Tìm..." />
                       </div>
                       <div className="chat-emp-list chat-emp-list-sm">
                         {addableEmps.map(emp => {
                           const sel = selectedCodes.includes(emp.employee_code)
                           return (
-                            <button
-                              key={emp.employee_code}
-                              className={`chat-emp-item${sel ? ' selected' : ''}`}
-                              onClick={() => toggleAddMember(emp.employee_code)}
-                            >
+                            <button key={emp.employee_code} className={`chat-emp-item${sel ? ' selected' : ''}`} onClick={() => toggleSelect(emp.employee_code)}>
                               <span className="chat-emp-check">{sel ? '✓' : ''}</span>
                               <span className="chat-emp-name">
                                 <PresenceDot online={onlineUsers.includes(emp.employee_code)} />
                                 {emp.full_name || emp.employee_code}
                                 {emp.employee_code && <span className="chat-emp-code">{emp.employee_code}</span>}
                               </span>
-                              <span className="chat-emp-dept">{emp.department || ''}</span>
                             </button>
                           )
                         })}
-                        {addableEmps.length === 0 && (
-                          <div className="chat-empty">Không còn nhân viên nào để thêm.</div>
-                        )}
                       </div>
                       {selectedCodes.length > 0 && (
-                        <button
-                          className="chat-btn-primary chat-btn-block"
-                          onClick={handleAddMembers}
-                          disabled={managing}
-                        >
-                          {managing ? <Loader2 size={15} className="chat-spin" /> : <UserPlus size={15} />}
-                          Thêm {selectedCodes.length} thành viên
+                        <button className="chat-btn-primary chat-btn-block" onClick={handleAddMembers} disabled={managing}>
+                          {managing ? <Loader2 size={15} className="chat-spin" /> : <UserPlus size={15} />} Thêm {selectedCodes.length} người
                         </button>
                       )}
                     </div>
@@ -1188,14 +1044,9 @@ export default function Chat() {
                   <div className="chat-field">
                     <label>Danh sách thành viên</label>
                     <div className="chat-members-list">
-                      {memberList.length === 0 && (
-                        <div className="chat-empty">Đang tải thành viên...</div>
-                      )}
                       {memberList.map(m => (
                         <div className="chat-member-item" key={m.employee_code}>
-                          <span className="chat-member-avatar">
-                            {(m.full_name || m.employee_code || '?').charAt(0).toUpperCase()}
-                          </span>
+                          <span className="chat-member-avatar">{(m.full_name || m.employee_code || '?').charAt(0).toUpperCase()}</span>
                           <div className="chat-member-info">
                             <span className="chat-member-name">
                               <PresenceDot online={onlineUsers.includes(m.employee_code)} />
@@ -1206,14 +1057,7 @@ export default function Chat() {
                             <span className="chat-member-dept">{m.department || ''}</span>
                           </div>
                           {manageRoom.type === 'group' && !m.is_owner && (
-                            <button
-                              className="chat-member-remove"
-                              onClick={() => handleRemoveMember(m)}
-                              disabled={managing}
-                              title="Xoá khỏi nhóm"
-                            >
-                              <Trash2 size={15} />
-                            </button>
+                            <button className="chat-member-remove" onClick={() => handleRemoveMember(m)} disabled={managing} title="Xoá"><Trash2 size={15} /></button>
                           )}
                         </div>
                       ))}
@@ -1226,28 +1070,12 @@ export default function Chat() {
                 <>
                   <div className="chat-field">
                     <label>Tên phòng</label>
-                    <input
-                      type="text"
-                      value={renameName}
-                      onChange={e => setRenameName(e.target.value)}
-                      placeholder="Nhập tên phòng..."
-                    />
+                    <input type="text" value={renameName} onChange={e => setRenameName(e.target.value)} placeholder="Nhập tên phòng..." />
                   </div>
                   {manageError && <div className="chat-error">{manageError}</div>}
                   <div className="chat-manage-actions">
-                    <button
-                      className="chat-btn-secondary chat-btn-danger"
-                      onClick={() => { setManageRoom(null); setDeleteTarget(manageRoom) }}
-                    >
-                      <Trash2 size={15} /> Xoá phòng
-                    </button>
-                    <button
-                      className="chat-btn-primary"
-                      onClick={handleRename}
-                      disabled={managing}
-                    >
-                      {managing ? <Loader2 size={15} className="chat-spin" /> : <Pencil size={15} />} Lưu tên
-                    </button>
+                    <button className="chat-btn-secondary chat-btn-danger" onClick={() => { setManageRoom(null); setDeleteTarget(manageRoom) }}><Trash2 size={15} /> Xoá phòng</button>
+                    <button className="chat-btn-primary" onClick={handleRename} disabled={managing}>{managing ? <Loader2 size={15} className="chat-spin" /> : <Pencil size={15} />} Lưu tên</button>
                   </div>
                 </>
               )}
@@ -1256,35 +1084,22 @@ export default function Chat() {
         </>
       )}
 
-      {/* ── Delete confirm modal ── */}
       {deleteTarget && (
         <>
           <div className="chat-modal-overlay" onClick={() => setDeleteTarget(null)} />
           <div className="chat-modal chat-confirm-modal">
             <div className="chat-modal-body">
-              <div className="chat-confirm-title">
-                <Trash2 size={20} /> Xoá phòng chat
-              </div>
-              <p className="chat-confirm-text">
-                Bạn có chắc muốn xoá phòng <strong>{roomDisplayName(deleteTarget)}</strong>?
-                Toàn bộ tin nhắn trong phòng sẽ bị xoá vĩnh viễn. Hành động này không thể hoàn tác.
-              </p>
+              <div className="chat-confirm-title"><Trash2 size={20} /> Xoá phòng chat</div>
+              <p className="chat-confirm-text">Bạn có chắc muốn xoá phòng <strong>{roomDisplayName(deleteTarget)}</strong>? Hành động này không thể hoàn tác.</p>
             </div>
             <div className="chat-modal-footer">
               <button className="chat-btn-secondary" onClick={() => setDeleteTarget(null)}>Huỷ</button>
-              <button
-                className="chat-btn-danger-solid"
-                onClick={handleDeleteRoom}
-                disabled={deleting}
-              >
-                {deleting ? <Loader2 size={15} className="chat-spin" /> : <Trash2 size={15} />} Xoá
-              </button>
+              <button className="chat-btn-danger-solid" onClick={handleDeleteRoom} disabled={deleting}>{deleting ? <Loader2 size={15} className="chat-spin" /> : <Trash2 size={15} />} Xoá</button>
             </div>
           </div>
         </>
       )}
 
-      {/* ── Pinned messages list modal ── */}
       {showPinsList && (
         <>
           <div className="chat-modal-overlay" onClick={() => setShowPinsList(false)} />
@@ -1292,14 +1107,10 @@ export default function Chat() {
             <div className="chat-modal-header">
               <div>
                 <div className="chat-modal-title"><Pin size={15} /> Tin nhắn đã ghim</div>
-                <div className="chat-modal-sub">{roomDisplayName(activeRoom)} — {pinnedMessages.length} tin ghim</div>
               </div>
               <button className="chat-icon-btn" onClick={() => setShowPinsList(false)}><X size={18} /></button>
             </div>
             <div className="chat-modal-body">
-              {pinnedMessages.length === 0 && (
-                <div className="chat-empty-mid">Chưa có tin nhắn nào được ghim.</div>
-              )}
               <div className="chat-pins-list">
                 {pinnedMessages.map(p => (
                   <div className="chat-pins-item" key={p.id}>
@@ -1311,26 +1122,15 @@ export default function Chat() {
                       </div>
                       <div className="chat-pins-text">{p.content || '📎 file đính kèm'}</div>
                     </div>
-                    <button
-                      className="chat-pins-unpin"
-                      onClick={() => handleTogglePin(p)}
-                      disabled={pinBusy === p.id}
-                      title="Bỏ ghim"
-                    >
-                      {pinBusy === p.id ? <Loader2 size={15} className="chat-spin" /> : <PinOff size={15} />}
-                    </button>
+                    <button className="chat-pins-unpin" onClick={() => handleTogglePin(p)} disabled={pinBusy === p.id}><PinOff size={15} /></button>
                   </div>
                 ))}
               </div>
-            </div>
-            <div className="chat-modal-footer">
-              <button className="chat-btn-secondary" onClick={() => setShowPinsList(false)}>Đóng</button>
             </div>
           </div>
         </>
       )}
 
-      {/* ── Lightbox xem ảnh ── */}
       {preview && (
         <>
           <div className="chat-lightbox-overlay" onClick={() => setPreview(null)} />
@@ -1338,26 +1138,9 @@ export default function Chat() {
             <div className="chat-lightbox-header">
               <span className="chat-lightbox-name" title={preview.name}>{preview.name}</span>
               <div className="chat-lightbox-actions">
-                <a
-                  className="chat-lightbox-btn"
-                  href={preview.url}
-                  download={preview.name}
-                  title="Tải xuống"
-                >
-                  <Download size={16} />
-                </a>
-                <a
-                  className="chat-lightbox-btn"
-                  href={preview.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  title="Mở trong tab mới"
-                >
-                  <ExternalLink size={16} />
-                </a>
-                <button className="chat-lightbox-btn" onClick={() => setPreview(null)} title="Đóng (Esc)">
-                  <X size={18} />
-                </button>
+                <a className="chat-lightbox-btn" href={preview.url} download={preview.name} title="Tải xuống"><Download size={16} /></a>
+                <a className="chat-lightbox-btn" href={preview.url} target="_blank" rel="noreferrer" title="Mở trong tab mới"><ExternalLink size={16} /></a>
+                <button className="chat-lightbox-btn" onClick={() => setPreview(null)}><X size={18} /></button>
               </div>
             </div>
             <div className="chat-lightbox-body" onClick={() => setPreview(null)}>

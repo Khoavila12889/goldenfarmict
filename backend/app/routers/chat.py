@@ -500,6 +500,7 @@ def chat_contacts(
                     "full_name": r.full_name,
                     "department": r.department,
                     "position": r.position,
+                    "status": r.status or "active",
                     "online": r.employee_code in online,
                 }
                 for r in rows

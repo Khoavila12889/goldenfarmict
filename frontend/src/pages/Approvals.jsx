@@ -2,7 +2,7 @@
 import {
   listApprovalRequests, getPendingApprovals, getApprovalRequest,
   createApprovalRequest, submitApprovalRequest, cancelApprovalRequest,
-  approveRequest, rejectRequest, getWorkflows,
+  approveRequest, rejectRequest, getWorkflows, apiUrl,
 } from '../services/api'
 import { formatDate } from '../utils/date'
 import {
@@ -24,6 +24,7 @@ const STATUS_MAP = {
 export default function Approvals() {
   const userCode = sessionStorage.getItem('user_code')
   const userRole = sessionStorage.getItem('user_role')
+  const token = sessionStorage.getItem('token') || ''
   const isAdmin = userRole === 'admin'
 
   const [activeTab, setActiveTab] = useState('my')
@@ -65,6 +66,40 @@ export default function Approvals() {
     if (activeTab === 'my') loadMy()
     else loadPending()
   }, [activeTab, loadMy, loadPending])
+
+  // Realtime: làm mới cả danh sách "của tôi" lẫn "cần duyệt" khi có sự kiện phê duyệt
+  useEffect(() => {
+    let es = null
+    let reconnectTimer = null
+    const reload = () => {
+      loadMy()
+      loadPending()
+      if (selectedReq?.id) {
+        getApprovalRequest(selectedReq.id)
+          .then(r => setReqDetail(r.data))
+          .catch(() => {})
+      }
+    }
+    function connect() {
+      try {
+        es = new EventSource(apiUrl(`/events${token ? `?token=${token}` : ''}`))
+        es.addEventListener('request_submitted', reload)
+        es.addEventListener('request_approved', reload)
+        es.addEventListener('request_rejected', reload)
+        es.onerror = () => {
+          if (es) es.close()
+          reconnectTimer = setTimeout(connect, 3000)
+        }
+      } catch (_) {
+        reconnectTimer = setTimeout(connect, 3000)
+      }
+    }
+    connect()
+    return () => {
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      if (es) es.close()
+    }
+  }, [loadMy, loadPending, selectedReq?.id, token])
 
   function showMsg(text) {
     setMsg(text)

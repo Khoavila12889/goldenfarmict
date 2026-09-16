@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { CalendarOff, Plus, RefreshCw } from 'lucide-react'
-import { listApprovalRequests, getEmployeeByCode } from '../services/api'
+import { listApprovalRequests, getEmployeeByCode, apiUrl } from '../services/api'
 import LeaveRequestDialog from '../components/booking/LeaveRequestDialog'
 import { formatDate } from '../utils/date'
 
@@ -23,6 +23,7 @@ function metaOf(r) {
 
 export default function NghiPhep() {
   const userCode = sessionStorage.getItem('user_code') || ''
+  const token = sessionStorage.getItem('token') || ''
   const [employee, setEmployee] = useState(null)
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
@@ -45,6 +46,34 @@ export default function NghiPhep() {
       .catch(() => {})
     load()
   }, [userCode, load])
+
+  // Realtime: tự làm mới danh sách khi có sự kiện nghỉ phép (gửi mới / duyệt / từ chối)
+  useEffect(() => {
+    let es = null
+    let reconnectTimer = null
+
+    function connect() {
+      try {
+        es = new EventSource(apiUrl(`/events${token ? `?token=${token}` : ''}`))
+        const handleReload = () => load()
+        es.addEventListener('request_submitted', handleReload)
+        es.addEventListener('request_approved', handleReload)
+        es.addEventListener('request_rejected', handleReload)
+        es.onerror = () => {
+          if (es) es.close()
+          reconnectTimer = setTimeout(connect, 3000)
+        }
+      } catch (_) {
+        reconnectTimer = setTimeout(connect, 3000)
+      }
+    }
+
+    connect()
+    return () => {
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      if (es) es.close()
+    }
+  }, [load, token])
 
   function showMsg(text) {
     setMsg(text)

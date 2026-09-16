@@ -274,6 +274,28 @@ async def on_startup():
             sess.rollback()
             print(f"  → chat_rooms.owner_code migration: {e}")
 
+    # business_trips.approval_request_id — liên kết đơn nghỉ phép/công tác đã duyệt
+    # với bản ghi trên lịch (cần cho _materialize_trip_from_request).
+    with SessionLocal() as sess:
+        try:
+            sess.execute(text(
+                "ALTER TABLE business_trips "
+                "ADD COLUMN IF NOT EXISTS approval_request_id INTEGER DEFAULT 0"
+            ))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → business_trips.approval_request_id migration: {e}")
+        try:
+            sess.execute(text(
+                "ALTER TABLE business_trips "
+                "ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'business_trip'"
+            ))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → business_trips.type migration: {e}")
+
     # Seed default admin user if not exists
     session = SessionLocal()
     try:
