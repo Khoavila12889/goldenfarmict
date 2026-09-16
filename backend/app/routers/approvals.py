@@ -24,6 +24,34 @@ def _employee(code):
     )
 
 
+def _req_meta(req):
+    try:
+        return json.loads(req.get("metadata_json") or "{}") or {}
+    except Exception:
+        return {}
+
+
+def _req_event(req, extra=None):
+    """Payload SSE đủ để client patch UI ngay, không cần chờ refetch."""
+    meta = _req_meta(req)
+    data = {
+        "id": req.get("id"),
+        "title": req.get("title") or "",
+        "requester_code": req.get("requester_code") or "",
+        "requester_name": req.get("requester_name") or "",
+        "requester_dept": req.get("requester_dept") or "",
+        "kind": meta.get("kind") or "",
+        "start_date": meta.get("start_date") or "",
+        "end_date": meta.get("end_date") or "",
+        "session": meta.get("session") or "",
+        "reason": (meta.get("reason") or "")[:160],
+        "leave_type": meta.get("leave_type") or "",
+    }
+    if extra:
+        data.update(extra)
+    return data
+
+
 def _materialize_trip_from_request(req):
     """Khi đơn nghỉ phép / công tác được duyệt xong → ghi vào business_trips để hiện trên lịch & dashboard."""
     rid = req["id"]
@@ -33,6 +61,7 @@ def _materialize_trip_from_request(req):
         meta = {}
     kind = meta.get("kind", "")
     if kind not in ("leave", "business_trip"):
+        print(f"  → materialize skip request #{rid}: kind={kind!r}")
         return
     # Việc ghi nhận lịch (business_trips) là 1 side-effect hỗ trợ hiển thị.
     # Không được để lỗi ở đây làm hỏng luồng phê duyệt (đơn đã được duyệt xong).
@@ -42,24 +71,31 @@ def _materialize_trip_from_request(req):
             {"rid": rid}
         )
         if existing:
+            print(f"  → materialize skip request #{rid}: business_trips #{existing['id']} already exists")
             return
+        start_date = meta.get("start_date", "")
+        end_date = meta.get("end_date", "")
+        if not start_date or not end_date:
+            print(f"  → materialize warning request #{rid}: empty dates start={start_date!r} end={end_date!r}")
         insert(
-            "INSERT INTO business_trips (employee_code, full_name, department, destination, purpose, start_date, end_date, notes, status, type, approval_request_id) VALUES (:employee_code, :full_name, :department, :destination, :purpose, :start_date, :end_date, :notes, 'active', :type, :rid)",
+            "INSERT INTO business_trips (employee_code, full_name, department, destination, purpose, start_date, end_date, notes, status, type, approval_request_id) "
+            "VALUES (:employee_code, :full_name, :department, :destination, :purpose, :start_date, :end_date, :notes, 'active', :type, :rid)",
             {
                 "employee_code": meta.get("employee_code", ""),
                 "full_name": meta.get("full_name", "") or req.get("requester_name", ""),
                 "department": meta.get("department", "") or req.get("requester_dept", ""),
                 "destination": meta.get("destination", ""),
                 "purpose": meta.get("purpose", "") or req.get("description", ""),
-                "start_date": meta.get("start_date", ""),
-                "end_date": meta.get("end_date", ""),
+                "start_date": start_date,
+                "end_date": end_date,
                 "notes": json.dumps(meta, ensure_ascii=False),
                 "type": meta.get("kind", "business_trip"),
                 "rid": rid,
             }
         )
+        print(f"  → materialize trip from request #{rid}: OK (kind={kind}, start={start_date}, end={end_date})")
     except Exception as e:
-        print(f"  → materialize trip from request #{rid} failed: {e}")
+        print(f"  → materialize trip from request #{rid} FAILED: {e}")
         return
     publish_sync("trip_created", {"id": rid, "approval_request_id": rid})
 
@@ -368,7 +404,7 @@ def submit_request(req_id: int):
         "UPDATE approval_requests SET status='pending', updated_at=CURRENT_TIMESTAMP::text WHERE id=:id",
         {"id": req_id}
     )
-    publish_sync("request_submitted", {"id": req_id, "title": req["title"], "requester_code": req.get("requester_code", "")})
+    publish_sync("request_submitted", _req_event(req, {"status": "pending"}))
     return {"success": True}
 
 
@@ -411,12 +447,18 @@ def approve_request(req_id: int, body: dict):
             {"id": req_id}
         )
         _materialize_trip_from_request(req)
+        new_status = "approved"
     else:
         execute(
             "UPDATE approval_requests SET status='in_progress', current_step=:step, updated_at=CURRENT_TIMESTAMP::text WHERE id=:id",
             {"step": next_step, "id": req_id}
         )
-    publish_sync("request_approved", {"id": req_id, "title": req["title"], "requester_code": req.get("requester_code", ""), "approver_code": approver_code, "approver_name": emp["full_name"]})
+        new_status = "in_progress"
+    publish_sync("request_approved", _req_event(req, {
+        "status": new_status,
+        "approver_code": approver_code,
+        "approver_name": emp["full_name"],
+    }))
     return {"success": True}
 
 
@@ -441,5 +483,9 @@ def reject_request(req_id: int, body: dict):
         "UPDATE approval_requests SET status='rejected', updated_at=CURRENT_TIMESTAMP::text WHERE id=:id",
         {"id": req_id}
     )
-    publish_sync("request_rejected", {"id": req_id, "title": req["title"], "requester_code": req.get("requester_code", ""), "approver_code": approver_code, "approver_name": emp["full_name"]})
+    publish_sync("request_rejected", _req_event(req, {
+        "status": "rejected",
+        "approver_code": approver_code,
+        "approver_name": emp["full_name"],
+    }))
     return {"success": True}

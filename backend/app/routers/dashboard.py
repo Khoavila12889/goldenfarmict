@@ -31,13 +31,16 @@ def dashboard_stats(user_code: str = Query(""), user_role: str = Query("")):
 
     # Lọc danh sách công tác / nghỉ phép đang hoạt động hôm nay
     # Status active hoặc approved (hỗ trợ cả active và approved)
+    # Loại bỏ bản ghi có start_date hoặc end_date rỗng (không match với CURRENT_DATE)
     active_absences = fetchall(
         "SELECT bt.id, bt.employee_code, bt.destination, bt.purpose, bt.start_date, bt.end_date, bt.status, bt.type, "
         "COALESCE(e.full_name, bt.full_name) as full_name, "
         "COALESCE(e.department, bt.department) as department "
         "FROM business_trips bt "
         "LEFT JOIN employees e ON bt.employee_code = e.employee_code "
-        "WHERE bt.start_date <= CURRENT_DATE::text "
+        "WHERE bt.start_date IS NOT NULL AND bt.start_date != '' "
+        "AND bt.end_date IS NOT NULL AND bt.end_date != '' "
+        "AND bt.start_date <= CURRENT_DATE::text "
         "AND bt.end_date >= CURRENT_DATE::text "
         "AND bt.status IN ('active', 'approved') "
         "ORDER BY bt.start_date ASC"
@@ -67,12 +70,16 @@ def dashboard_stats(user_code: str = Query(""), user_role: str = Query("")):
     # - admin: toàn công ty
     # - head: chỉ nhân viên cùng phòng ban
     # - user: chỉ đơn của chính mình
+    #
+    # LƯU Ý: metadata_json::jsonb có thể fail nếu metadata_json rỗng/NULL/invalid JSON.
+    # → Dùng filter SQL an toàn, sau đó filter thêm ở Python.
     pending_sql = (
         "SELECT id, title, requester_code, requester_name, requester_dept, status, created_at, metadata_json "
         "FROM approval_requests "
         "WHERE status IN ('pending','in_progress') "
-        "AND metadata_json::jsonb ? 'kind' "
-        "AND metadata_json::jsonb->>'kind' IN ('leave','business_trip')"
+        "AND metadata_json IS NOT NULL "
+        "AND metadata_json != '' "
+        "AND metadata_json != 'null'"
     )
     pending_params = {}
 
@@ -99,6 +106,9 @@ def dashboard_stats(user_code: str = Query(""), user_role: str = Query("")):
             meta = json.loads(p.get("metadata_json") or "{}")
         except Exception:
             meta = {}
+        kind = meta.get("kind", "")
+        if kind not in ("leave", "business_trip"):
+            continue
         code = p.get("requester_code", "")
         if code:
             seen_emps.add(code)
@@ -107,7 +117,7 @@ def dashboard_stats(user_code: str = Query(""), user_role: str = Query("")):
             "employee_code": code,
             "full_name": p.get("requester_name") or "",
             "department": p.get("requester_dept") or "",
-            "kind": meta.get("kind", ""),
+            "kind": kind,
             "title": p.get("title") or "",
             "start_date": meta.get("start_date", ""),
             "end_date": meta.get("end_date", ""),

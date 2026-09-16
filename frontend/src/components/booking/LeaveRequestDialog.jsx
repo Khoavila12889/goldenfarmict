@@ -26,7 +26,7 @@ export default function LeaveRequestDialog({ isOpen, onClose, onSuccess, employe
     leave_type: 'annual',
     start_date: new Date().toISOString().split('T')[0],
     end_date: new Date().toISOString().split('T')[0],
-    session: 'full', // 'full' | 'morning' | 'afternoon' | 'hourly'
+    session: 'full_day', // 'full_day' | 'morning' | 'afternoon' | 'hourly'
     start_time: '08:00',
     end_time: '09:00',
     hours: 1,
@@ -80,7 +80,7 @@ export default function LeaveRequestDialog({ isOpen, onClose, onSuccess, employe
       const sessionText = formData.session === 'morning' ? ' (Buổi sáng)'
         : formData.session === 'afternoon' ? ' (Buổi chiều)'
         : formData.session === 'hourly' ? ` (Nghỉ ${computedHours} tiếng: ${formData.start_time} → ${formData.end_time})`
-        : ''
+        : ' (Cả ngày)'
       const handover = colleagues.find(c => c.employee_code === formData.handover_code)
 
       const description = [
@@ -194,7 +194,7 @@ export default function LeaveRequestDialog({ isOpen, onClose, onSuccess, employe
             <label style={labelStyle}>Khung thời gian nghỉ</label>
             <div style={{ display: 'flex', gap: '1rem', marginTop: '0.2rem' }}>
               {[
-                { id: 'full', label: 'Cả ngày' },
+                { id: 'full_day', label: 'Cả ngày' },
                 { id: 'morning', label: 'Buổi sáng' },
                 { id: 'afternoon', label: 'Buổi chiều' },
                 { id: 'hourly', label: '⏰ Theo giờ' },

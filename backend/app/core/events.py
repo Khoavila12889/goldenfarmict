@@ -44,12 +44,16 @@ def publish_sync(event: str, data: dict):
     asyncio.run_coroutine_threadsafe(publish(event, data), _loop)
 
 
-async def event_generator():
+async def event_generator(heartbeat_sec: float = 20.0):
+    """Yield SSE payloads. Comment pings keep proxies/browsers from dropping idle connections."""
     q = subscribe()
     try:
         while True:
-            msg = await q.get()
-            yield msg
+            try:
+                msg = await asyncio.wait_for(q.get(), timeout=heartbeat_sec)
+                yield msg
+            except asyncio.TimeoutError:
+                yield ": ping\n\n"
     except asyncio.CancelledError:
         pass
     finally:
