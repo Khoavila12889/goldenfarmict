@@ -658,6 +658,70 @@ export default function Dashboard() {
       )}
 
       <div className="kanban-grid">
+        {/* Widget: NV Đi công tác hôm nay (hiển thị cho tất cả user) */}
+        <div style={kanbanColStyle}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <h3 style={{ ...kanbanTitleStyle, margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              🧳 Nhân viên đi công tác
+            </h3>
+            <span style={countBadge(stats?.trips_today?.length || 0, '#0284c7')}>{stats?.trips_today?.length || 0}</span>
+          </div>
+          {(stats?.trips_today || []).length === 0 ? (
+            <div style={emptyKanbanStyle}>
+              <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0 }}>Không có ai đi công tác hôm nay.</p>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', maxHeight: 300, overflowY: 'auto' }}>
+                {stats.trips_today.slice(0, LIST_LIMIT).map(t => (
+                  <div key={t.id} className="kcard" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.65rem 0.85rem', background: '#f8fafc', borderRadius: 8, borderLeft: '4px solid #0284c7', borderTop: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0' }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '0.82rem', color: '#0f172a' }}>👤 {t.full_name}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.15rem' }}>📍 {t.destination} ({t.department})</div>
+                    </div>
+                    <span style={{ fontSize: '0.7rem', color: '#475569', background: '#e2e8f0', padding: '0.1rem 0.4rem', borderRadius: 4, whiteSpace: 'nowrap', marginLeft: '0.5rem' }}>{formatDate(t.start_date)} → {formatDate(t.end_date)}</span>
+                  </div>
+                ))}
+              </div>
+              {stats.trips_today.length > LIST_LIMIT && (
+                <button style={viewAllBtnStyle} onClick={() => setViewDetail(detailRows('trips'))}>Xem tất cả ({stats.trips_today.length})</button>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Widget: NV Nghỉ phép / việc hôm nay (hiển thị cho tất cả user) */}
+        <div style={kanbanColStyle}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <h3 style={{ ...kanbanTitleStyle, margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              🏖️ Nhân viên nghỉ phép
+            </h3>
+            <span style={countBadge(stats?.leaves_today?.length || 0, '#e11d48')}>{stats?.leaves_today?.length || 0}</span>
+          </div>
+          {(stats?.leaves_today || []).length === 0 ? (
+            <div style={emptyKanbanStyle}>
+              <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0 }}>Không có ai nghỉ hôm nay.</p>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', maxHeight: 300, overflowY: 'auto' }}>
+                {stats.leaves_today.slice(0, LIST_LIMIT).map(l => (
+                  <div key={l.id} className="kcard" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.65rem 0.85rem', background: '#f8fafc', borderRadius: 8, borderLeft: '4px solid #e11d48', borderTop: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0' }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '0.82rem', color: '#0f172a' }}>👤 {l.full_name}</div>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.15rem' }}>📝 {l.destination || 'Nghỉ phép'} ({l.department})</div>
+                    </div>
+                    <span style={{ fontSize: '0.7rem', color: '#475569', background: '#e2e8f0', padding: '0.1rem 0.4rem', borderRadius: 4, whiteSpace: 'nowrap', marginLeft: '0.5rem' }}>{formatDate(l.start_date)} → {formatDate(l.end_date)}</span>
+                  </div>
+                ))}
+              </div>
+              {stats.leaves_today.length > LIST_LIMIT && (
+                <button style={viewAllBtnStyle} onClick={() => setViewDetail(detailRows('leaves'))}>Xem tất cả ({stats.leaves_today.length})</button>
+              )}
+            </>
+          )}
+        </div>
+
         {/* Widget: Lịch hôm nay */}
         {showBookings && (
           <div style={kanbanColStyle}>
