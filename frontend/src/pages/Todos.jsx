@@ -38,8 +38,12 @@ export default function Todos() {
   const [scopeFilter, setScopeFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
+  const [assigneeFilter, setAssigneeFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   
+  // Trạng thái thu gọn/mở rộng nhóm nhân viên
+  const [collapsedGroups, setCollapsedGroups] = useState({})
+
   // Modal states
   const [showModal, setShowModal] = useState(false)
   const [editingTodo, setEditingTodo] = useState(null)
@@ -97,8 +101,6 @@ export default function Todos() {
     return String(todo.creator_code) === userCode
   }
 
-  // Quản lý subtask (thêm/xóa): admin, trưởng phòng (trong phòng ban) hoặc người tạo.
-  // Nhân viên được giao việc (assignee) chỉ tick hoàn thành, KHÔNG thêm/xóa subtask.
   const canManageSubtasks = (todo) => {
     if (!todo) return false
     if (userRole === 'admin') return true
@@ -152,7 +154,6 @@ export default function Todos() {
     fetchData()
   }, [scopeFilter, statusFilter, priorityFilter, searchQuery])
 
-  // --- Realtime SSE ---
   useEffect(() => {
     let sse = null
     function connectSSE() {
@@ -210,7 +211,6 @@ export default function Todos() {
   const handleExport = async () => {
     try {
       const res = await exportTodosReport(scopeFilter)
-      // Lấy filename từ header Content-Disposition
       const cd = res.headers['content-disposition'] || ''
       let filename = 'todos_report.xlsx'
       const m = cd.match(/filename\*=UTF-8''(.+)/)
@@ -235,7 +235,6 @@ export default function Todos() {
     }
   }
 
-  // --- ACTIONS FOR MODALS ---
   const openCreateModal = () => {
     setEditingTodo(null)
     setFormTitle('')
@@ -293,7 +292,6 @@ export default function Todos() {
       priority: formPriority,
       due_date: formDueDate,
       tags: formTags,
-      // Subtask giờ sửa trực tiếp được nên có thể bị bỏ trống — lọc trước khi lưu
       subtasks: formSubtasks.filter(s => s.title.trim())
     }
 
@@ -337,7 +335,6 @@ export default function Todos() {
     setDueDateError(validateDueDate(raw))
   }
 
-  // Subtask Form Logic
   const handleAddSubtask = () => {
     if (!newSubtaskTitle.trim()) return
     setFormSubtasks([...formSubtasks, { title: newSubtaskTitle.trim(), is_completed: 0 }])
@@ -350,15 +347,11 @@ export default function Todos() {
     setFormSubtasks(formSubtasks.filter((_, i) => i !== index))
   }
 
-  // Kéo thả đổi thứ tự subtask. Backend lưu đúng thứ tự này vào
-  // todo_subtasks.sort_order (todos.py: for idx, sub in enumerate(data.subtasks))
-  // và đọc lại bằng ORDER BY sort_order ASC.
   const dragItem = useRef(null)
   const dragOverItem = useRef(null)
   const [draggingIdx, setDraggingIdx] = useState(null)
 
   const handleSubtaskDragStart = (e, index) => {
-    // Firefox vẫn có thể khởi động drag từ ô nhập chữ — chặn để còn bôi đen được
     if (e.target.classList.contains('subtask-item-input')) { e.preventDefault(); return }
     dragItem.current = index
     setDraggingIdx(index)
@@ -389,11 +382,6 @@ export default function Todos() {
     setFormSubtasks(prev => prev.map((sub, i) => i === index ? { ...sub, title: newTitle } : sub))
   }
 
-  // =========================================================
-  // JIRA/TRELLO STYLE DETAIL & DISCUSSION LOGIC
-  // =========================================================
-
-  // Subtask trong modal chi tiết: nhân viên được giao việc có thể xem + tick hoàn thành
   const persistDetailSubtasks = async (next, prev) => {
     if (!viewingTodo) return
     setDetailSubtaskBusy(true)
@@ -476,7 +464,6 @@ export default function Todos() {
       created_at: new Date().toISOString()
     };
 
-    // Optimistic UI update
     setTodoComments([...todoComments, optimistic]);
     setCommentText('');
 
@@ -487,7 +474,6 @@ export default function Todos() {
         setTodoComments(prev => prev.map(c => (c.id === optimistic.id ? saved : c)));
       }
     } catch (err) {
-      console.error("Lỗi gửi tin nhắn", err);
       setTodoComments(prev => prev.filter(c => c.id !== optimistic.id));
       alert(err.response?.data?.detail || 'Không thể gửi bình luận');
     }
@@ -510,12 +496,10 @@ export default function Todos() {
       const saved = res.data?.data;
       if (saved) setTodoAttachments(prev => [normAtt(saved), ...prev]);
     } catch (err) {
-      console.error("Lỗi tải file", err);
       alert(err.response?.data?.detail || 'Không thể tải file lên');
     }
   }
 
-  // Inline URL input states (hiển thị dưới nút, không dùng prompt)
   const [showUrlInput, setShowUrlInput] = useState(false)
   const [urlValue, setUrlValue] = useState('')
   const [urlTitle, setUrlTitle] = useState('')
@@ -548,11 +532,16 @@ export default function Todos() {
     }
   }
 
+  const toggleGroup = (groupName) => {
+    setCollapsedGroups(prev => ({ ...prev, [groupName]: !prev[groupName] }))
+  }
+
   const columns = [
     { id: 'todo', label: 'Cần làm', icon: Clock, color: '#64748b' },
     { id: 'in_progress', label: 'Đang thực hiện', icon: RefreshCw, color: '#3b82f6' },
     { id: 'review', label: 'Chờ duyệt', icon: AlertCircle, color: '#f59e0b' },
-    { id: 'completed', label: 'Đã hoàn thành', icon: CheckCircle2, color: '#10b981' }
+    { id: 'completed', label: 'Đã hoàn thành', icon: CheckCircle2, color: '#10b981' },
+    { id: 'cancelled', label: 'Đã hủy', icon: X, color: '#ef4444' }
   ]
 
   const isOverdue = (dateStr, status) => {
@@ -561,7 +550,6 @@ export default function Todos() {
     return dateStr < today
   }
 
-  // Trong form: khi tạo mới luôn được quản lý subtask; khi sửa chỉ người quản lý được thêm/xóa
   const canManageFormSubtasks = !editingTodo || canManageSubtasks(editingTodo)
   const canToggleFormSubtasks = !editingTodo || canEditTodo(editingTodo)
 
@@ -620,7 +608,7 @@ export default function Todos() {
             <div className="lbl">Đã hoàn thành</div>
           </div>
         </div>
-        <div className="todos-stat-card" onClick={() => { setStatusFilter('all'); setPriorityFilter('urgent'); }}>
+        <div className="todos-stat-card" onClick={() => { setStatusFilter('all'); }}>
           <div className="todos-stat-icon overdue"><AlertCircle size={20} /></div>
           <div className="todos-stat-info">
             <div className="val" style={{ color: stats.overdue > 0 ? '#f87171' : 'inherit' }}>{stats.overdue}</div>
@@ -647,6 +635,16 @@ export default function Todos() {
             <Search size={14} />
             <input type="text" placeholder="Tìm kiếm công việc..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           </div>
+
+          <select className="form-control" style={{ width: '150px', padding: '6px 10px', fontSize: '0.85rem' }} value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>
+            <option value="all">Nhân viên: Tất cả</option>
+            {employees.map(emp => (
+              <option key={emp.employee_code} value={emp.employee_code}>
+                {emp.full_name}
+              </option>
+            ))}
+          </select>
+
           <select className="form-control" style={{ width: '140px', padding: '6px 10px', fontSize: '0.85rem' }} value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
             <option value="all">Độ ưu tiên: Tất cả</option>
             <option value="low">Thấp</option>
@@ -666,8 +664,23 @@ export default function Todos() {
       {/* Kanban Board Container */}
       <div className="kanban-board">
         {columns.map(col => {
-          const colTodos = todos.filter(t => t.status === col.id)
+          let colTodos = todos.filter(t => {
+            if (t.status !== col.id) return false;
+            if (assigneeFilter !== 'all' && String(t.assignee_code) !== String(assigneeFilter)) return false;
+            return true;
+          });
+
+          if (scopeFilter === 'department') {
+            colTodos.sort((a, b) => {
+              const nameA = (a.assignee_name || a.creator_name || 'ZZZ Chưa giao').toLowerCase();
+              const nameB = (b.assignee_name || b.creator_name || 'ZZZ Chưa giao').toLowerCase();
+              return nameA.localeCompare(nameB, 'vi');
+            });
+          }
+
           const ColIcon = col.icon
+          let currentAssigneeGroup = null;
+
           return (
             <div key={col.id} className={`kanban-column column-${col.id}`}>
               <div className="column-header">
@@ -677,105 +690,131 @@ export default function Todos() {
                 </div>
                 <span className="column-count">{colTodos.length}</span>
               </div>
+              
               <div className="column-cards">
                 {colTodos.map(todo => {
                   const overdue = isOverdue(todo.due_date, todo.status)
+                  const assigneeName = todo.assignee_name || todo.creator_name || 'Chưa giao';
+                  
+                  let showAssigneeDivider = false;
+                  if (scopeFilter === 'department' && currentAssigneeGroup !== assigneeName) {
+                    showAssigneeDivider = true;
+                    currentAssigneeGroup = assigneeName;
+                  }
+
+                  const isCollapsed = collapsedGroups[assigneeName];
+
                   return (
-                    <div 
-                      key={todo.id} 
-                      className={`todo-card${!canEditTodo(todo) ? ' todo-card-readonly' : ''}`}
-                      onClick={() => openTodoDetail(todo)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <div className="todo-card-top">
-                        <span className={`badge-priority priority-${todo.priority}`}>
-                          {todo.priority === 'urgent' ? 'Khẩn cấp' : todo.priority === 'high' ? 'Cao' : todo.priority === 'medium' ? 'Trung bình' : 'Thấp'}
-                        </span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <span className="badge-scope">
-                            {todo.scope === 'department' ? <Building size={10} /> : <User size={10} />}
-                            {todo.scope === 'department' ? todo.department || 'Phòng ban' : 'Cá nhân'}
+                    <React.Fragment key={todo.id}>
+                      {showAssigneeDivider && (
+                        <div 
+                          className="assignee-group-divider" 
+                          onClick={() => toggleGroup(assigneeName)}
+                          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#f1f5f9', padding: '6px 10px', borderRadius: '6px', marginTop: '12px', marginBottom: '8px', borderLeft: '3px solid #64748b' }}
+                        >
+                          <User size={14} />
+                          <span style={{ fontWeight: 600 }}>{assigneeName}</span>
+                          <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#64748b' }}>
+                            {isCollapsed ? '▼ Hiện' : '▲ Ẩn'}
                           </span>
-                          {isPendingApproval(todo) && (
-                            <span className="badge-pending">
-                              <Clock size={10} /> Chờ duyệt
-                            </span>
-                          )}
-                          {canApproveTodo(todo) && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleApproveTodo(todo.id); }}
-                              className="todo-approve-btn"
-                              title="Phê duyệt công việc phòng ban"
-                            >
-                              <CheckCircle2 size={13} /> Phê duyệt
-                            </button>
-                          )}
-                          {canEditTodo(todo) ? (
-                            <button onClick={(e) => { e.stopPropagation(); openEditModal(todo); }} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '2px' }} title="Chỉnh sửa">
-                              <Edit2 size={13} />
-                            </button>
-                          ) : (
-                            <span style={{ color: '#f59e0b', fontSize: '0.65rem', padding: '2px', cursor: 'default' }} title="Chỉ xem, không có quyền chỉnh sửa">⚠️</span>
-                          )}
-                          {canDeleteTodo(todo) ? (
-                            <button onClick={(e) => { e.stopPropagation(); handleDeleteTodo(todo.id); }} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', padding: '2px' }} title="Xóa">
-                              <Trash2 size={13} />
-                            </button>
-                          ) : null}
-                          {!canDeleteTodo(todo) && todo.creator_code === userCode && (
-                            <span style={{ color: '#94a3b8', fontSize: '0.65rem', padding: '2px', cursor: 'default' }} title="Tự tạo không được xóa (để xem report)">🔒</span>
-                          )}
-                        </div>
-                      </div>
-
-                      <h3 className="todo-card-title">{todo.title}</h3>
-                      {todo.description && <p className="todo-card-desc">{todo.description}</p>}
-
-                      {/* Checklist / Subtask Progress */}
-                      {todo.subtask_count > 0 && (
-                        <div className="subtasks-progress">
-                          <div className="subtasks-label">
-                            <span>Tiến độ subtask</span>
-                            <span>{todo.subtask_done}/{todo.subtask_count} ({todo.progress_pct}%)</span>
-                          </div>
-                          <div className="subtasks-bar-bg">
-                            <div className="subtasks-bar-fill" style={{ width: `${todo.progress_pct}%` }} />
-                          </div>
                         </div>
                       )}
 
-                      {/* Dropdown status bọc trong stopPropagation */}
-                      <div style={{ marginTop: '4px' }} onClick={(e) => e.stopPropagation()}>
-                        <select
-                          value={todo.status}
-                          onChange={(e) => {
-                            if (canChangeStatus(todo)) handleStatusChange(todo.id, e.target.value)
-                          }}
-                          className={`form-control status-${todo.status}`}
-                          disabled={!canChangeStatus(todo)}
-                          title={!canChangeStatus(todo) ? 'Chỉ xem, không có quyền thay đổi' : ''}
+                      {(!isCollapsed || scopeFilter !== 'department') && (
+                        <div 
+                          className={`todo-card${!canEditTodo(todo) ? ' todo-card-readonly' : ''}`}
+                          onClick={() => openTodoDetail(todo)}
+                          style={{ cursor: 'pointer' }}
                         >
-                          <option value="todo">Cần làm</option>
-                          <option value="in_progress">Đang xử lý</option>
-                          <option value="review">Chờ duyệt</option>
-                          <option value="completed">Hoàn thành</option>
-                          {canSeeCancelledOption(todo) && <option value="cancelled">Hủy</option>}
-                        </select>
-                      </div>
-
-                      <div className="todo-card-footer">
-                        <div className="todo-assignee" title={`Giao cho: ${todo.assignee_name || 'Chưa giao'}`}>
-                          <User size={12} />
-                          <span>{todo.assignee_name || todo.creator_name || 'Cá nhân'}</span>
-                        </div>
-                        {todo.due_date && (
-                          <div className={`todo-due ${overdue ? 'is-overdue' : ''}`}>
-                            <Calendar size={12} />
-                            <span>{formatDate(todo.due_date)}</span>
+                          <div className="todo-card-top">
+                            <span className={`badge-priority priority-${todo.priority}`}>
+                              {todo.priority === 'urgent' ? 'Khẩn cấp' : todo.priority === 'high' ? 'Cao' : todo.priority === 'medium' ? 'Trung bình' : 'Thấp'}
+                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span className="badge-scope">
+                                {todo.scope === 'department' ? <Building size={10} /> : <User size={10} />}
+                                {todo.scope === 'department' ? todo.department || 'Phòng ban' : 'Cá nhân'}
+                              </span>
+                              {isPendingApproval(todo) && (
+                                <span className="badge-pending">
+                                  <Clock size={10} /> Chờ duyệt
+                                </span>
+                              )}
+                              {canApproveTodo(todo) && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleApproveTodo(todo.id); }}
+                                  className="todo-approve-btn"
+                                  title="Phê duyệt công việc phòng ban"
+                                >
+                                  <CheckCircle2 size={13} /> Phê duyệt
+                                </button>
+                              )}
+                              {canEditTodo(todo) ? (
+                                <button onClick={(e) => { e.stopPropagation(); openEditModal(todo); }} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '2px' }} title="Chỉnh sửa">
+                                  <Edit2 size={13} />
+                                </button>
+                              ) : (
+                                <span style={{ color: '#f59e0b', fontSize: '0.65rem', padding: '2px', cursor: 'default' }} title="Chỉ xem, không có quyền chỉnh sửa">⚠️</span>
+                              )}
+                              {canDeleteTodo(todo) ? (
+                                <button onClick={(e) => { e.stopPropagation(); handleDeleteTodo(todo.id); }} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', padding: '2px' }} title="Xóa">
+                                  <Trash2 size={13} />
+                                </button>
+                              ) : null}
+                              {!canDeleteTodo(todo) && todo.creator_code === userCode && (
+                                <span style={{ color: '#94a3b8', fontSize: '0.65rem', padding: '2px', cursor: 'default' }} title="Tự tạo không được xóa (để xem report)">🔒</span>
+                              )}
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    </div>
+
+                          <h3 className="todo-card-title">{todo.title}</h3>
+                          {todo.description && <p className="todo-card-desc">{todo.description}</p>}
+
+                          {todo.subtask_count > 0 && (
+                            <div className="subtasks-progress">
+                              <div className="subtasks-label">
+                                <span>Tiến độ subtask</span>
+                                <span>{todo.subtask_done}/{todo.subtask_count} ({todo.progress_pct}%)</span>
+                              </div>
+                              <div className="subtasks-bar-bg">
+                                <div className="subtasks-bar-fill" style={{ width: `${todo.progress_pct}%` }} />
+                              </div>
+                            </div>
+                          )}
+
+                          <div style={{ marginTop: '4px' }} onClick={(e) => e.stopPropagation()}>
+                            <select
+                              value={todo.status}
+                              onChange={(e) => {
+                                if (canChangeStatus(todo)) handleStatusChange(todo.id, e.target.value)
+                              }}
+                              className={`form-control status-${todo.status}`}
+                              disabled={!canChangeStatus(todo)}
+                              title={!canChangeStatus(todo) ? 'Chỉ xem, không có quyền thay đổi' : ''}
+                            >
+                              <option value="todo">Cần làm</option>
+                              <option value="in_progress">Đang xử lý</option>
+                              <option value="review">Chờ duyệt</option>
+                              <option value="completed">Hoàn thành</option>
+                              {canSeeCancelledOption(todo) && <option value="cancelled">Hủy</option>}
+                            </select>
+                          </div>
+
+                          <div className="todo-card-footer">
+                            <div className="todo-assignee" title={`Giao cho: ${todo.assignee_name || 'Chưa giao'}`}>
+                              <User size={12} />
+                              <span>{todo.assignee_name || todo.creator_name || 'Cá nhân'}</span>
+                            </div>
+                            {todo.due_date && (
+                              <div className={`todo-due ${overdue ? 'is-overdue' : ''}`}>
+                                <Calendar size={12} />
+                                <span>{formatDate(todo.due_date)}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </React.Fragment>
                   )
                 })}
                 {colTodos.length === 0 && (
@@ -787,21 +826,13 @@ export default function Todos() {
         })}
       </div>
 
-      {/* ========================================================
-          MODAL CHI TIẾT CÔNG VIỆC (TRELLO/JIRA VIBE)
-          ======================================================== */}
       {viewingTodo && (
         <div className="todo-modal-overlay" onClick={() => setViewingTodo(null)}>
           <div className="todo-detail-modal-content" onClick={(e) => e.stopPropagation()}>
-            
-            {/* Nút đóng */}
             <button className="modal-close-btn" style={{ position: 'absolute', top: '15px', right: '15px', zIndex: 10 }} onClick={() => setViewingTodo(null)}>
               <X size={24} />
             </button>
-
             <div className="todo-detail-layout">
-              
-              {/* CỘT TRÁI: THÔNG TIN CHI TIẾT & ĐÍNH KÈM */}
               <div className="todo-detail-left">
                 <div className="todo-detail-header">
                   <span className={`badge-priority priority-${viewingTodo.priority}`} style={{ marginBottom: 10, display: 'inline-block' }}>
@@ -832,7 +863,6 @@ export default function Todos() {
                   <div className="todo-desc-text">{viewingTodo.description || 'Không có mô tả chi tiết.'}</div>
                 </div>
 
-                {/* Danh sách việc nhỏ (Subtasks) */}
                 <div className="todo-detail-section">
                   <div className="section-header-flex">
                     <h3><ListTodo size={16}/> Danh sách việc nhỏ</h3>
@@ -884,7 +914,6 @@ export default function Todos() {
                   </div>
                 </div>
 
-                {/* Khu vực đính kèm (URL, File) */}
                 <div className="todo-detail-section">
                   <div className="section-header-flex">
                     <h3><Paperclip size={16}/> Đính kèm ({todoAttachments.length})</h3>
@@ -947,7 +976,6 @@ export default function Todos() {
                 </div>
               </div>
 
-              {/* CỘT PHẢI: KHU VỰC THẢO LUẬN / BÌNH LUẬN */}
               <div className="todo-detail-right">
                 <div className="chat-section-header">
                   <MessageCircle size={18}/> Thảo luận nội bộ
@@ -989,7 +1017,6 @@ export default function Todos() {
         </div>
       )}
 
-      {/* Modal Add / Edit Todo */}
       {showModal && (
         <div className="todo-modal-overlay" onClick={() => setShowModal(false)}>
           <div className="todo-modal-content" onClick={(e) => e.stopPropagation()}>
@@ -1141,7 +1168,6 @@ export default function Todos() {
                   </div>
                 </div>
 
-                {/* Subtask / Checklist Manager */}
                 <div className="subtask-panel">
                   <label className="subtask-panel-label">Danh sách việc nhỏ (Subtasks Checklist)</label>
                   {canManageFormSubtasks && (
