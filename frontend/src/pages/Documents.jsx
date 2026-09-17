@@ -132,6 +132,19 @@ function SkeletonCards({ count = 8 }) {
   )
 }
 
+function truncateFileName(name, maxLen = 18) {
+  if (!name || name.length <= maxLen) return name
+  const lastDot = name.lastIndexOf('.')
+  if (lastDot === -1) return name.slice(0, maxLen - 3) + '...'
+  
+  const ext = name.slice(lastDot)
+  const baseName = name.slice(0, lastDot)
+  const keepLen = maxLen - ext.length - 3
+  
+  if (keepLen <= 2) return baseName.slice(0, 5) + '...' + ext
+  return baseName.slice(0, keepLen) + '...' + ext
+}
+
 export default function Documents() {
   const userRole = sessionStorage.getItem('user_role') || 'user'
   const userCode = sessionStorage.getItem('user_code') || ''
@@ -922,7 +935,7 @@ export default function Documents() {
                     <div className="doc-card-icon">
                       <IconComp size={40} color="#3b82f6" />
                     </div>
-                    <div className="doc-card-name" title={cfg.name}>{cfg.name}</div>
+                    <div className="doc-card-name" title={cfg.name}>{truncateFileName(cfg.name, 18)}</div>
                     <div className="doc-card-meta">
                       {cfg.type.toUpperCase()} Storage
                     </div>
@@ -1031,7 +1044,8 @@ export default function Documents() {
                 return (
                   <div key={i} className={`doc-card${e.is_dir ? ' doc-card-dir' : ''}${isImg ? ' doc-card-image' : ''}`}
                     onClick={() => e.is_dir ? openFolder(e) : handlePreviewFile(e)}
-                    onContextMenu={(ev) => handleContextMenu(ev, e)}>
+                    onContextMenu={(ev) => handleContextMenu(ev, e)}
+                    title={e.name}>
                     <div className="doc-card-icon">
                       {isImg && thumbUrl ? (
                         <img src={thumbUrl} alt={e.name} loading="lazy" className="doc-card-thumb" referrerPolicy="no-referrer"
@@ -1045,11 +1059,10 @@ export default function Documents() {
                         <IconComp size={36} style={{ color: iconColor }} />
                       </span>
                     </div>
-                    <div className="doc-card-name" title={e.name}>{e.name}</div>
-                    <div className="doc-card-meta">
-                      {e.is_dir ? '' : formatSize(e.size)}
-                      {!e.is_dir && e.modified ? ` · ${formatDate(e.modified)}` : ''}
-                    </div>
+
+                    {!isImg && <div className="doc-card-name">{e.is_dir ? e.name : truncateFileName(e.name, 18)}</div>}
+                    {!isImg && <div className="doc-card-meta">{e.is_dir ? '' : formatSize(e.size)}</div>}
+
                     {!e.is_dir && canPreviewFile(e.name) && (
                       <button className="doc-card-preview" onClick={(ev) => { ev.stopPropagation(); handlePreviewFile(e) }} title="Xem trước">
                         <Eye size={14} />
