@@ -273,10 +273,11 @@ def build_optimistic_payload(
     attachment_type: Optional[str] = None,
     attachment_size: Optional[int] = None,
     created_at: Optional[datetime] = None,
+    client_temp_id: Optional[str] = None,
 ) -> dict:
     """Serialize payload broadcast — khớp shape `_serialize_message` cũ."""
     ts = created_at or datetime.utcnow()
-    return {
+    payload = {
         "id": msg_id,
         "room_id": room_id,
         "sender_id": sender_id,
@@ -291,3 +292,6 @@ def build_optimistic_payload(
         "pinned_at": None,
         "created_at": ts.isoformat(),
     }
+    if client_temp_id:
+        payload["client_temp_id"] = client_temp_id
+    return payload

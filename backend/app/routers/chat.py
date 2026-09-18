@@ -325,6 +325,7 @@ async def _handle_incoming_message(user: dict, data: dict) -> Optional[dict]:
     attachment_name = (data.get("attachment_name") or "").strip() or None
     attachment_type = (data.get("attachment_type") or "").strip() or None
     attachment_size = data.get("attachment_size")
+    client_temp_id = (data.get("client_temp_id") or "").strip() or None
 
     if not room_id:
         return None
@@ -374,6 +375,7 @@ async def _handle_incoming_message(user: dict, data: dict) -> Optional[dict]:
         attachment_type=attachment_type,
         attachment_size=attachment_size,
         created_at=created_at,
+        client_temp_id=client_temp_id,
     )
 
 

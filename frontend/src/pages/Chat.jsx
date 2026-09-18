@@ -308,6 +308,9 @@ export default function Chat() {
   const activeRoomIdRef = useRef(activeRoomId)
   const msgsBoxRef = useRef(null)
   const retryCountRef = useRef(0)
+  const heartbeatRef = useRef(null)
+  const pollTimerRef = useRef(null)
+  const lastMsgTimestampRef = useRef(null)
 
   useEffect(() => { activeRoomIdRef.current = activeRoomId }, [activeRoomId])
 
@@ -347,6 +350,32 @@ export default function Chat() {
     } catch (_) { }
   }, [])
 
+  // Auto-select first room with recent activity or department room
+  const autoSelectRoom = useCallback(async (roomList) => {
+    if (!roomList?.length) return
+    // Ưu tiên: 1) phòng có tin nhắn mới nhất, 2) phòng phòng ban, 3) phòng đầu tiên
+    let targetRoom = roomList.find(r => r.last_message) || roomList.find(r => r.type === 'department') || roomList[0]
+    if (!targetRoom || activeRoomIdRef.current) return // Đã có phòng được chọn rồi
+    
+    setActiveRoomId(targetRoom.id)
+    setLoadingMsgs(true)
+    try {
+      const [msgRes, pinRes] = await Promise.allSettled([
+        getChatMessages(targetRoom.id, PAGE_SIZE, 0),
+        getChatPinnedMessages(targetRoom.id),
+      ])
+      if (msgRes.status === 'fulfilled') {
+        setMessages(msgRes.value.data?.data || [])
+        setHasMore((msgRes.value.data?.data || []).length === PAGE_SIZE)
+      }
+      if (pinRes.status === 'fulfilled') setPinnedMessages(pinRes.value.data?.data || [])
+    } catch (_) {
+      setMessages([])
+    } finally {
+      setLoadingMsgs(false)
+    }
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     Promise.allSettled([
@@ -367,9 +396,14 @@ export default function Chat() {
       setOnlineUsers(onlineList.map(u => u.employee_code).filter(Boolean))
       setDeptSelect(prev => prev || userDept || deptList[0]?.name || '')
       setLoadingRooms(false)
+      
+      // Auto-select first room after rooms loaded (fix: F5 mới thấy tin nhắn)
+      if (!cancelled && roomList.length && !activeRoomIdRef.current) {
+        setTimeout(() => autoSelectRoom(roomList), 100)
+      }
     })
     return () => { cancelled = true }
-  }, [userDept])
+  }, [userDept, autoSelectRoom])
 
   const handleWsMessage = useCallback((raw) => {
     let msg
@@ -400,7 +434,33 @@ export default function Chat() {
       return [room, ...prev.slice(0, idx), ...prev.slice(idx + 1)]
     })
     if (msg.room_id === activeRoomIdRef.current) {
-      setMessages(prev => (prev.some(m => m.id === msg.id) ? prev : [...prev, msg]))
+      setMessages(prev => {
+        // Replace optimistic temp msg with real server msg
+        const clientTempId = msg.client_temp_id
+        if (clientTempId) {
+          const idx = prev.findIndex(m => m.id === clientTempId)
+          if (idx !== -1) {
+            const next = [...prev]
+            next[idx] = msg
+            return next
+          }
+        }
+        // Fallback: match by content + sender for self-sent messages
+        if (msg.sender_id === userCode) {
+          const idx = prev.findLastIndex(m =>
+            m.id?.startsWith?.('temp-') &&
+            m.content === msg.content &&
+            m.sender_id === msg.sender_id
+          )
+          if (idx !== -1) {
+            const next = [...prev]
+            next[idx] = msg
+            return next
+          }
+        }
+        if (prev.some(m => m.id === msg.id)) return prev
+        return [...prev, msg]
+      })
     }
     if (msg.room_id !== activeRoomIdRef.current) {
       setNewMessageRooms(prev => {
@@ -409,7 +469,7 @@ export default function Chat() {
         return newSet
       })
     }
-  }, [])
+  }, [userCode])
 
   const connectWs = useCallback(() => {
     if (!shouldReconnectRef.current) return
@@ -427,10 +487,34 @@ export default function Chat() {
     ws.onopen = () => {
       setWsStatus('open')
       retryCountRef.current = 0
+      // Client-side heartbeat: ping server every 20s
+      clearInterval(heartbeatRef.current)
+      heartbeatRef.current = setInterval(() => {
+        try {
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ event: 'ping', ts: Date.now() }))
+          }
+        } catch (_) {}
+      }, 20000)
+      // Fetch missed messages after reconnect
+      const activeId = activeRoomIdRef.current
+      if (activeId && lastMsgTimestampRef.current) {
+        getChatMessages(activeId, PAGE_SIZE, 0).then(res => {
+          const rows = res.data?.data || []
+          if (rows.length) {
+            setMessages(prev => {
+              const existingIds = new Set(prev.map(m => m.id))
+              const newMsgs = rows.filter(m => !existingIds.has(m.id))
+              return newMsgs.length ? [...prev, ...newMsgs] : prev
+            })
+          }
+        }).catch(() => {})
+      }
     }
     ws.onmessage = (e) => handleWsMessage(e.data)
     ws.onclose = (ev) => {
       setWsStatus('closed')
+      clearInterval(heartbeatRef.current)
       if (shouldReconnectRef.current && ev.code !== 1008) {
         retryCountRef.current += 1
         const delay = Math.min(3000 * Math.pow(2, retryCountRef.current - 1), 30000)
@@ -446,9 +530,51 @@ export default function Chat() {
     return () => {
       shouldReconnectRef.current = false
       clearTimeout(reconnectTimerRef.current)
+      clearInterval(heartbeatRef.current)
+      clearInterval(pollTimerRef.current)
       if (wsRef.current) { try { wsRef.current.close() } catch (_) {} }
     }
   }, [connectWs])
+
+  // Track last message timestamp for missed-message recovery
+  useEffect(() => {
+    if (messages.length) {
+      const last = messages[messages.length - 1]
+      if (last?.created_at) lastMsgTimestampRef.current = last.created_at
+    }
+  }, [messages])
+
+  // Polling fallback: fetch new messages every 5s when WS is disconnected
+  useEffect(() => {
+    if (wsStatus !== 'closed' || !activeRoomId) {
+      clearInterval(pollTimerRef.current)
+      return
+    }
+    pollTimerRef.current = setInterval(() => {
+      if (!activeRoomIdRef.current) return
+      getChatMessages(activeRoomIdRef.current, PAGE_SIZE, 0).then(res => {
+        const rows = res.data?.data || []
+        if (rows.length) {
+          setMessages(prev => {
+            const existingIds = new Set(prev.map(m => m.id))
+            const newMsgs = rows.filter(m => !existingIds.has(m.id))
+            return newMsgs.length ? [...prev, ...newMsgs] : prev
+          })
+          // Also update rooms sidebar
+          if (rows.length) {
+            const lastMsg = rows[rows.length - 1]
+            setRooms(prev => {
+              const idx = prev.findIndex(r => r.id === lastMsg.room_id)
+              if (idx === -1) return prev
+              const room = { ...prev[idx], last_message: lastMsg }
+              return [room, ...prev.slice(0, idx), ...prev.slice(idx + 1)]
+            })
+          }
+        }
+      }).catch(() => {})
+    }, 5000)
+    return () => clearInterval(pollTimerRef.current)
+  }, [wsStatus, activeRoomId])
 
   const selectRoom = useCallback(async (roomId) => {
     setActiveRoomId(roomId)
@@ -495,25 +621,64 @@ export default function Chat() {
     }
   }
 
+  const isAtBottomRef = useRef(true)
+
   useEffect(() => {
     const box = msgsBoxRef.current
-    if (box) box.scrollTop = box.scrollHeight
+    if (!box) return
+    // Auto-scroll chỉ khi đang ở gần cuối hoặc mới vào phòng
+    if (isAtBottomRef.current || activeRoomId) {
+      requestAnimationFrame(() => {
+        box.scrollTop = box.scrollHeight
+      })
+    }
   }, [activeRoomId, messages.length])
 
+  // Track vị trí scroll để quyết định có auto-scroll không
+  useEffect(() => {
+    const box = msgsBoxRef.current
+    if (!box) return
+    const handleScroll = () => {
+      const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 100
+      isAtBottomRef.current = atBottom
+    }
+    box.addEventListener('scroll', handleScroll)
+    return () => box.removeEventListener('scroll', handleScroll)
+  }, [])
+
   // ─── Tương tác tin nhắn ─────────────────────────────────────
-  const handleSend = useCallback((content) => {
+  const handleSend = useCallback(async (content) => {
     if (!activeRoomId || wsStatus !== 'open') return
-    wsRef.current.send(JSON.stringify({
-      room_id: activeRoomId,
+
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
+    const tempMsg = {
+      id: tempId,
       content,
-      attachment_url: attachment?.url || null,
-      attachment_name: attachment?.name || null,
-      attachment_type: attachment?.type || null,
-      attachment_size: attachment?.size ?? null,
-    }))
+      sender_id: userCode,
+      created_at: new Date().toISOString(),
+      is_sent: false,
+    }
+
+    setMessages(prev => [...prev, tempMsg])
+
+    try {
+      wsRef.current.send(JSON.stringify({
+        room_id: activeRoomId,
+        content,
+        client_temp_id: tempId,
+        attachment_url: attachment?.url || null,
+        attachment_name: attachment?.name || null,
+        attachment_type: attachment?.type || null,
+        attachment_size: attachment?.size ?? null,
+      }))
+    } catch (err) {
+      setMessages(prev => prev.filter(m => m.id !== tempId))
+    }
+
     setAttachment(null)
     setAttachError('')
-  }, [activeRoomId, wsStatus, attachment])
+  }, [activeRoomId, wsStatus, attachment, userCode])
 
   const uploadAndAttach = async (file) => {
     const ext = (file.name.split('.').pop() || '').toLowerCase()
