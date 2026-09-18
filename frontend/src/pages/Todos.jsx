@@ -31,7 +31,7 @@ function normAtt(a) {
 
 export default function Todos() {
   const [todos, setTodos] = useState([])
-  const [stats, setStats] = useState({ total: 0, todo: 0, in_progress: 0, review: 0, completed: 0, overdue: 0 })
+  const [stats, setStats] = useState({ total: 0, todo: 0, in_progress: 0, completed: 0, overdue: 0 })
   const [loading, setLoading] = useState(true)
   
   // Filters
@@ -48,7 +48,7 @@ export default function Todos() {
   const [showModal, setShowModal] = useState(false)
   const [editingTodo, setEditingTodo] = useState(null)
   
-  // JIRA/TRELLO STYLE - DETAIL MODAL STATES
+  // DETAIL MODAL STATES
   const [viewingTodo, setViewingTodo] = useState(null)
   const [todoComments, setTodoComments] = useState([])
   const [commentText, setCommentText] = useState('')
@@ -202,7 +202,7 @@ export default function Todos() {
         getTodoStats()
       ])
       setTodos(resTodos.data?.data || [])
-      setStats(resStats.data?.data || { total: 0, todo: 0, in_progress: 0, review: 0, completed: 0, overdue: 0 })
+      setStats(resStats.data?.data || { total: 0, todo: 0, in_progress: 0, completed: 0, overdue: 0 })
     } catch (err) {} finally {
       setLoading(false)
     }
@@ -536,10 +536,10 @@ export default function Todos() {
     setCollapsedGroups(prev => ({ ...prev, [groupName]: !prev[groupName] }))
   }
 
+  // Loại bỏ cột 'review' khỏi Kanban Board
   const columns = [
     { id: 'todo', label: 'Cần làm', icon: Clock, color: '#64748b' },
     { id: 'in_progress', label: 'Đang thực hiện', icon: RefreshCw, color: '#3b82f6' },
-    { id: 'review', label: 'Chờ duyệt', icon: AlertCircle, color: '#f59e0b' },
     { id: 'completed', label: 'Đã hoàn thành', icon: CheckCircle2, color: '#10b981' },
     { id: 'cancelled', label: 'Đã hủy', icon: X, color: '#ef4444' }
   ]
@@ -571,7 +571,7 @@ export default function Todos() {
         </button>
       </div>
 
-      {/* KPI Stats Cards */}
+      {/* KPI Stats Cards - Đã bỏ thẻ Chờ kiểm tra */}
       <div className="todos-stats-grid">
         <div className={`todos-stat-card ${statusFilter === 'all' ? 'active' : ''}`} onClick={() => setStatusFilter('all')}>
           <div className="todos-stat-icon total"><ListTodo size={20} /></div>
@@ -592,13 +592,6 @@ export default function Todos() {
           <div className="todos-stat-info">
             <div className="val">{stats.in_progress}</div>
             <div className="lbl">Đang xử lý</div>
-          </div>
-        </div>
-        <div className={`todos-stat-card ${statusFilter === 'review' ? 'active' : ''}`} onClick={() => setStatusFilter('review')}>
-          <div className="todos-stat-icon review"><AlertCircle size={20} /></div>
-          <div className="todos-stat-info">
-            <div className="val">{stats.review}</div>
-            <div className="lbl">Chờ kiểm tra</div>
           </div>
         </div>
         <div className={`todos-stat-card ${statusFilter === 'completed' ? 'active' : ''}`} onClick={() => setStatusFilter('completed')}>
@@ -794,7 +787,6 @@ export default function Todos() {
                             >
                               <option value="todo">Cần làm</option>
                               <option value="in_progress">Đang xử lý</option>
-                              <option value="review">Chờ duyệt</option>
                               <option value="completed">Hoàn thành</option>
                               {canSeeCancelledOption(todo) && <option value="cancelled">Hủy</option>}
                             </select>

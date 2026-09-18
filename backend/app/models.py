@@ -564,3 +564,42 @@ class ChatMessage(Base):
     pinned_by = Column(String, nullable=True)
     pinned_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class FormulaRecipe(Base):
+    """Công thức sản xuất (Manufacturing Formula Recipe).
+    
+    Lưu trữ file Excel gốc và PDF đã convert. File được bảo mật nghiêm ngặt:
+    - Văn phòng (vp_editor/admin): Upload, sửa, xóa, xem nội dung
+    - Nhà máy (factory_worker): Chỉ tìm kiếm metadata và in trực tiếp
+    - KHÔNG CHO PHÉP: Download file, xem preview từ nhà máy
+    
+    GHI CHÚ:
+    - excel_file_path: null khi upload PDF trực tiếp (chỉ PDF được lưu)
+    - pdf_file_path: LUÔN có giá trị (Excel sẽ convert sang PDF)
+    """
+    __tablename__ = 'formula_recipes'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    recipe_code = Column(String(50), unique=True, nullable=False, index=True)
+    recipe_name = Column(String(255), nullable=False, index=True)
+    category = Column(String(100), default='')
+    version = Column(String(20), default='v1.0')
+    excel_file_path = Column(String(500), nullable=True)  # NULL khi upload PDF
+    pdf_file_path = Column(String(500), nullable=False)
+    is_active = Column(Boolean, default=True, index=True)
+    created_by = Column(String(50), ForeignKey('users.employee_code'), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class FormulaPrintLog(Base):
+    """Nhật ký in công thức (Audit Trail).
+    
+    Ghi lại mọi lệnh in công thức từ nhà máy để kiểm soát bảo mật.
+    """
+    __tablename__ = 'formula_print_logs'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    recipe_id = Column(Integer, ForeignKey('formula_recipes.id', ondelete='CASCADE'), nullable=False, index=True)
+    printed_by = Column(String(50), ForeignKey('users.employee_code'), nullable=True, index=True)
+    printed_at = Column(DateTime, default=datetime.utcnow)
+    ip_address = Column(String(50), default='')

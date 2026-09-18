@@ -37,6 +37,7 @@ services:
       - ./backend/main.py:/app/main.py:rw
       - ./backend/logs:/app/logs:rw
       - ./backend/uploads:/app/uploads:rw
+      - ./backend/storage:/app/storage:rw
       - ./frontend/src/template:/app/templates:ro
     environment:
       - APP_ENV=${APP_ENV}

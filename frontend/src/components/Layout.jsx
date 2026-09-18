@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Monitor, Key, Ticket, CheckCircle, 
   Settings, Calendar, Receipt, Folder, Shield, Menu, X, User, 
   Lock, Eye, EyeOff, CheckSquare, HelpCircle, Activity, MessageSquare,
-  CalendarOff, PenTool
+  CalendarOff, PenTool, Printer, FileSpreadsheet
 } from 'lucide-react'
 import { changePassword, getProfile, apiUrl } from '../services/api'
 import { driver } from 'driver.js'
@@ -31,6 +31,8 @@ const iconMap = {
   monitor: Activity,
   help: HelpCircle,
   drawioTools: PenTool,
+  formulaPrint: Printer,
+  formulaManage: FileSpreadsheet,
 }
 
 const allNavItems = [
@@ -47,6 +49,8 @@ const allNavItems = [
   { path: '/nghiphep', label: 'Nghỉ phép', icon: 'nghiphep', roles: ['user', 'head', 'admin'] },
   { path: '/documents', label: 'Tài liệu', icon: 'documents', roles: ['user', 'head', 'admin'] },
   { path: '/tools/drawio', label: 'Vẽ sơ đồ (Draw.io)', icon: 'drawioTools', roles: ['user', 'head', 'admin'] },
+  { path: '/formulas/print', label: '🏭 In công thức', icon: 'formulaPrint', roles: ['user', 'head', 'admin'] },
+  { path: '/formulas/manage', label: '📋 Quản lý công thức', icon: 'formulaManage', roles: ['user', 'head', 'admin'] },
   { path: '/salary-slip', label: 'Phiếu lương', icon: 'salary', roles: ['user', 'head', 'admin'] },
   { path: '/salary-slip-admin', label: 'Quản lý lương', icon: 'salaryAdmin', roles: ['head', 'admin'] },
   { path: '/permissions', label: 'Phân quyền', icon: 'permissions', roles: ['admin'] },
@@ -70,6 +74,8 @@ const MODULE_MAP = {
   '/salary-slip': 'salary',
   '/salary-slip-admin': 'salary-admin',
   '/tools/drawio': 'drawio',
+  '/formulas/print': 'factory-printing',
+  '/formulas/manage': 'formula-management',
   '/permissions': 'permissions',
   '/monitor': 'monitor',
   '/help': 'help',

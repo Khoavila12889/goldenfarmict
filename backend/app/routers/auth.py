@@ -340,6 +340,8 @@ ALL_MODULES = [
     {"key": "announcements", "label": "Tạo thông báo Dashboard", "group": "support"},
     {"key": "password-reset", "label": "Reset mật khẩu", "group": "support"},
     {"key": "drawio", "label": "Vẽ sơ đồ (Draw.io)", "group": "support"},
+    {"key": "formula-management", "label": "Quản lý Công thức", "group": "admin"},
+    {"key": "factory-printing", "label": "In Công thức (Nhà máy)", "group": "admin"},
 ]
 
 

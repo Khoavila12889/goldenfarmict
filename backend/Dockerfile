@@ -31,7 +31,7 @@ COPY . .
 RUN mkdir -p /app/data /app/logs /app/templates /app/temp_pdf_gen
 
 # Set ownership for writable directories
-RUN chown -R nobody:nogroup /app/data /app/logs /app/temp_pdf_gen
+RUN chown -R nobody:nogroup /app/data /app/logs /app/temp_pdf_gen /app/storage
 
 # Switch to non-root user for security
 USER nobody

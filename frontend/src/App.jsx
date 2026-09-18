@@ -21,6 +21,8 @@ import MonitorPage from './pages/MonitorPage'
 import Chat from './pages/Chat'
 import PublicSharePage from './pages/PublicSharePage'
 import ToolsDrawio from './pages/ToolsDrawio'
+import FactoryPrinting from './pages/FactoryPrinting'
+import FormulaManagement from './pages/FormulaManagement'
 import Layout from './components/Layout'
 
 function ProtectedRoute({ children }) {
@@ -80,6 +82,8 @@ export default function App() {
         <Route path="help" element={<HelpPage />} />
         <Route path="chat" element={<Chat />} />
         <Route path="tools/drawio" element={<AdminRoute requiredModule="drawio"><ToolsDrawio /></AdminRoute>} />
+        <Route path="formulas/print" element={<AdminRoute requiredModule="factory-printing"><FactoryPrinting /></AdminRoute>} />
+        <Route path="formulas/manage" element={<AdminRoute requiredModule="formula-management"><FormulaManagement /></AdminRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

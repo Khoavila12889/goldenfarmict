@@ -28,6 +28,8 @@ const MODULES = [
   { key: 'announcements', label: 'Tạo thông báo Dashboard', group: 'support', desc: 'Tạo / sửa / xóa thông báo trên Dashboard. Mặc định: Admin & Trưởng phòng. Tick Xem hoặc Sửa để cấp cho nhân viên đặc biệt.' },
   { key: 'password-reset', label: 'Reset mật khẩu', group: 'support', desc: 'Cho phép reset mật khẩu người khác. Mặc định: Admin & Trưởng phòng. Tick Xem hoặc Sửa để cấp cho nhân viên đặc biệt.' },
   { key: 'drawio', label: 'Vẽ sơ đồ (Draw.io)', group: 'support', desc: 'Truy cập công cụ vẽ sơ đồ Draw.io' },
+  { key: 'formula-management', label: 'Quản lý Công thức', group: 'admin', desc: 'Upload, sửa, xóa, kích hoạt/vô hiệu hóa công thức sản xuất. Cho phép người dùng quản lý toàn bộ công thức.' },
+  { key: 'factory-printing', label: 'In Công thức (Nhà máy)', group: 'admin', desc: 'Tìm kiếm và in công thức sản xuất từ nhà máy. Chỉ xem và in, không chỉnh sửa.' },
 ]
 
 const ADMIN_MODULES = new Set(MODULES.filter(m => m.group === 'admin').map(m => m.key))

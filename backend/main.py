@@ -12,7 +12,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from app.core.auth import hash_password
 from app.core import events
-from app.routers import auth, employees, equipment, tickets, bookings, dashboard, licenses, software, approvals, business_trips, departments, salary_slips, salary_user, documents, todos, comments, attachments, monitor, shares, chat, forum
+from app.routers import auth, employees, equipment, tickets, bookings, dashboard, licenses, software, approvals, business_trips, departments, salary_slips, salary_user, documents, todos, comments, attachments, monitor, shares, chat, forum, formulas
 
 app = FastAPI(title="GOLDENFARM ICT API", version="1.0.0")
 
@@ -50,6 +50,7 @@ app.include_router(attachments.router)
 app.include_router(monitor.router)
 app.include_router(chat.router)
 app.include_router(forum.router)
+app.include_router(formulas.router)
 
 
 @app.on_event("startup")
@@ -295,6 +296,46 @@ async def on_startup():
         except Exception as e:
             sess.rollback()
             print(f"  → business_trips.type migration: {e}")
+
+    # Formula Recipes Module - Tạo bảng công thức sản xuất
+    # Tables: formula_recipes, formula_print_logs
+    with SessionLocal() as sess:
+        try:
+            # Bảng formula_recipes sẽ được tạo tự động qua ORM
+            # Nhưng đảm bảo indexes được tạo
+            sess.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_formula_recipe_code 
+                ON formula_recipes (recipe_code)
+            """))
+            sess.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_formula_recipe_name 
+                ON formula_recipes (recipe_name)
+            """))
+            sess.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_formula_is_active 
+                ON formula_recipes (is_active)
+            """))
+            sess.commit()
+            print("  ✓ Formula recipes indexes created")
+        except Exception as e:
+            sess.rollback()
+            print(f"  → formula_recipes indexes migration: {e}")
+        
+        try:
+            # Index cho print logs
+            sess.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_formula_print_recipe_id 
+                ON formula_print_logs (recipe_id)
+            """))
+            sess.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_formula_print_user 
+                ON formula_print_logs (printed_by)
+            """))
+            sess.commit()
+            print("  ✓ Formula print logs indexes created")
+        except Exception as e:
+            sess.rollback()
+            print(f"  → formula_print_logs indexes migration: {e}")
 
     # Seed default admin user if not exists
     session = SessionLocal()
