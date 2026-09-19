@@ -3,6 +3,7 @@ import { getDashboardStats, getEmployeeByCode, getTickets, getTicketQueuePositio
 import { formatDate } from '../utils/date'
 import { Ticket, Calendar, Users, Monitor, Clock, AlertCircle, CheckCircle2, XCircle, ArrowRight, CalendarOff } from 'lucide-react'
 import AnnouncementsBox from '../components/AnnouncementsBox'
+import './dashboard.css'
 
 const STATUS_ORDER = ['Cho xu ly', 'Dang xu ly', 'Da xu ly', 'Da huy']
 
@@ -315,7 +316,7 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div style={loadingStyle}>
+      <div className="loading-container">
         🔄 Đang tải dữ liệu tổng quan...
       </div>
     )
@@ -333,38 +334,20 @@ export default function Dashboard() {
 
     return (
       <div>
-        <style>{`
-          .grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem; }
-          .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.5rem; }
-          .stat-card { background: #fff; border-radius: 12px; padding: 1.25rem; border: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; transition: transform 0.2s; }
-          .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-          @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
-        `}</style>
-
-        <h1 style={pageTitleStyle}>
+        <h1 className="page-title">
           📊 Hệ thống Quản lý GOLDENFARM ICT
         </h1>
 
-        {toast && (
-          <div style={{
-            position: 'fixed', top: 18, right: 18, zIndex: 1200, maxWidth: 360,
-            padding: '0.7rem 1rem', borderRadius: 10, fontSize: '0.82rem', fontWeight: 600,
-            color: '#fff',
-            background: toast.type === 'error' ? '#dc2626' : toast.type === 'success' ? '#16a34a' : '#00468C',
-            boxShadow: '0 6px 18px rgba(0,0,0,0.18)', display: 'flex', alignItems: 'center', gap: '0.5rem',
-          }}>
-            {toast.text}
-          </div>
-        )}
+        {toast && <ToastBox toast={toast} />}
 
         <div className="grid-4">
           {items.map(item => (
             <div key={item.label} className="stat-card">
               <div>
-                <span style={statLabelStyle}>{item.label}</span>
-                <span style={statValueStyle}>{item.value}</span>
+                <span className="stat-label">{item.label}</span>
+                <span className="stat-value">{item.value}</span>
               </div>
-              <div style={{ width: 48, height: 48, borderRadius: 10, background: item.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="stat-icon" style={{ background: item.bg }}>
                 {item.icon}
               </div>
             </div>
@@ -376,11 +359,11 @@ export default function Dashboard() {
         </div>
 
         <div className="grid-2">
-          <div style={adminCardStyle}>
-            <h3 style={kanbanTitleStyle}>🎫 Ticket theo trạng thái</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <div className="admin-card">
+            <h3 className="kanban-title">🎫 Ticket theo trạng thái</h3>
+            <div className="flex-col gap-sm">
               {(stats?.tickets_by_status || []).length === 0 ? (
-                <p style={emptyTextStyle}>Không có ticket nào</p>
+                <p className="empty-text">Không có ticket nào</p>
               ) : STATUS_ORDER.map(s => {
                 const item = stats.tickets_by_status.find(t => t.status === s)
                 if (!item) return null
@@ -396,41 +379,32 @@ export default function Dashboard() {
                         } catch { setStatusTickets([]) }
                         setLoadingStatus(false)
                       }}
-                      style={{
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        padding: '0.65rem 1rem', borderRadius: 8, background: expandedStatus === s ? '#f1f5f9' : '#f8fafc',
-                        border: `1px solid ${expandedStatus === s ? '#cbd5e1' : '#f1f5f9'}`,
-                        cursor: 'pointer', transition: 'all 0.15s ease',
-                      }}
+                      className={`status-row ${expandedStatus === s ? 'status-row-active' : 'status-row-default'}`}
                     >
-                      <span style={{
-                        fontSize: '0.82rem', fontWeight: 600, color: STATUS_MAP[s]?.color || '#475569',
-                        background: STATUS_MAP[s]?.bg || '#f1f5f9', padding: '0.2rem 0.55rem', borderRadius: 6,
-                      }}>{STATUS_MAP[s]?.label || s}</span>
-                      <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '1rem' }}>{item.count}</span>
+                      <span className="status-label" style={{ color: STATUS_MAP[s]?.color || '#475569', background: STATUS_MAP[s]?.bg || '#f1f5f9' }}>
+                        {STATUS_MAP[s]?.label || s}
+                      </span>
+                      <span className="status-count">{item.count}</span>
                     </div>
 
                     {expandedStatus === s && (
-                      <div style={{ marginTop: '0.4rem', padding: '0.6rem 0.75rem', background: '#fff', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                      <div className="status-detail">
                         {loadingStatus ? (
-                          <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 0 }}>Đang tải...</p>
+                          <p className="empty-text" style={{ margin: 0 }}>Đang tải...</p>
                         ) : statusTickets.length === 0 ? (
-                          <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: 0 }}>Không có ticket.</p>
+                          <p className="empty-text" style={{ margin: 0 }}>Không có ticket.</p>
                         ) : (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: 280, overflowY: 'auto' }}>
+                          <div className="list-scroll-ticket">
                             {statusTickets.map(t => (
-                              <div key={t.id} style={{
-                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                padding: '0.45rem 0.65rem', borderRadius: 6, background: '#f8fafc', fontSize: '0.8rem',
-                              }}>
+                              <div key={t.id} className="ticket-item">
                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                  <span style={{ fontWeight: 600, color: '#0f172a' }}>#{t.id}</span>
-                                  <span style={{ color: '#475569', marginLeft: '0.35rem' }}>{t.title}</span>
-                                  <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '0.15rem' }}>
+                                  <span className="ticket-item-id">#{t.id}</span>
+                                  <span className="ticket-item-name">{t.title}</span>
+                                  <div className="ticket-item-meta">
                                     👤 {t.full_name} · {t.department || '—'}
                                   </div>
                                 </div>
-                                <span style={{ fontSize: '0.72rem', color: '#94a3b8', whiteSpace: 'nowrap', marginLeft: '0.5rem' }}>{formatDate(t.created_at)}</span>
+                                <span className="ticket-item-date">{formatDate(t.created_at)}</span>
                               </div>
                             ))}
                           </div>
@@ -443,10 +417,10 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div style={adminCardStyle}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 style={{ ...kanbanTitleStyle, margin: 0 }}>📅 Lịch hôm nay</h3>
-              <span style={{ fontSize: '0.75rem', color: '#0a5b35', background: '#e8f5e9', padding: '0.2rem 0.55rem', borderRadius: 20, fontWeight: 600 }}>
+          <div className="admin-card">
+            <div className="header-row">
+              <h3 className="kanban-title" style={{ margin: 0 }}>📅 Lịch hôm nay</h3>
+              <span className="bookings-count-badge">
                 {stats?.bookings_today?.length || 0} lịch
               </span>
             </div>
@@ -455,76 +429,73 @@ export default function Dashboard() {
         </div>
 
         <div className="grid-2" style={{ marginTop: '1.5rem' }}>
-          {/* Widget: NV Đi công tác hôm nay */}
-          <div style={adminCardStyle}>
-            <h3 style={kanbanTitleStyle}>🧳 Nhân viên đi công tác hôm nay ({stats?.trips_count || 0})</h3>
+          <div className="admin-card">
+            <h3 className="kanban-title">🧳 Nhân viên đi công tác hôm nay ({stats?.trips_count || 0})</h3>
             {(stats?.trips_today || []).length === 0 ? (
-              <p style={{ color: '#94a3b8', fontSize: '0.85rem', textAlign: 'center', padding: '1rem 0' }}>Không có ai đi công tác hôm nay.</p>
+              <p className="empty-absence">Không có ai đi công tác hôm nay.</p>
             ) : (
               <>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: 240, overflowY: 'auto' }}>
+                <div className="list-scroll">
                   {stats.trips_today.slice(0, LIST_LIMIT).map(t => (
-                    <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0.75rem', background: '#f8fafc', borderRadius: 8, borderLeft: '4px solid #0284c7' }}>
+                    <div key={t.id} className="trip-card trip-card-car">
                       <div>
-                        <div style={{ fontWeight: 600, fontSize: '0.82rem', color: '#0f172a' }}>👤 {t.full_name} ({t.department})</div>
-                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>📍 {t.destination}</div>
+                        <div className="trip-name">👤 {t.full_name} ({t.department})</div>
+                        <div className="trip-detail">📍 {t.destination}</div>
                       </div>
-                      <span style={{ fontSize: '0.7rem', color: '#475569', background: '#e2e8f0', padding: '0.1rem 0.4rem', borderRadius: 4 }}>{formatDate(t.start_date)} → {formatDate(t.end_date)}</span>
+                      <span className="date-header">{formatDate(t.start_date)} → {formatDate(t.end_date)}</span>
                     </div>
                   ))}
                 </div>
                 {stats.trips_today.length > LIST_LIMIT && (
-                  <button style={viewAllBtnStyle} onClick={() => setViewDetail(detailRows('trips'))}>Xem tất cả ({stats.trips_today.length})</button>
+                  <button className="view-all-btn" onClick={() => setViewDetail(detailRows('trips'))}>Xem tất cả ({stats.trips_today.length})</button>
                 )}
               </>
             )}
           </div>
 
-          {/* Widget: NV Nghỉ phép / việc hôm nay */}
-          <div style={adminCardStyle}>
-            <h3 style={kanbanTitleStyle}>🏖️ Nhân viên nghỉ phép / việc hôm nay ({stats?.leaves_count || 0})</h3>
+          <div className="admin-card">
+            <h3 className="kanban-title">🏖️ Nhân viên nghỉ phép / việc hôm nay ({stats?.leaves_count || 0})</h3>
             {(stats?.leaves_today || []).length === 0 ? (
-              <p style={{ color: '#94a3b8', fontSize: '0.85rem', textAlign: 'center', padding: '1rem 0' }}>Không có ai nghỉ hôm nay.</p>
+              <p className="empty-absence">Không có ai nghỉ hôm nay.</p>
             ) : (
               <>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: 240, overflowY: 'auto' }}>
+                <div className="list-scroll">
                   {stats.leaves_today.slice(0, LIST_LIMIT).map(l => (
-                    <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0.75rem', background: '#f8fafc', borderRadius: 8, borderLeft: '4px solid #e11d48' }}>
+                    <div key={l.id} className="trip-card trip-card-leave">
                       <div>
-                        <div style={{ fontWeight: 600, fontSize: '0.82rem', color: '#0f172a' }}>👤 {l.full_name} ({l.department})</div>
-                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>📝 {l.destination || 'Nghỉ phép'}</div>
+                        <div className="trip-name">👤 {l.full_name} ({l.department})</div>
+                        <div className="trip-detail">📝 {l.destination || 'Nghỉ phép'}</div>
                       </div>
-                      <span style={{ fontSize: '0.7rem', color: '#475569', background: '#e2e8f0', padding: '0.1rem 0.4rem', borderRadius: 4 }}>{formatDate(l.start_date)} → {formatDate(l.end_date)}</span>
+                      <span className="date-header">{formatDate(l.start_date)} → {formatDate(l.end_date)}</span>
                     </div>
                   ))}
                 </div>
                 {stats.leaves_today.length > LIST_LIMIT && (
-                  <button style={viewAllBtnStyle} onClick={() => setViewDetail(detailRows('leaves'))}>Xem tất cả ({stats.leaves_today.length})</button>
+                  <button className="view-all-btn" onClick={() => setViewDetail(detailRows('leaves'))}>Xem tất cả ({stats.leaves_today.length})</button>
                 )}
               </>
             )}
           </div>
 
-          {/* Widget: NV đang xin nghỉ phép / công tác (chờ duyệt) */}
-          <div style={adminCardStyle}>
-            <h3 style={kanbanTitleStyle}>🧑💼 NV đang xin nghỉ phép / công tác ({stats?.pending_absences?.total_employees || 0} NV)</h3>
+          <div className="admin-card">
+            <h3 className="kanban-title">🧑💼 NV đang xin nghỉ phép / công tác ({stats?.pending_absences?.total_employees || 0} NV)</h3>
             {(stats?.pending_absences?.items || []).length === 0 ? (
-              <p style={{ color: '#94a3b8', fontSize: '0.85rem', textAlign: 'center', padding: '1rem 0' }}>Không có ai đang xin nghỉ phép / công tác.</p>
+              <p className="empty-absence">Không có ai đang xin nghỉ phép / công tác.</p>
             ) : (
               <>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: 240, overflowY: 'auto' }}>
+                <div className="list-scroll">
                   {stats.pending_absences.items.slice(0, LIST_LIMIT).map(a => (
-                    <div key={a.request_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0.75rem', background: '#f8fafc', borderRadius: 8, borderLeft: '4px solid #0284c7' }}>
+                    <div key={a.request_id} className="trip-card trip-card-absence">
                       <div>
-                        <div style={{ fontWeight: 600, fontSize: '0.82rem', color: '#0f172a' }}>👤 {a.full_name} ({a.department})</div>
-                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{a.kind === 'leave' ? '🏖️ Nghỉ phép' : '🧳 Công tác'} · {a.title}</div>
+                        <div className="trip-name">👤 {a.full_name} ({a.department})</div>
+                        <div className="trip-detail">{a.kind === 'leave' ? '🏖️ Nghỉ phép' : '🧳 Công tác'} · {a.title}</div>
                       </div>
-                      <span style={{ fontSize: '0.7rem', color: '#d97706', background: '#fef3c7', padding: '0.1rem 0.4rem', borderRadius: 4, whiteSpace: 'nowrap' }}>⏳ Chờ duyệt</span>
+                      <span className="pending-badge">⏳ Chờ duyệt</span>
                     </div>
                   ))}
                 </div>
                 {stats.pending_absences.items.length > LIST_LIMIT && (
-                  <button style={viewAllBtnStyle} onClick={() => setViewDetail(detailRows('absences'))}>Xem tất cả ({stats.pending_absences.items.length})</button>
+                  <button className="view-all-btn" onClick={() => setViewDetail(detailRows('absences'))}>Xem tất cả ({stats.pending_absences.items.length})</button>
                 )}
               </>
             )}
@@ -539,28 +510,12 @@ export default function Dashboard() {
   // ── 2. USER / HEAD DASHBOARD ──
   return (
     <div>
-      <style>{`
-        .kanban-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.25rem; }
-        .kcard { transition: all 0.2s ease; }
-        .kcard:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
-      `}</style>
-
-      <h1 style={pageTitleStyle}>
+      <h1 className="page-title">
         📊 Tổng quan
-        {emp && <span style={{ fontSize: '0.85rem', fontWeight: 500, color: '#64748b' }}>— {emp.full_name} ({emp.department})</span>}
+        {emp && <span className="page-title-sub">— {emp.full_name} ({emp.department})</span>}
       </h1>
 
-      {toast && (
-        <div style={{
-          position: 'fixed', top: 18, right: 18, zIndex: 1200, maxWidth: 360,
-          padding: '0.7rem 1rem', borderRadius: 10, fontSize: '0.82rem', fontWeight: 600,
-          color: '#fff',
-          background: toast.type === 'error' ? '#dc2626' : toast.type === 'success' ? '#16a34a' : '#00468C',
-          boxShadow: '0 6px 18px rgba(0,0,0,0.18)', display: 'flex', alignItems: 'center', gap: '0.5rem',
-        }}>
-          {toast.text}
-        </div>
-      )}
+      {toast && <ToastBox toast={toast} />}
 
       <div style={{ marginBottom: '1.5rem' }}>
         <AnnouncementsBox compact />
@@ -568,33 +523,33 @@ export default function Dashboard() {
 
       {/* Trưởng phòng: duyệt đơn nghỉ phép / công tác */}
       {isHead && (
-        <div style={{ ...kanbanColStyle, marginBottom: '1.25rem' }}>
-          <h3 style={{ ...kanbanTitleStyle, margin: 0 }}>🗂️ Đơn chờ duyệt ({pendingReqs.length})</h3>
+        <div className="kanban-col" style={{ marginBottom: '1.25rem' }}>
+          <h3 className="kanban-title" style={{ margin: 0 }}>🗂️ Đơn chờ duyệt ({pendingReqs.length})</h3>
           {pendingReqs.length === 0 ? (
-            <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0 }}>Không có đơn chờ duyệt nào.</p>
+            <p className="empty-text" style={{ margin: 0 }}>Không có đơn chờ duyệt nào.</p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', maxHeight: 320, overflowY: 'auto' }}>
+            <div className="list-scroll-lg">
               {pendingReqs.map(r => {
                 const meta = safeJson(r.metadata_json || r.metadata || '{}')
                 const isLeave = meta.kind !== 'business_trip'
                 return (
-                  <div key={r.id} style={ticketCardStyle}>
-                    <div style={{ fontWeight: 600, fontSize: '0.84rem', color: '#0f172a', marginBottom: '0.2rem' }}>
+                  <div key={r.id} className="ticket-card">
+                    <div className="trip-name" style={{ marginBottom: '0.2rem' }}>
                       #{r.id} — {r.title}
                     </div>
                     <div style={{ fontSize: '0.74rem', color: '#64748b', whiteSpace: 'pre-line', marginBottom: '0.3rem' }}>
                       👤 {r.requester_name} · {r.requester_dept} · {formatDate(meta.start_date)} → {formatDate(meta.end_date)}
                     </div>
-                    <div style={{ display: 'flex', gap: '0.35rem' }}>
+                    <div className="btn-row">
                       <button
                         onClick={() => handleApprove(r, 'approve')}
                         disabled={approvingId === r.id}
-                        style={{ padding: '0.28rem 0.7rem', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 6, fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer' }}
+                        className="approve-btn approve-btn-yes"
                       >{approvingId === r.id ? 'Đang xử lý...' : isLeave ? '✅ Duyệt nghỉ phép' : '✅ Duyệt công tác'}</button>
                       <button
                         onClick={() => handleApprove(r, 'reject')}
                         disabled={approvingId === r.id}
-                        style={{ padding: '0.28rem 0.7rem', background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: 6, fontSize: '0.74rem', fontWeight: 600, cursor: 'pointer' }}
+                        className="approve-btn approve-btn-no"
                       >❌ Từ chối</button>
                     </div>
                   </div>
@@ -605,34 +560,23 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* User: trạng thái đơn nghỉ phép / công tác của mình */}
       {!isAdmin && (
-        <div style={{ ...kanbanColStyle, marginBottom: '1.25rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
+        <div className="kanban-col" style={{ marginBottom: '1.25rem' }}>
+          <div className="header-row-nomargin">
             <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#0f172a' }}>
               📋 Đơn của tôi ({activeMyReqs.length} đang chờ)
             </h3>
 
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div className="flex-col gap-xs" style={{ flexDirection: 'row' }}>
               <button
                 onClick={() => setShowHistoryReqs(false)}
-                style={{
-                  fontSize: '0.75rem', padding: '0.3rem 0.6rem', borderRadius: 6, cursor: 'pointer', border: 'none',
-                  background: !showHistoryReqs ? '#e2e8f0' : 'transparent',
-                  color: !showHistoryReqs ? '#0f172a' : '#64748b',
-                  fontWeight: !showHistoryReqs ? 600 : 400
-                }}
+                className={`history-toggle-btn ${!showHistoryReqs ? 'active' : 'inactive'}`}
               >
                 Đang chờ
               </button>
               <button
                 onClick={() => setShowHistoryReqs(true)}
-                style={{
-                  fontSize: '0.75rem', padding: '0.3rem 0.6rem', borderRadius: 6, cursor: 'pointer', border: 'none',
-                  background: showHistoryReqs ? '#e2e8f0' : 'transparent',
-                  color: showHistoryReqs ? '#0f172a' : '#64748b',
-                  fontWeight: showHistoryReqs ? 600 : 400
-                }}
+                className={`history-toggle-btn ${showHistoryReqs ? 'active' : 'inactive'}`}
               >
                 Lịch sử ({historyMyReqs.length})
               </button>
@@ -640,20 +584,20 @@ export default function Dashboard() {
           </div>
 
           {displayReqs.length === 0 ? (
-            <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0 }}>
+            <p className="empty-text" style={{ margin: 0 }}>
               {showHistoryReqs ? 'Bạn chưa có lịch sử đơn nào.' : 'Bạn không có đơn nào đang chờ xử lý.'}
             </p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: 320, overflowY: 'auto' }}>
+            <div className="list-scroll-lg">
               {displayReqs.map(r => {
                 const st = reqStatusStyle(r.status)
                 return (
-                  <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.7rem', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                  <div key={r.id} className="my-req-card">
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: '0.82rem', color: '#0f172a' }}>#{r.id} — {r.title}</div>
-                      <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{formatDate(r.created_at)}</div>
+                      <div className="trip-name">#{r.id} — {r.title}</div>
+                      <div className="ticket-item-meta">{formatDate(r.created_at)}</div>
                     </div>
-                    <span style={st.badge}>{st.label}</span>
+                    <span className="req-status-badge" style={{ background: st.bg, color: st.color }}>{st.label}</span>
                   </div>
                 )
               })}
@@ -662,205 +606,197 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Trưởng phòng: NV phòng đang xin nghỉ/công tác */}
       {isHead && (
-        <div style={{ ...kanbanColStyle, marginBottom: '1.25rem' }}>
-          <h3 style={{ ...kanbanTitleStyle, margin: 0 }}>🧑💼 NV phòng đang xin nghỉ / công tác ({stats?.pending_absences?.total_employees || 0} NV)</h3>
+        <div className="kanban-col" style={{ marginBottom: '1.25rem' }}>
+          <h3 className="kanban-title" style={{ margin: 0 }}>🧑💼 NV phòng đang xin nghỉ / công tác ({stats?.pending_absences?.total_employees || 0} NV)</h3>
           {(stats?.pending_absences?.items || []).length === 0 ? (
-            <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0 }}>Không có nhân viên nào đang xin nghỉ / công tác.</p>
+            <p className="empty-text" style={{ margin: 0 }}>Không có nhân viên nào đang xin nghỉ / công tác.</p>
           ) : (
             <>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: 260, overflowY: 'auto' }}>
+              <div className="list-scroll" style={{ maxHeight: 260 }}>
                 {stats.pending_absences.items.slice(0, LIST_LIMIT).map(a => (
-                  <div key={a.request_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.7rem', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0', borderLeft: '4px solid #0284c7' }}>
+                  <div key={a.request_id} className="trip-card trip-card-absence">
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: '0.82rem', color: '#0f172a' }}>
+                      <div className="trip-name">
                         👤 {a.full_name} ({a.department})
                       </div>
-                      <div style={{ fontSize: '0.74rem', color: '#64748b' }}>
+                      <div className="trip-detail">
                         {a.kind === 'leave' ? '🏖️ Nghỉ phép' : '🧳 Công tác'}
                         {a.start_date && a.end_date && ` · ${formatDate(a.start_date)} → ${formatDate(a.end_date)}`}
                       </div>
                     </div>
-                    <span style={{ fontSize: '0.7rem', color: '#d97706', background: '#fef3c7', padding: '0.1rem 0.45rem', borderRadius: 20, fontWeight: 600, whiteSpace: 'nowrap' }}>⏳ Chờ duyệt</span>
+                    <span className="pending-badge">⏳ Chờ duyệt</span>
                   </div>
                 ))}
               </div>
               {stats.pending_absences.items.length > LIST_LIMIT && (
-                <button style={viewAllBtnStyle} onClick={() => setViewDetail(detailRows('absences', emp?.department || stats.pending_absences.items[0]?.department))}>Xem tất cả ({stats.pending_absences.items.length})</button>
+                <button className="view-all-btn" onClick={() => setViewDetail(detailRows('absences', emp?.department || stats.pending_absences.items[0]?.department))}>Xem tất cả ({stats.pending_absences.items.length})</button>
               )}
             </>
           )}
         </div>
       )}
 
-      <div className="kanban-grid">
-        {/* Widget: NV Đi công tác hôm nay (hiển thị cho tất cả user) */}
-        <div style={kanbanColStyle}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-            <h3 style={{ ...kanbanTitleStyle, margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              🧳 Nhân viên đi công tác
-            </h3>
-            <span style={countBadge(stats?.trips_today?.length || 0, '#0284c7')}>{stats?.trips_today?.length || 0}</span>
-          </div>
-          {(stats?.trips_today || []).length === 0 ? (
-            <div style={emptyKanbanStyle}>
-              <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0 }}>Không có ai đi công tác hôm nay.</p>
-            </div>
-          ) : (
-            <>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', maxHeight: 300, overflowY: 'auto' }}>
-                {stats.trips_today.slice(0, LIST_LIMIT).map(t => (
-                  <div key={t.id} className="kcard" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.65rem 0.85rem', background: '#f8fafc', borderRadius: 8, borderLeft: '4px solid #0284c7', borderTop: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0' }}>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: '0.82rem', color: '#0f172a' }}>👤 {t.full_name}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.15rem' }}>📍 {t.destination} ({t.department})</div>
-                    </div>
-                    <span style={{ fontSize: '0.7rem', color: '#475569', background: '#e2e8f0', padding: '0.1rem 0.4rem', borderRadius: 4, whiteSpace: 'nowrap', marginLeft: '0.5rem' }}>{formatDate(t.start_date)} → {formatDate(t.end_date)}</span>
-                  </div>
-                ))}
-              </div>
-              {stats.trips_today.length > LIST_LIMIT && (
-                <button style={viewAllBtnStyle} onClick={() => setViewDetail(detailRows('trips'))}>Xem tất cả ({stats.trips_today.length})</button>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Widget: NV Nghỉ phép / việc hôm nay (hiển thị cho tất cả user) */}
-        <div style={kanbanColStyle}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-            <h3 style={{ ...kanbanTitleStyle, margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              🏖️ Nhân viên nghỉ phép
-            </h3>
-            <span style={countBadge(stats?.leaves_today?.length || 0, '#e11d48')}>{stats?.leaves_today?.length || 0}</span>
-          </div>
-          {(stats?.leaves_today || []).length === 0 ? (
-            <div style={emptyKanbanStyle}>
-              <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0 }}>Không có ai nghỉ hôm nay.</p>
-            </div>
-          ) : (
-            <>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', maxHeight: 300, overflowY: 'auto' }}>
-                {stats.leaves_today.slice(0, LIST_LIMIT).map(l => (
-                  <div key={l.id} className="kcard" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.65rem 0.85rem', background: '#f8fafc', borderRadius: 8, borderLeft: '4px solid #e11d48', borderTop: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0' }}>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: '0.82rem', color: '#0f172a' }}>👤 {l.full_name}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.15rem' }}>📝 {l.destination || 'Nghỉ phép'} ({l.department})</div>
-                    </div>
-                    <span style={{ fontSize: '0.7rem', color: '#475569', background: '#e2e8f0', padding: '0.1rem 0.4rem', borderRadius: 4, whiteSpace: 'nowrap', marginLeft: '0.5rem' }}>{formatDate(l.start_date)} → {formatDate(l.end_date)}</span>
-                  </div>
-                ))}
-              </div>
-              {stats.leaves_today.length > LIST_LIMIT && (
-                <button style={viewAllBtnStyle} onClick={() => setViewDetail(detailRows('leaves'))}>Xem tất cả ({stats.leaves_today.length})</button>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Widget: Lịch hôm nay */}
-        {showBookings && (
-          <div style={kanbanColStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <h3 style={{ ...kanbanTitleStyle, margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <Calendar size={18} color="#0a5b35" /> Lịch hôm nay
+        <div className="kanban-grid">
+          <div className="kanban-col">
+            <div className="header-row-flex">
+              <h3 className="kanban-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                🧳 Nhân viên đi công tác
               </h3>
-              <span style={countBadge(todayBooking.length, '#0a5b35')}>{todayBooking.length}</span>
+              <span className="count-badge" style={{ background: '#0284c7' }}>{stats?.trips_today?.length || 0}</span>
             </div>
-            {todayBooking.length === 0 ? (
-              <div style={emptyKanbanStyle}>
-                <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0 }}>Hôm nay không có lịch đặt nào.</p>
+            {(stats?.trips_today || []).length === 0 ? (
+              <div className="empty-kanban">
+                <p className="empty-text" style={{ margin: 0 }}>Không có ai đi công tác hôm nay.</p>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-                {todayBooking.map(b => {
-                  const isCar = b.resource_type?.includes('car')
-                  const badge = bookingBadge(b)
-                  return (
-                    <div key={b.id} className="kcard" style={{
-                      ...bookingCard(isCar),
-                      ...(badge.dot ? { borderLeft: '4px solid #16a34a' } : {}),
-                    }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.3rem' }}>
-                        <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          {isCar ? '🚗' : '🚪'} {b.resource_name}
-                        </span>
-                        <span style={timeBadgeStyle}>{b.start_time} – {b.end_time}</span>
+              <>
+                <div className="list-scroll-md">
+                  {stats.trips_today.slice(0, LIST_LIMIT).map(t => (
+                    <div key={t.id} className="kcard trip-card trip-card-car">
+                      <div>
+                        <div className="trip-name">👤 {t.full_name}</div>
+                        <div className="trip-detail">📍 {t.destination} ({t.department})</div>
                       </div>
-                      <div style={{ fontSize: '0.82rem', color: '#475569', marginBottom: '0.3rem' }}>
-                        {b.title || 'Sử dụng nội bộ'}
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#64748b' }}>
-                        <span>👤 {b.full_name}</span>
-                        {b.department && <span style={deptTagStyle}>{b.department}</span>}
-                      </div>
+                      <span className="date-header">{formatDate(t.start_date)} → {formatDate(t.end_date)}</span>
                     </div>
-                  )
-                })}
-              </div>
+                  ))}
+                </div>
+                {stats.trips_today.length > LIST_LIMIT && (
+                  <button className="view-all-btn" onClick={() => setViewDetail(detailRows('trips'))}>Xem tất cả ({stats.trips_today.length})</button>
+                )}
+              </>
             )}
           </div>
-        )}
 
-        {/* Widget: Ticket hỗ trợ */}
-        {showTickets && (
-          <div style={kanbanColStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.4rem' }}>
-              <h3 style={{ ...kanbanTitleStyle, margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <Ticket size={18} color="#2563eb" /> Ticket của tôi
+          <div className="kanban-col">
+            <div className="header-row-flex">
+              <h3 className="kanban-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                🏖️ Nhân viên nghỉ phép
               </h3>
-              <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
-                <span style={countBadge(pendingTickets.length, '#d97706')}>chờ {pendingTickets.length}</span>
-                {queuePos && queuePos.total_pending > 0 && queuePos.rank > 1 && (
-                  <span style={queueBadgeStyle}>
-                    #Hàng đợi: {queuePos.rank}
-                  </span>
-                )}
-              </div>
+              <span className="count-badge" style={{ background: '#e11d48' }}>{stats?.leaves_today?.length || 0}</span>
             </div>
-
-            {pendingTickets.length > 0 && (
+            {(stats?.leaves_today || []).length === 0 ? (
+              <div className="empty-kanban">
+                <p className="empty-text" style={{ margin: 0 }}>Không có ai nghỉ hôm nay.</p>
+              </div>
+            ) : (
               <>
-                <div style={sectionSubTitleStyle}>⏳ ĐANG CHỜ XỬ LÝ</div>
-                {pendingTickets.map(t => {
-                  const st = STATUS_MAP[t.status] || {}
-                  return (
-                    <div key={t.id} className="kcard" style={ticketCardStyle}>
+                <div className="list-scroll-md">
+                  {stats.leaves_today.slice(0, LIST_LIMIT).map(l => (
+                    <div key={l.id} className="kcard trip-card trip-card-leave">
+                      <div>
+                        <div className="trip-name">👤 {l.full_name}</div>
+                        <div className="trip-detail">📝 {l.destination || 'Nghỉ phép'} ({l.department})</div>
+                      </div>
+                      <span className="date-header">{formatDate(l.start_date)} → {formatDate(l.end_date)}</span>
+                    </div>
+                  ))}
+                </div>
+                {stats.leaves_today.length > LIST_LIMIT && (
+                  <button className="view-all-btn" onClick={() => setViewDetail(detailRows('leaves'))}>Xem tất cả ({stats.leaves_today.length})</button>
+                )}
+              </>
+            )}
+          </div>
+
+          {showBookings && (
+            <div className="kanban-col">
+              <div className="header-row-flex">
+                <h3 className="kanban-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Calendar size={18} color="#0a5b35" /> Lịch hôm nay
+                </h3>
+                <span className="count-badge" style={{ background: '#0a5b35' }}>{todayBooking.length}</span>
+              </div>
+              {todayBooking.length === 0 ? (
+                <div className="empty-kanban">
+                  <p className="empty-text" style={{ margin: 0 }}>Hôm nay không có lịch đặt nào.</p>
+                </div>
+              ) : (
+                <div className="list-scroll-sm">
+                  {todayBooking.map(b => {
+                    const isCar = b.resource_type?.includes('car')
+                    const badge = bookingBadge(b)
+                    return (
+                      <div key={b.id} className={`kcard booking-card ${isCar ? 'booking-card-car' : 'booking-card-door'} ${badge.dot ? 'booking-card-active' : ''}`}>
+                        <div className="booking-info-top">
+                          <span className="booking-name">
+                            {isCar ? '🚗' : '🚪'} {b.resource_name}
+                          </span>
+                          <span className="time-badge">{b.start_time} – {b.end_time}</span>
+                        </div>
+                        <div className="booking-detail">
+                          {b.title || 'Sử dụng nội bộ'}
+                        </div>
+                        <div className="booking-footer">
+                          <span>👤 {b.full_name}</span>
+                          {b.department && <span className="dept-tag">{b.department}</span>}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {showTickets && (
+            <div className="kanban-col">
+              <div className="header-row-flex">
+                <h3 className="kanban-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Ticket size={18} color="#2563eb" /> Ticket của tôi
+                </h3>
+                <div className="ticket-header">
+                  <span className="count-badge" style={{ background: '#d97706' }}>chờ {pendingTickets.length}</span>
+                  {queuePos && queuePos.total_pending > 0 && queuePos.rank > 1 && (
+                    <span className="queue-badge">
+                      #Hàng đợi: {queuePos.rank}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {pendingTickets.length > 0 && (
+                <>
+                  <div className="section-subtitle">⏳ ĐANG CHỜ XỬ LÝ</div>
+                  {pendingTickets.map(t => {
+                    const st = STATUS_MAP[t.status] || {}
+                    return (
+                      <div key={t.id} className="kcard ticket-card">
+                        <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#0f172a', marginBottom: '0.2rem' }}>
+                          #{t.id} — {t.title}
+                        </div>
+                        <div className="gap-xs" style={{ display: 'flex', marginBottom: '0.3rem' }}>
+                          <span className="status-badge" style={{ background: st.bg, color: st.color }}>{st.label}</span>
+                        </div>
+                        {t.description && <div style={{ fontSize: '0.78rem', color: '#64748b', lineHeight: 1.4 }}>{t.description}</div>}
+                      </div>
+                    )
+                  })}
+                </>
+              )}
+
+              {resolvedTickets.length > 0 && (
+                <>
+                  <div className="section-subtitle-margin">✅ ĐÃ XỬ LÝ GẦN ĐÂY</div>
+                  {resolvedTickets.slice(0, 2).map(t => (
+                    <div key={t.id} className="kcard ticket-card">
                       <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#0f172a', marginBottom: '0.2rem' }}>
                         #{t.id} — {t.title}
                       </div>
-                      <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.3rem' }}>
-                        <span style={statusBadge(st.bg, st.color)}>{st.label}</span>
-                      </div>
-                      {t.description && <div style={{ fontSize: '0.78rem', color: '#64748b', lineHeight: 1.4 }}>{t.description}</div>}
+                      <span className="status-badge" style={{ background: '#dcfce7', color: '#16a34a' }}>✅ Đã xong</span>
                     </div>
-                  )
-                })}
-              </>
-            )}
+                  ))}
+                </>
+              )}
 
-            {resolvedTickets.length > 0 && (
-              <>
-                <div style={{ ...sectionSubTitleStyle, margin: '0.75rem 0 0.4rem' }}>✅ ĐÃ XỬ LÝ GẦN ĐÂY</div>
-                {resolvedTickets.slice(0, 2).map(t => (
-                  <div key={t.id} className="kcard" style={ticketCardStyle}>
-                    <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#0f172a', marginBottom: '0.2rem' }}>
-                      #{t.id} — {t.title}
-                    </div>
-                    <span style={statusBadge('#dcfce7', '#16a34a')}>✅ Đã xong</span>
-                  </div>
-                ))}
-              </>
-            )}
-
-            {myTickets.length === 0 && (
-              <div style={emptyKanbanStyle}>
-                <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0 }}>Bạn chưa có ticket yêu cầu nào.</p>
-              </div>
-            )}
-          </div>
-        )}
+              {myTickets.length === 0 && (
+                <div className="empty-kanban">
+                  <p className="empty-text" style={{ margin: 0 }}>Bạn chưa có ticket yêu cầu nào.</p>
+                </div>
+              )}
+            </div>
+          )}
       </div>
 
       {viewDetail && <ModalList title={viewDetail.title} rows={viewDetail.rows} onClose={() => setViewDetail(null)} />}
@@ -872,31 +808,39 @@ export default function Dashboard() {
 
 function ModalList({ title, rows, onClose }) {
   return (
-    <div style={mvOverlay} onClick={onClose}>
-      <div style={mvCard} onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.9rem 1.1rem', borderBottom: '1px solid #eef2f6' }}>
-          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>{title}</h3>
-          <button onClick={onClose} style={mvClose}>✕</button>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3 className="modal-title">{title}</h3>
+          <button onClick={onClose} className="modal-close-btn">✕</button>
         </div>
-        <div style={{ maxHeight: '66vh', overflowY: 'auto', padding: '0.75rem 1rem' }}>
+        <div className="modal-body">
           {rows.length === 0 ? (
-            <p style={{ color: '#94a3b8', fontSize: '0.85rem', textAlign: 'center', padding: '1rem 0' }}>Không có dữ liệu.</p>
+            <p className="empty-text">Không có dữ liệu.</p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <div className="flex-col">
               {rows.map((r, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.6rem', padding: '0.55rem 0.4rem', borderRadius: 8, borderBottom: '1px solid #f1f5f9', background: i % 2 ? '#fafcfe' : '#fff' }}>
+                <div key={i} className={`modal-row ${i % 2 ? 'modal-row-alt' : 'modal-row-normal'}`}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: '0.82rem', color: '#0f172a' }}>👤 {r.main}</div>
+                    <div className="trip-name">👤 {r.main}</div>
                     {r.sub && <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '0.1rem' }}>{r.sub}</div>}
                   </div>
                   {r.date && <span style={{ fontSize: '0.7rem', color: '#64748b', whiteSpace: 'nowrap' }}>{r.date}</span>}
-                  {r.tag && <span style={{ padding: '0.1rem 0.45rem', borderRadius: 20, fontSize: '0.68rem', fontWeight: 600, color: r.tagColor, background: r.tagBg, whiteSpace: 'nowrap' }}>{r.tag}</span>}
+                  {r.tag && <span className="req-status-badge" style={{ color: r.tagColor, background: r.tagBg }}>{r.tag}</span>}
                 </div>
               ))}
             </div>
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+function ToastBox({ toast }) {
+  return (
+    <div className={`toast-box toast-${toast.type}`}>
+      {toast.text}
     </div>
   )
 }
@@ -911,38 +855,25 @@ function bookingBadge(b) {
 
 function BookingList({ bookings }) {
   if (bookings.length === 0) {
-    return <div style={emptyKanbanStyle}><p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0 }}>Không có lịch đặt hôm nay.</p></div>
+    return <div className="empty-kanban"><p className="empty-text" style={{ margin: 0 }}>Không có lịch đặt hôm nay.</p></div>
   }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: 300, overflowY: 'auto' }}>
+    <div className="list-scroll-md">
       {bookings.map(b => {
         const isCar = b.resource_type?.includes('car')
         return (
-          <div key={b.id} style={bookingCard(isCar)}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
-              <span style={{ fontWeight: 600, fontSize: '0.82rem', color: '#0f172a' }}>{isCar ? '🚗' : '🚪'} {b.resource_name}</span>
-              <span style={timeBadgeStyle}>{b.start_time}–{b.end_time}</span>
+          <div key={b.id} className={`booking-card ${isCar ? 'booking-card-car' : 'booking-card-door'}`}>
+            <div className="booking-info">
+              <span className="trip-name">{isCar ? '🚗' : '🚪'} {b.resource_name}</span>
+              <span className="time-badge">{b.start_time}–{b.end_time}</span>
             </div>
-            <div style={{ fontSize: '0.78rem', color: '#475569' }}>{b.title}</div>
-            <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '0.15rem' }}>👤 {b.full_name}</div>
+            <div className="booking-title">{b.title}</div>
+            <div className="booking-user">👤 {b.full_name}</div>
           </div>
         )
       })}
     </div>
   )
-}
-
-function bookingCard(isCar) {
-  return {
-    padding: '0.65rem 0.85rem', borderRadius: 8,
-    borderLeft: `4px solid ${isCar ? '#0284c7' : '#0a5b35'}`,
-    background: '#f8fafc', borderTop: '1px solid #e2e8f0',
-    borderRight: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0',
-  }
-}
-
-function statusBadge(bg, color) {
-  return { display: 'inline-block', padding: '0.1rem 0.4rem', borderRadius: 20, fontSize: '0.7rem', fontWeight: 600, background: bg, color }
 }
 
 function safeJson(str) {
@@ -961,35 +892,5 @@ function reqStatusStyle(status) {
     cancelled: { label: '🕓 Đã hủy', color: '#6b7280', bg: '#f3f4f6' },
   }
   const s = map[status] || map.draft
-  return {
-    label: s.label,
-    badge: { display: 'inline-block', padding: '0.1rem 0.5rem', borderRadius: 20, fontSize: '0.7rem', fontWeight: 600, background: s.bg, color: s.color, whiteSpace: 'nowrap' },
-  }
+  return { label: s.label, bg: s.bg, color: s.color }
 }
-
-function countBadge(count, color) {
-  return { fontSize: '0.72rem', fontWeight: 700, color: '#fff', background: color, padding: '0.1rem 0.45rem', borderRadius: 20 }
-}
-
-const loadingStyle = { color: '#64748b', padding: '3rem', textAlign: 'center', fontSize: '0.95rem' }
-const pageTitleStyle = { fontSize: '1.35rem', fontWeight: 700, color: '#0f172a', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }
-const statLabelStyle = { fontSize: '0.82rem', color: '#64748b', fontWeight: 500, display: 'block', marginBottom: '0.25rem' }
-const statValueStyle = { fontSize: '1.75rem', fontWeight: 800, color: '#0f172a' }
-const kanbanTitleStyle = { fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', marginBottom: '0.85rem' }
-const adminCardStyle = { background: '#fff', borderRadius: 12, padding: '1.25rem', border: '1px solid #e2e8f0' }
-const kanbanColStyle = { background: '#fff', borderRadius: 12, padding: '1.25rem', border: '1px solid #e2e8f0', height: 'fit-content' }
-const emptyKanbanStyle = { textAlign: 'center', padding: '1.5rem 1rem', border: '2px dashed #e2e8f0', borderRadius: 10 }
-const emptyTextStyle = { color: '#94a3b8', fontSize: '0.85rem', textAlign: 'center', padding: '1rem 0' }
-const ticketCardStyle = { background: '#f8fafc', borderRadius: 8, padding: '0.65rem 0.85rem', marginBottom: '0.4rem', border: '1px solid #e2e8f0' }
-const timeBadgeStyle = { color: '#fff', background: '#0a5b35', fontSize: '0.7rem', padding: '0.1rem 0.45rem', borderRadius: 4, fontWeight: 600, fontFamily: 'monospace' }
-const deptTagStyle = { background: '#e2e8f0', padding: '0.05rem 0.35rem', borderRadius: 4, fontSize: '0.68rem', color: '#475569' }
-const queueBadgeStyle = { fontSize: '0.72rem', fontWeight: 600, color: '#fff', background: '#0a5b35', padding: '0.1rem 0.45rem', borderRadius: 20 }
-const sectionSubTitleStyle = { fontSize: '0.75rem', color: '#64748b', marginBottom: '0.4rem', fontWeight: 700 }
-const viewAllBtnStyle = {
-  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '100%', marginTop: '0.5rem',
-  padding: '0.4rem 0.6rem', background: '#f0f9ff', color: '#00468C', border: '1px solid #bfdbfe',
-  borderRadius: 8, fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
-}
-const mvOverlay = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(3px)' }
-const mvCard = { background: '#fff', borderRadius: 14, width: 540, maxWidth: '94vw', boxShadow: '0 25px 50px rgba(0,0,0,0.18)', overflow: 'hidden' }
-const mvClose = { width: 30, height: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f1f5f9', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: '0.9rem', color: '#64748b' }
