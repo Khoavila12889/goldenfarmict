@@ -37,6 +37,7 @@ export default function Dashboard() {
   const [toast, setToast] = useState(null)
   const toastTimer = useRef(null)
   const [viewDetail, setViewDetail] = useState(null)
+  const [showHistoryReqs, setShowHistoryReqs] = useState(false)
   const LIST_LIMIT = 10
 
   // 1. Lấy danh sách quyền động của User (Chống Memory Leak)
@@ -307,6 +308,10 @@ export default function Dashboard() {
 
   const showBookings = canViewModule('bookings')
   const showTickets = canViewModule('tickets')
+
+  const activeMyReqs = myReqs.filter(r => !['approved', 'rejected', 'cancelled'].includes(r.status))
+  const historyMyReqs = myReqs.filter(r => ['approved', 'rejected', 'cancelled'].includes(r.status))
+  const displayReqs = showHistoryReqs ? historyMyReqs : activeMyReqs
 
   if (loading) {
     return (
@@ -603,12 +608,44 @@ export default function Dashboard() {
       {/* User: trạng thái đơn nghỉ phép / công tác của mình */}
       {!isAdmin && (
         <div style={{ ...kanbanColStyle, marginBottom: '1.25rem' }}>
-          <h3 style={{ ...kanbanTitleStyle, margin: 0 }}>📋 Trạng thái đơn của tôi ({myReqs.length})</h3>
-          {myReqs.length === 0 ? (
-            <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0 }}>Bạn chưa có đơn nghỉ phép / công tác nào.</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
+            <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#0f172a' }}>
+              📋 Đơn của tôi ({activeMyReqs.length} đang chờ)
+            </h3>
+
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button
+                onClick={() => setShowHistoryReqs(false)}
+                style={{
+                  fontSize: '0.75rem', padding: '0.3rem 0.6rem', borderRadius: 6, cursor: 'pointer', border: 'none',
+                  background: !showHistoryReqs ? '#e2e8f0' : 'transparent',
+                  color: !showHistoryReqs ? '#0f172a' : '#64748b',
+                  fontWeight: !showHistoryReqs ? 600 : 400
+                }}
+              >
+                Đang chờ
+              </button>
+              <button
+                onClick={() => setShowHistoryReqs(true)}
+                style={{
+                  fontSize: '0.75rem', padding: '0.3rem 0.6rem', borderRadius: 6, cursor: 'pointer', border: 'none',
+                  background: showHistoryReqs ? '#e2e8f0' : 'transparent',
+                  color: showHistoryReqs ? '#0f172a' : '#64748b',
+                  fontWeight: showHistoryReqs ? 600 : 400
+                }}
+              >
+                Lịch sử ({historyMyReqs.length})
+              </button>
+            </div>
+          </div>
+
+          {displayReqs.length === 0 ? (
+            <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0 }}>
+              {showHistoryReqs ? 'Bạn chưa có lịch sử đơn nào.' : 'Bạn không có đơn nào đang chờ xử lý.'}
+            </p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: 320, overflowY: 'auto' }}>
-              {myReqs.map(r => {
+              {displayReqs.map(r => {
                 const st = reqStatusStyle(r.status)
                 return (
                   <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0.7rem', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
