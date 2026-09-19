@@ -644,3 +644,30 @@
   font-size: 0.72rem;
   color: #64748b;
 }
+
+/* =========================================
+   EXPANDABLE REASON STYLES
+========================================= */
+
+.clickable-card {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.clickable-card:hover {
+  background-color: #f1f5f9;
+}
+
+.expand-reason {
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  font-size: 0.78rem;
+  color: #334155;
+  border-top: 1px dashed #cbd5e1;
+  line-height: 1.4;
+}
+
+.expand-reason strong {
+  color: #0f172a;
+  font-weight: 600;
+}

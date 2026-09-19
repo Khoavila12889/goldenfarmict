@@ -39,6 +39,8 @@ export default function Dashboard() {
   const toastTimer = useRef(null)
   const [viewDetail, setViewDetail] = useState(null)
   const [showHistoryReqs, setShowHistoryReqs] = useState(false)
+  const [expandedItem, setExpandedItem] = useState(null)
+  const toggleExpand = (id) => setExpandedItem(prev => prev === id ? null : id)
   const LIST_LIMIT = 10
 
   // 1. Lấy danh sách quyền động của User (Chống Memory Leak)
@@ -461,12 +463,25 @@ export default function Dashboard() {
               <>
                 <div className="list-scroll">
                   {stats.leaves_today.slice(0, LIST_LIMIT).map(l => (
-                    <div key={l.id} className="trip-card trip-card-leave">
-                      <div>
-                        <div className="trip-name">👤 {l.full_name} ({l.department})</div>
-                        <div className="trip-detail">📝 {l.destination || 'Nghỉ phép'}</div>
+                    <div 
+                      key={l.id} 
+                      className="trip-card trip-card-leave clickable-card" 
+                      onClick={() => toggleExpand(`leave_${l.id}`)}
+                      style={{ display: 'flex', flexDirection: 'column' }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                        <div>
+                          <div className="trip-name">👤 {l.full_name} ({l.department})</div>
+                          <div className="trip-detail">📝 {l.destination || 'Nghỉ phép'}</div>
+                        </div>
+                        <span className="date-header">{formatDate(l.start_date)} → {formatDate(l.end_date)}</span>
                       </div>
-                      <span className="date-header">{formatDate(l.start_date)} → {formatDate(l.end_date)}</span>
+
+                      {expandedItem === `leave_${l.id}` && (
+                        <div className="expand-reason">
+                          <strong>Lý do:</strong> {l.reason || l.description || 'Không có ghi chú'}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -485,12 +500,25 @@ export default function Dashboard() {
               <>
                 <div className="list-scroll">
                   {stats.pending_absences.items.slice(0, LIST_LIMIT).map(a => (
-                    <div key={a.request_id} className="trip-card trip-card-absence">
-                      <div>
-                        <div className="trip-name">👤 {a.full_name} ({a.department})</div>
-                        <div className="trip-detail">{a.kind === 'leave' ? '🏖️ Nghỉ phép' : '🧳 Công tác'} · {a.title}</div>
+                    <div 
+                      key={a.request_id} 
+                      className="trip-card trip-card-absence clickable-card"
+                      onClick={() => toggleExpand(`abs_${a.request_id}`)}
+                      style={{ display: 'flex', flexDirection: 'column' }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                        <div>
+                          <div className="trip-name">👤 {a.full_name} ({a.department})</div>
+                          <div className="trip-detail">{a.kind === 'leave' ? '🏖️ Nghỉ phép' : '🧳 Công tác'} · {a.title}</div>
+                        </div>
+                        <span className="pending-badge">⏳ Chờ duyệt</span>
                       </div>
-                      <span className="pending-badge">⏳ Chờ duyệt</span>
+
+                      {expandedItem === `abs_${a.request_id}` && (
+                        <div className="expand-reason">
+                          <strong>Lý do:</strong> {a.reason || a.description || 'Không có ghi chú'}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -533,13 +561,24 @@ export default function Dashboard() {
                 const meta = safeJson(r.metadata_json || r.metadata || '{}')
                 const isLeave = meta.kind !== 'business_trip'
                 return (
-                  <div key={r.id} className="ticket-card">
+                  <div 
+                    key={r.id} 
+                    className="ticket-card clickable-card"
+                    onClick={(e) => { if (e.target.tagName !== 'BUTTON') toggleExpand(`req_${r.id}`) }}
+                  >
                     <div className="trip-name" style={{ marginBottom: '0.2rem' }}>
                       #{r.id} — {r.title}
                     </div>
                     <div style={{ fontSize: '0.74rem', color: '#64748b', whiteSpace: 'pre-line', marginBottom: '0.3rem' }}>
                       👤 {r.requester_name} · {r.requester_dept} · {formatDate(meta.start_date)} → {formatDate(meta.end_date)}
                     </div>
+
+                    {expandedItem === `req_${r.id}` && (
+                      <div className="expand-reason">
+                        <strong>Lý do:</strong> {meta.reason || r.description || 'Không có ghi chú'}
+                      </div>
+                    )}
+
                     <div className="btn-row">
                       <button
                         onClick={() => handleApprove(r, 'approve')}
@@ -615,18 +654,31 @@ export default function Dashboard() {
             <>
               <div className="list-scroll" style={{ maxHeight: 260 }}>
                 {stats.pending_absences.items.slice(0, LIST_LIMIT).map(a => (
-                  <div key={a.request_id} className="trip-card trip-card-absence">
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="trip-name">
-                        👤 {a.full_name} ({a.department})
+                    <div 
+                      key={a.request_id} 
+                      className="trip-card trip-card-absence clickable-card"
+                      onClick={() => toggleExpand(`abs_${a.request_id}`)}
+                      style={{ display: 'flex', flexDirection: 'column' }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                        <div>
+                          <div className="trip-name">
+                            👤 {a.full_name} ({a.department})
+                          </div>
+                          <div className="trip-detail">
+                            {a.kind === 'leave' ? '🏖️ Nghỉ phép' : '🧳 Công tác'}
+                            {a.start_date && a.end_date && ` · ${formatDate(a.start_date)} → ${formatDate(a.end_date)}`}
+                          </div>
+                        </div>
+                        <span className="pending-badge">⏳ Chờ duyệt</span>
                       </div>
-                      <div className="trip-detail">
-                        {a.kind === 'leave' ? '🏖️ Nghỉ phép' : '🧳 Công tác'}
-                        {a.start_date && a.end_date && ` · ${formatDate(a.start_date)} → ${formatDate(a.end_date)}`}
-                      </div>
+
+                      {expandedItem === `abs_${a.request_id}` && (
+                        <div className="expand-reason">
+                          <strong>Lý do:</strong> {a.reason || a.description || 'Không có ghi chú'}
+                        </div>
+                      )}
                     </div>
-                    <span className="pending-badge">⏳ Chờ duyệt</span>
-                  </div>
                 ))}
               </div>
               {stats.pending_absences.items.length > LIST_LIMIT && (
@@ -684,12 +736,25 @@ export default function Dashboard() {
               <>
                 <div className="list-scroll-md">
                   {stats.leaves_today.slice(0, LIST_LIMIT).map(l => (
-                    <div key={l.id} className="kcard trip-card trip-card-leave">
-                      <div>
-                        <div className="trip-name">👤 {l.full_name}</div>
-                        <div className="trip-detail">📝 {l.destination || 'Nghỉ phép'} ({l.department})</div>
+                    <div 
+                      key={l.id} 
+                      className="kcard trip-card trip-card-leave clickable-card"
+                      onClick={() => toggleExpand(`leave_${l.id}`)}
+                      style={{ display: 'flex', flexDirection: 'column' }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                        <div>
+                          <div className="trip-name">👤 {l.full_name}</div>
+                          <div className="trip-detail">📝 {l.destination || 'Nghỉ phép'} ({l.department})</div>
+                        </div>
+                        <span className="date-header">{formatDate(l.start_date)} → {formatDate(l.end_date)}</span>
                       </div>
-                      <span className="date-header">{formatDate(l.start_date)} → {formatDate(l.end_date)}</span>
+
+                      {expandedItem === `leave_${l.id}` && (
+                        <div className="expand-reason">
+                          <strong>Lý do:</strong> {l.reason || l.description || 'Không có ghi chú'}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
