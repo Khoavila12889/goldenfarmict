@@ -4,11 +4,13 @@ import {
   MessageCircle, User as UserIcon, Paperclip, RefreshCw, ArrowLeft,
   FileText, FileSpreadsheet, File as FileIcon, Download, ExternalLink,
   Building2, Pencil, Trash2, Settings, Crown, UserPlus, Pin, PinOff, ChevronUp,
+  Archive, RotateCcw,
 } from 'lucide-react'
 import {
   getChatRooms, getChatMessages, createChatRoom, uploadChatFile, getChatContacts, chatWebSocketUrl,
   getChatRoomMembers, renameChatRoom, deleteChatRoom, addChatRoomMembers, removeChatRoomMember,
   getChatPinnedMessages, pinChatMessage, unpinChatMessage, getChatOnline,
+  previewChatArchive, createChatArchive, getChatArchives, restoreChatArchive, downloadChatArchive,
 } from '../services/api'
 import { getEmployees, getDepartments } from '../services/api'
 import './Chat.css'
@@ -17,6 +19,23 @@ const PAGE_SIZE = 50
 const ALLOWED_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'xlsx', 'pdf', 'doc', 'docx']
 const MAX_SIZE = 10 * 1024 * 1024
 const TIME_ZONE = 'Asia/Ho_Chi_Minh'
+
+function toDateInput(d) {
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function previousMonthDefaults() {
+  const now = new Date()
+  const start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  const end = new Date(now.getFullYear(), now.getMonth(), 0)
+  return { start: toDateInput(start), end: toDateInput(end), month: toDateInput(start).slice(0, 7) }
+}
+
+const DEFAULT_ARCHIVE_RANGE = previousMonthDefaults()
+const MAX_ARCHIVE_DATE = toDateInput(new Date(Date.now() - 24 * 60 * 60 * 1000))
 
 // ─── HELPER FUNCTIONS ──────────────────────────────────────────
 function noAccent(s) {
@@ -300,6 +319,18 @@ export default function Chat() {
 
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
+
+  const [showArchive, setShowArchive] = useState(false)
+  const [archiveMode, setArchiveMode] = useState('month')
+  const [archiveDay, setArchiveDay] = useState(DEFAULT_ARCHIVE_RANGE.end)
+  const [archiveMonth, setArchiveMonth] = useState(DEFAULT_ARCHIVE_RANGE.month)
+  const [archiveStart, setArchiveStart] = useState(DEFAULT_ARCHIVE_RANGE.start)
+  const [archiveEnd, setArchiveEnd] = useState(DEFAULT_ARCHIVE_RANGE.end)
+  const [archiveTypes, setArchiveTypes] = useState({ direct: true, group: true })
+  const [archivePreview, setArchivePreview] = useState(null)
+  const [archives, setArchives] = useState([])
+  const [archiveBusy, setArchiveBusy] = useState(false)
+  const [archiveError, setArchiveError] = useState('')
 
   // Refs
   const wsRef = useRef(null)
@@ -900,6 +931,108 @@ export default function Chat() {
     }
   }
 
+  const selectedArchiveTypes = () => Object.keys(archiveTypes).filter(type => archiveTypes[type])
+
+  const selectedArchiveRange = () => {
+    if (archiveMode === 'day') return { start: archiveDay, end: archiveDay }
+    if (archiveMode === 'month') {
+      if (!archiveMonth) return { start: '', end: '' }
+      const [year, month] = archiveMonth.split('-').map(Number)
+      const lastDay = new Date(year, month, 0).getDate()
+      return { start: `${archiveMonth}-01`, end: `${archiveMonth}-${String(lastDay).padStart(2, '0')}` }
+    }
+    return { start: archiveStart, end: archiveEnd }
+  }
+
+  const loadArchiveData = async () => {
+    const types = selectedArchiveTypes()
+    if (!types.length) { setArchiveError('Chọn ít nhất một loại phòng.'); return }
+    const range = selectedArchiveRange()
+    if (!range.start || !range.end) { setArchiveError('Chọn đầy đủ khoảng ngày backup.'); return }
+    setArchiveBusy(true)
+    setArchiveError('')
+    try {
+      const [previewRes, archivesRes] = await Promise.all([
+        previewChatArchive(range.start, range.end, types),
+        getChatArchives(),
+      ])
+      setArchivePreview(previewRes.data?.data || null)
+      setArchives(archivesRes.data?.data || [])
+    } catch (err) {
+      setArchiveError(err.response?.data?.detail || 'Không thể tải dữ liệu quản lý backup.')
+    } finally {
+      setArchiveBusy(false)
+    }
+  }
+
+  const openArchiveManager = () => {
+    setShowArchive(true)
+    setArchivePreview(null)
+    setArchiveError('')
+    setTimeout(loadArchiveData, 0)
+  }
+
+  const handleCreateArchive = async () => {
+    if (!archivePreview?.message_count) return
+    if (!window.confirm(`Nén và backup ${archivePreview.message_count} tin nhắn từ ${archivePreview.start_date} đến ${archivePreview.end_date}, sau đó xóa các tin này khỏi dữ liệu đang hoạt động? Phòng chat và thành viên vẫn được giữ nguyên.`)) return
+    setArchiveBusy(true)
+    setArchiveError('')
+    try {
+      const range = selectedArchiveRange()
+      const res = await createChatArchive(range.start, range.end, selectedArchiveTypes())
+      await refreshRooms()
+      if (activeRoomIdRef.current) {
+        const [messageRes, pinRes] = await Promise.allSettled([
+          getChatMessages(activeRoomIdRef.current, PAGE_SIZE, 0),
+          getChatPinnedMessages(activeRoomIdRef.current),
+        ])
+        if (messageRes.status === 'fulfilled') setMessages(messageRes.value.data?.data || [])
+        if (pinRes.status === 'fulfilled') setPinnedMessages(pinRes.value.data?.data || [])
+      }
+      setArchivePreview(null)
+      const archivesRes = await getChatArchives()
+      setArchives(archivesRes.data?.data || [])
+      window.alert(res.data?.message || 'Đã backup và dọn dữ liệu chat cũ.')
+    } catch (err) {
+      setArchiveError(err.response?.data?.detail || 'Không thể tạo backup.')
+    } finally {
+      setArchiveBusy(false)
+    }
+  }
+
+  const handleRestoreArchive = async (filename) => {
+    if (!window.confirm(`Khôi phục dữ liệu từ ${filename}?`)) return
+    setArchiveBusy(true)
+    setArchiveError('')
+    try {
+      await restoreChatArchive(filename)
+      await refreshRooms()
+      const archivesRes = await getChatArchives()
+      setArchives(archivesRes.data?.data || [])
+      window.alert('Đã khôi phục dữ liệu chat.')
+    } catch (err) {
+      setArchiveError(err.response?.data?.detail || 'Không thể khôi phục backup.')
+    } finally {
+      setArchiveBusy(false)
+    }
+  }
+
+  const handleDownloadArchive = async (filename) => {
+    try {
+      const res = await downloadChatArchive(filename)
+      const url = URL.createObjectURL(res.data)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (_) {
+      setArchiveError('Không thể tải file backup.')
+    }
+  }
+
   useEffect(() => {
     if (!preview) return
     const onKey = (e) => { if (e.key === 'Escape') setPreview(null) }
@@ -945,7 +1078,10 @@ export default function Chat() {
             <MessageSquare size={18} />
             <span>Chat nội bộ</span>
           </div>
-          <button className="chat-icon-btn" onClick={() => setShowCreate(true)} title="Tạo phòng chat"><Plus size={18} /></button>
+          <div className="chat-panel-actions">
+            {isAdmin && <button className="chat-icon-btn" onClick={openArchiveManager} title="Quản lý backup chat"><Archive size={17} /></button>}
+            <button className="chat-icon-btn" onClick={() => setShowCreate(true)} title="Tạo phòng chat"><Plus size={18} /></button>
+          </div>
         </div>
 
         <div className="chat-rooms-list">
@@ -1080,6 +1216,96 @@ export default function Chat() {
       </section>
 
       {/* ── Modals (Dữ nguyên logic và cấu trúc UI) ── */}
+      {showArchive && (
+        <>
+          <div className="chat-modal-overlay" onClick={() => !archiveBusy && setShowArchive(false)} />
+          <div className="chat-modal chat-archive-modal">
+            <div className="chat-modal-header">
+              <div>
+                <div className="chat-modal-title"><Archive size={16} /> Quản lý dữ liệu chat cũ</div>
+                <div className="chat-modal-sub">Chỉ phòng 1-1 và nhóm; phòng ban không bị tác động.</div>
+              </div>
+              <button className="chat-icon-btn" onClick={() => setShowArchive(false)} disabled={archiveBusy}><X size={18} /></button>
+            </div>
+            <div className="chat-modal-body">
+              <div className="chat-archive-controls">
+                <div className="chat-field">
+                  <label>Chọn kỳ backup</label>
+                  <select className="chat-field-select" value={archiveMode} onChange={e => { setArchiveMode(e.target.value); setArchivePreview(null) }}>
+                    <option value="day">Theo ngày</option>
+                    <option value="month">Theo tháng</option>
+                    <option value="custom">Khoảng tùy chọn</option>
+                  </select>
+                </div>
+                {archiveMode === 'day' && <div className="chat-field"><label>Ngày</label><input className="chat-archive-date" type="date" max={MAX_ARCHIVE_DATE} value={archiveDay} onChange={e => { setArchiveDay(e.target.value); setArchivePreview(null) }} /></div>}
+                {archiveMode === 'month' && <div className="chat-field"><label>Tháng</label><input className="chat-archive-date" type="month" max={DEFAULT_ARCHIVE_RANGE.month} value={archiveMonth} onChange={e => { setArchiveMonth(e.target.value); setArchivePreview(null) }} /></div>}
+                {archiveMode === 'custom' && (
+                  <div className="chat-archive-range">
+                    <div className="chat-field"><label>Từ ngày</label><input className="chat-archive-date" type="date" max={MAX_ARCHIVE_DATE} value={archiveStart} onChange={e => { setArchiveStart(e.target.value); setArchivePreview(null) }} /></div>
+                    <div className="chat-field"><label>Đến ngày</label><input className="chat-archive-date" type="date" max={MAX_ARCHIVE_DATE} value={archiveEnd} onChange={e => { setArchiveEnd(e.target.value); setArchivePreview(null) }} /></div>
+                  </div>
+                )}
+                <div className="chat-field">
+                  <label>Loại phòng</label>
+                  <div className="chat-archive-checks">
+                    <label><input type="checkbox" checked={archiveTypes.direct} onChange={e => { setArchiveTypes(v => ({ ...v, direct: e.target.checked })); setArchivePreview(null) }} /> Chat 1-1</label>
+                    <label><input type="checkbox" checked={archiveTypes.group} onChange={e => { setArchiveTypes(v => ({ ...v, group: e.target.checked })); setArchivePreview(null) }} /> Nhóm</label>
+                  </div>
+                </div>
+                <button className="chat-btn-secondary" onClick={loadArchiveData} disabled={archiveBusy}>
+                  {archiveBusy ? <Loader2 size={15} className="chat-spin" /> : <RefreshCw size={15} />} Xem trước
+                </button>
+              </div>
+
+              {archiveError && <div className="chat-error">{archiveError}</div>}
+              {archivePreview && (
+                <div className="chat-archive-preview">
+                  <div className="chat-archive-summary">
+                    <strong>{archivePreview.room_count}</strong> phòng · <strong>{archivePreview.message_count}</strong> tin nhắn đủ điều kiện
+                  </div>
+                  {archivePreview.rooms?.length > 0 && (
+                    <div className="chat-archive-room-list">
+                      {archivePreview.rooms.slice(0, 20).map(room => (
+                        <div key={room.id}>
+                          <span>{room.name || (room.type === 'direct' ? 'Chat 1-1' : 'Nhóm không tên')}</span>
+                          <small>{room.message_count} tin · {formatDay(room.first_message_at)} đến {formatDay(room.last_message_at)}</small>
+                        </div>
+                      ))}
+                      {archivePreview.rooms.length > 20 && <small>Và {archivePreview.rooms.length - 20} phòng khác…</small>}
+                    </div>
+                  )}
+                  <button className="chat-btn-danger-solid" onClick={handleCreateArchive} disabled={archiveBusy || !archivePreview.message_count}>
+                    <Archive size={15} /> Nén, backup và dọn tin nhắn
+                  </button>
+                  <p className="chat-archive-note">Phòng và thành viên được giữ nguyên. Hệ thống kiểm tra ZIP trước khi xóa các tin nhắn trong kỳ đã chọn.</p>
+                </div>
+              )}
+
+              <div className="chat-archive-history">
+                <div className="chat-archive-heading">Các bản backup trên server</div>
+                {archives.length === 0 && <div className="chat-empty"><p>Chưa có bản backup chat.</p></div>}
+                {archives.map(item => (
+                  <div className="chat-archive-item" key={item.filename}>
+                    <div>
+                      <strong>{item.filename}</strong>
+                      {item.error ? <small className="chat-error-text">File lỗi: {item.error}</small> : (
+                        <small>{item.start_date} → {item.end_date} · {item.room_count} phòng · {item.message_count} tin · {formatFileSize(item.size)}</small>
+                      )}
+                    </div>
+                    {!item.error && (
+                      <div className="chat-archive-item-actions">
+                        <button className="chat-icon-btn" onClick={() => handleDownloadArchive(item.filename)} title="Tải backup"><Download size={15} /></button>
+                        <button className="chat-icon-btn" onClick={() => handleRestoreArchive(item.filename)} disabled={archiveBusy} title="Khôi phục"><RotateCcw size={15} /></button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {showCreate && (
         <>
           <div className="chat-modal-overlay" onClick={() => setShowCreate(false)} />

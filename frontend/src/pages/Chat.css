@@ -53,6 +53,8 @@
   color: #0f172a;
 }
 
+.chat-panel-actions { display: flex; align-items: center; gap: 0.4rem; }
+
 .chat-icon-btn {
   display: flex;
   align-items: center;
@@ -662,6 +664,60 @@
 .chat-modal-body {
   padding: 1rem 1.25rem;
   overflow-y: auto;
+}
+
+/* ── Archive manager ── */
+.chat-archive-modal { max-width: 680px; }
+.chat-archive-modal .chat-modal-title { display: flex; align-items: center; gap: 0.45rem; }
+.chat-archive-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+.chat-archive-controls .chat-field { margin: 0; }
+.chat-archive-controls > .chat-field { min-width: 145px; flex: 1; }
+.chat-archive-date {
+  width: 100%;
+  min-height: 36px;
+  box-sizing: border-box;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font: inherit;
+  color: #334155;
+}
+.chat-archive-range { display: flex; gap: 0.65rem; flex: 2; min-width: 290px; }
+.chat-archive-range .chat-field { flex: 1; }
+.chat-archive-days { display: flex; align-items: center; gap: 0.45rem; }
+.chat-archive-days input {
+  width: 110px;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font: inherit;
+}
+.chat-archive-days span { color: #64748b; font-size: 0.8rem; }
+.chat-archive-checks { display: flex; gap: 0.8rem; min-height: 34px; align-items: center; }
+.chat-archive-checks label { display: flex; gap: 0.3rem; align-items: center; margin: 0; font-weight: 500; }
+.chat-archive-preview { margin: 1rem 0; padding: 0.85rem; border: 1px solid #fed7aa; border-radius: 10px; background: #fff7ed; }
+.chat-archive-summary { font-size: 0.86rem; color: #9a3412; margin-bottom: 0.65rem; }
+.chat-archive-room-list { max-height: 160px; overflow-y: auto; margin-bottom: 0.7rem; }
+.chat-archive-room-list > div { display: flex; justify-content: space-between; gap: 1rem; padding: 0.35rem 0; border-bottom: 1px solid #ffedd5; font-size: 0.78rem; }
+.chat-archive-room-list small, .chat-archive-item small { display: block; color: #64748b; font-size: 0.7rem; }
+.chat-archive-note { margin: 0.55rem 0 0; color: #7c2d12; font-size: 0.72rem; }
+.chat-archive-heading { margin: 1rem 0 0.45rem; font-size: 0.8rem; font-weight: 700; color: #334155; }
+.chat-archive-item { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; padding: 0.65rem 0; border-bottom: 1px solid #e2e8f0; }
+.chat-archive-item strong { display: block; max-width: 440px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.76rem; color: #334155; }
+.chat-archive-item-actions { display: flex; gap: 0.35rem; flex-shrink: 0; }
+.chat-error-text { color: #b91c1c !important; }
+
+@media (max-width: 640px) {
+  .chat-archive-controls { flex-direction: column; align-items: stretch; }
+  .chat-archive-range { min-width: 0; width: 100%; }
+  .chat-archive-room-list > div { flex-direction: column; gap: 0.15rem; }
 }
 
 .chat-type-tabs {
@@ -1340,4 +1396,3 @@
   from { opacity: 0; }
   to { opacity: 1; }
 }
-

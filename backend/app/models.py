@@ -11,7 +11,7 @@ Project dùng PostgreSQL 16.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, String, Float, Text, Boolean, UniqueConstraint, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Float, Text, Boolean, UniqueConstraint, ForeignKey, DateTime, Index
 from .core.session import Base
 
 
@@ -552,6 +552,10 @@ class ChatMessage(Base):
     box chat (bất kỳ thành viên nào cũng ghim được).
     """
     __tablename__ = 'chat_messages'
+    __table_args__ = (
+        Index('idx_chat_messages_room_created', 'room_id', 'created_at'),
+        Index('idx_chat_messages_created_at', 'created_at'),
+    )
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     room_id = Column(String(36), ForeignKey('chat_rooms.id', ondelete='CASCADE'), nullable=False, index=True)
     sender_id = Column(String, ForeignKey('users.employee_code', ondelete='SET NULL'), nullable=True, index=True)

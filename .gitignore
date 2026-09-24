@@ -45,6 +45,7 @@ build/
 # ==========================================================
 backend/uploads/
 !backend/uploads/.gitkeep
+backend/storage/chat-archives/
 
 # ==========================================================
 # Temporary files

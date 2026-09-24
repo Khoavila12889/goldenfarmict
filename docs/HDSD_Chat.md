@@ -74,6 +74,16 @@
 ### Bước 7: Gửi kèm tệp đính kèm
 - Bạn có thể gửi **đường dẫn tệp/tài liệu** kèm theo tin nhắn (ô nhập đường dẫn đính kèm nếu có).
 
+### Bước 8: Backup và dọn dữ liệu chat cũ (admin)
+1. Nhấn biểu tượng **Backup** cạnh nút tạo phòng.
+2. Chọn kỳ backup **theo ngày**, **theo tháng** hoặc **khoảng tùy chọn**; chọn loại phòng **Chat 1-1 / Nhóm**.
+3. Nhấn **Xem trước** để kiểm tra số phòng và tin nhắn trong kỳ; thao tác này chưa thay đổi dữ liệu.
+4. Nhấn **Nén, backup và dọn tin nhắn** rồi xác nhận. Hệ thống tạo và kiểm tra ZIP (gồm nội dung, thông tin phòng/thành viên và tệp đính kèm) trước khi xoá các tin nhắn thuộc kỳ đã chọn.
+5. Phòng chat và danh sách thành viên vẫn được giữ để tiếp tục trao đổi bình thường.
+6. Trong danh sách backup, dùng nút **Tải xuống** để lưu ngoại vi hoặc **Khôi phục** để nhập lại đúng đoạn lịch sử theo ngày/tháng/năm. Tin đã tồn tại sẽ tự động được bỏ qua, không tạo bản trùng.
+
+> Phòng chat phòng ban không thuộc phạm vi dọn tự động. File backup được giữ trên server sau khi khôi phục để có thể đối chiếu lại.
+
 ---
 
 ## IV. QUYỀN HẠN & BẢO MẬT
@@ -82,7 +92,7 @@
 |--------|------------------|
 | **Nhân viên (user)** | Tạo phòng 1-1 / nhóm; nhắn tin trong mọi phòng mình tham gia (kể cả phòng phòng ban); không quản lý phòng. |
 | **Trưởng phòng (head)** | Như nhân viên + quản lý (đổi tên / xoá) phòng **phòng ban của mình**; tạo phòng phòng ban cho phòng ban mình. |
-| **Admin** | Quản lý **mọi** phòng: đổi tên, thêm/bớt thành viên nhóm, xoá phòng bất kỳ; tạo phòng phòng ban cho mọi phòng ban. |
+| **Admin** | Quản lý **mọi** phòng: đổi tên, thêm/bớt thành viên nhóm, xoá phòng bất kỳ; tạo phòng phòng ban; backup, dọn và khôi phục chat cũ. |
 | **Chủ nhóm (group owner)** | Quản lý nhóm do mình tạo: đổi tên, thêm/bớt thành viên, xoá nhóm. |
 
 | Vấn đề | Quy định |

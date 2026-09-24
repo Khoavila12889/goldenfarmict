@@ -1011,6 +1011,29 @@ export function unpinChatMessage(messageId) {
   return api.delete(`/chat/messages/${messageId}/pin`, { headers: chatAuthHeaders() })
 }
 
+export function previewChatArchive(startDate, endDate, roomTypes = ['direct', 'group']) {
+  return api.post('/chat/archives/preview', { start_date: startDate, end_date: endDate, room_types: roomTypes }, { headers: chatAuthHeaders() })
+}
+
+export function createChatArchive(startDate, endDate, roomTypes = ['direct', 'group']) {
+  return api.post('/chat/archives', { start_date: startDate, end_date: endDate, room_types: roomTypes }, { headers: chatAuthHeaders() })
+}
+
+export function getChatArchives() {
+  return api.get('/chat/archives', { headers: chatAuthHeaders() })
+}
+
+export function restoreChatArchive(filename) {
+  return api.post('/chat/archives/restore', { filename }, { headers: chatAuthHeaders() })
+}
+
+export function downloadChatArchive(filename) {
+  return api.get(`/chat/archives/${encodeURIComponent(filename)}/download`, {
+    headers: chatAuthHeaders(),
+    responseType: 'blob',
+  })
+}
+
 export function chatWebSocketUrl() {
   const code = sessionStorage.getItem('user_code') || ''
   const token = sessionStorage.getItem('token') || ''

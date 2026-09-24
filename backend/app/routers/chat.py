@@ -35,6 +35,13 @@ from app.core.chat_ws import ConnectionManager
 from app.core.session import SessionLocal
 from app.models import ChatRoom, ChatRoomMember, ChatMessage, Employee, User
 from app.services.upload_service import save_chat_upload, CHAT_UPLOAD_BASE
+from app.services.chat_archive_service import (
+    CHAT_ARCHIVE_BASE,
+    archive_messages,
+    list_archives,
+    preview_message_archive,
+    restore_archive,
+)
 
 
 class RoomCreate(BaseModel):
@@ -50,6 +57,16 @@ class RoomRename(BaseModel):
 
 class MemberUpdate(BaseModel):
     employee_codes: List[str] = []
+
+
+class ChatArchiveRequest(BaseModel):
+    start_date: str
+    end_date: str
+    room_types: List[str] = ["direct", "group"]
+
+
+class ChatRestoreRequest(BaseModel):
+    filename: str
 
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -101,6 +118,18 @@ def _normalize_user(u: dict) -> dict:
         "department": u.get("department") or "",
         "full_name": u.get("full_name") or "",
     }
+
+
+def _require_admin(
+    x_user_code: Optional[str],
+    x_user_role: Optional[str],
+    x_user_dept: Optional[str],
+    x_user_token: Optional[str],
+) -> dict:
+    user = _normalize_user(verify_session(x_user_code, x_user_role, x_user_dept, x_user_token))
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Chỉ quản trị viên được quản lý backup chat")
+    return user
 
 
 def _same_dept(a: Optional[str], b: Optional[str]) -> bool:
@@ -457,6 +486,91 @@ def chat_perf_stats(
             "room_cache_entries": len(_room_member_cache),
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# REST — backup / dọn dữ liệu chat cũ (admin)
+# ---------------------------------------------------------------------------
+@router.post("/archives/preview")
+def preview_chat_archive(
+    data: ChatArchiveRequest,
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token"),
+):
+    """Xem số tin 1-1/nhóm trong khoảng ngày mà chưa thay đổi dữ liệu."""
+    _require_admin(x_user_code, x_user_role, x_user_dept, x_user_token)
+    try:
+        result = preview_message_archive(data.start_date, data.end_date, data.room_types)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "success", "data": result}
+
+
+@router.post("/archives", status_code=201)
+def create_chat_archive(
+    data: ChatArchiveRequest,
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token"),
+):
+    """Tạo ZIP đã kiểm tra thành công, sau đó mới xóa tin trong khoảng ngày."""
+    _require_admin(x_user_code, x_user_role, x_user_dept, x_user_token)
+    try:
+        result = archive_messages(data.start_date, data.end_date, data.room_types)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Không thể tạo backup chat: {exc}") from exc
+    message = "Không có tin nhắn trong khoảng đã chọn" if not result.get("filename") else "Đã nén, backup và dọn tin nhắn trong khoảng đã chọn"
+    return {"status": "success", "data": result, "message": message}
+
+
+@router.get("/archives")
+def get_chat_archives(
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token"),
+):
+    _require_admin(x_user_code, x_user_role, x_user_dept, x_user_token)
+    return {"status": "success", "data": list_archives()}
+
+
+@router.get("/archives/{filename}/download")
+def download_chat_archive(
+    filename: str,
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token"),
+):
+    _require_admin(x_user_code, x_user_role, x_user_dept, x_user_token)
+    path = CHAT_ARCHIVE_BASE / filename
+    if path.name != filename or not path.is_file():
+        raise HTTPException(status_code=404, detail="Không tìm thấy bản backup")
+    return FileResponse(path, filename=filename, media_type="application/zip")
+
+
+@router.post("/archives/restore")
+def restore_chat_archive_endpoint(
+    data: ChatRestoreRequest,
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token"),
+):
+    _require_admin(x_user_code, x_user_role, x_user_dept, x_user_token)
+    try:
+        result = restore_archive(data.filename)
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Không thể khôi phục backup chat: {exc}") from exc
+    invalidate_room_member_cache()
+    return {"status": "success", "data": result, "message": "Đã khôi phục dữ liệu chat"}
 
 
 # ---------------------------------------------------------------------------

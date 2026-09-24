@@ -215,6 +215,21 @@ async def on_startup():
             sess.rollback()
             print(f"  → chat_messages.pinned_at migration: {e}")
 
+        # Lịch sử theo phòng + backup theo khoảng ngày vẫn nhanh khi bảng lớn.
+        try:
+            sess.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_chat_messages_room_created "
+                "ON chat_messages (room_id, created_at)"
+            ))
+            sess.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at "
+                "ON chat_messages (created_at)"
+            ))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → chat_messages archive indexes migration: {e}")
+
     # forum_posts.attachment_* — file đính kèm trong thông báo (ảnh / pdf / url)
     with SessionLocal() as sess:
         try:
