@@ -225,6 +225,8 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 - **Direct & Group**: Phòng chat `direct` (1-1, không cần tên) hoặc `group` (theo tên nhóm); thành viên quản lý qua bảng `chat_room_members` (UNIQUE room_id + employee_code).
 - **Lưu tin nhắn**: Mỗi tin nhắn được lưu vào `chat_messages` qua **SQLAlchemy ORM** trước khi broadcast tới mọi thành viên phòng.
 - **History**: REST `GET /api/chat/messages/{room_id}` phân trang `limit`/`offset`, kèm tên người gửi (LEFT JOIN `employees`), chỉ thành viên phòng mới xem được.
+- **Quản lý backup (admin)**: Chọn **phòng ban** (`department`), chat **nhóm** (`group`) và/hoặc chat **1:1** (`direct`), chọn khoảng ngày, bấm **Xem trước**, rồi chọn cụ thể từng tên phòng ban/nhóm/user cần backup. Chỉ cho phép backup đến hết ngày hôm qua; mỗi lần tối đa 367 ngày. ZIP đã được xác minh mới được dùng để dọn đúng tin nhắn của các phòng đã chọn, còn phòng và thành viên vẫn được giữ lại.
+- **Lưu trữ/khôi phục backup**: Tên file lấy theo các phòng thực sự được backup, ví dụ `bk_01-08-2026_den_31-08-2026_nhan-su_khoa.zip` (tự thêm `_2`, `_3` nếu trùng). Tên được bỏ dấu và thay ký tự không hợp lệ bằng `-`; nhiều phòng ngăn bằng `_`. Admin có thể tải ZIP về PC, xóa bản trên VPS, tải lại ZIP tối đa 50 MB và khôi phục; message ID đã tồn tại được bỏ qua để tránh trùng dữ liệu.
 - **ConnectionManager** (`core/chat_ws.py`): Quản lý kết nối theo `employee_code` (hỗ trợ multi-tab), tự dọn socket chết, broadcast theo danh sách thành viên phòng.
 - **Cascade (D3)**: Xoá User → tin nhắn giữ nguyên, `sender_id` set NULL (`ondelete="SET NULL"`); xoá phòng chat → cascade xoá tin nhắn + thành viên.
 
@@ -775,6 +777,13 @@ goldenfarm-ict-web/
 | `GET` | `/api/chat/rooms` | Danh sách phòng chat của user đang đăng nhập (kèm `member_codes`, `last_message`) |
 | `GET` | `/api/chat/messages/{room_id}` | Lịch sử tin nhắn của phòng (`limit` 1–200 mặc định 50, `offset`) — chỉ thành viên phòng |
 | `POST` | `/api/chat/rooms` | Tạo phòng chat (direct/group) — tự thêm user đang đăng nhập làm thành viên |
+| `POST` | `/api/chat/archives/preview` | Admin xem trước số phòng/tin theo khoảng ngày, loại `department`/`group`/`direct` và danh sách `room_ids`; không thay đổi dữ liệu |
+| `POST` | `/api/chat/archives` | Admin tạo ZIP đã kiểm tra rồi dọn các tin nhắn đã backup; giữ nguyên phòng/thành viên |
+| `GET` | `/api/chat/archives` | Admin xem danh sách backup đang lưu trên server, gồm tên phòng chat |
+| `POST` | `/api/chat/archives/upload` | Admin tải ZIP backup từ PC lên server (tối đa 50 MB) và kiểm tra định dạng/an toàn |
+| `GET` | `/api/chat/archives/{filename}/download` | Admin tải ZIP backup về PC |
+| `DELETE` | `/api/chat/archives/{filename}` | Admin xóa ZIP khỏi server sau khi đã lưu ngoại vi |
+| `POST` | `/api/chat/archives/restore` | Admin khôi phục phòng, thành viên, tin nhắn và tệp đính kèm; tự bỏ qua tin đã tồn tại |
 
 ### Documents / Storage
 | Method | Endpoint | Mô tả |
@@ -942,6 +951,30 @@ Backend
   └─ PostgreSQL: chat_rooms / chat_room_members / chat_messages
 ```
 
+### Frontend `Chat.jsx`
+
+`frontend/src/pages/Chat.jsx` là màn hình điều phối toàn bộ chat nội bộ:
+
+- **Danh sách phòng**: chia ba nhóm `department`, `group`, `direct`; tên chat 1-1 được ghép từ tên nhân viên, phòng nhóm/phòng ban dùng `room.name`.
+- **Realtime**: quản lý WebSocket, heartbeat, reconnect, trạng thái online và đồng bộ tin nhắn mới theo phòng.
+- **Lịch sử**: tải trang đầu và phân trang tin cũ; quản lý tin ghim, preview/tải attachment và refresh phòng đang mở.
+- **Quản lý phòng**: tạo phòng, đổi tên, thêm/bớt thành viên, xóa phòng theo quyền admin/trưởng phòng/chủ nhóm.
+- **Attachment**: nhận ảnh `jpg/jpeg/png/webp` và tài liệu `pdf/doc/docx/xlsx`, tối đa 10 MB mỗi file; backend lưu tại `backend/uploads/chat`.
+- **Backup UI (admin)**: chọn kỳ, loại `department/group/direct`, xem trước, chọn từng tên phòng hoặc chọn tất cả, sau đó gửi `room_ids` để backend chỉ backup/dọn đúng phạm vi.
+- **Tối ưu state backup**: `useMemo` tính loại phòng, khoảng ngày, phòng đã chọn và tổng tin; handler dùng chung reset preview/chọn phòng giúp tránh tính toán và cập nhật lặp trong render.
+- **Upload backup**: gửi `FormData` với `multipart/form-data`; lỗi FastAPI dạng chuỗi hoặc danh sách validation đều được chuẩn hóa thành text để không làm React crash/trắng trang.
+
+### Luồng backup attachment
+
+1. Backend truy vấn tin của đúng `room_ids`, khoảng ngày và loại phòng đã chọn.
+2. `manifest.json` lưu phòng, thành viên, tin nhắn và metadata attachment; file vật lý được đặt trong `attachments/` của ZIP.
+3. ZIP được `testzip()` xác minh trước khi xóa tin. File attachment chỉ bị xóa khỏi vùng hoạt động khi không còn tin nào khác tham chiếu tới file đó.
+4. Tên ZIP lấy từ tên phòng thực sự có dữ liệu, ví dụ `bk_01-08-2026_den_31-08-2026_nhan-su_khoa.zip`; tên dài được rút gọn kèm hash.
+5. Khi upload, backend kiểm tra ZIP, phiên bản manifest, chống path traversal, giới hạn 50 MB file nén và 2 GB dữ liệu giải nén.
+6. Restore bỏ qua message ID đã tồn tại, tạo lại phòng còn thiếu, phục hồi attachment chưa có và rollback cả DB/file nếu gặp lỗi.
+
+Checklist kiểm thử tích hợp attachment đã dùng: tạo tin demo PNG + XLSX → preview → backup/dọn → kiểm tra byte trong ZIP → xóa ZIP server → upload lại → restore → đối chiếu SHA-256, nội dung workbook và số tin/file.
+
 ### Công nghệ
 
 - **WS**: Starlette/FastAPI `@router.websocket`, prefix `/api/chat`.
@@ -958,6 +991,9 @@ Backend
 ### Bảo trì
 
 - **Bảng mới** tự tạo qua `Base.metadata.create_all()` ở startup (`backend/main.py`) — thêm **cột** mới thì dùng `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` trong `on_startup` (D4).
+- **Dữ liệu backup**: ZIP được lưu tại `backend/storage/chat-archives` và bind-mount vào `/app/storage` trong container backend. Không sửa nội dung ZIP sau khi tải về; nên tải về PC và kiểm tra xong trước khi xóa bản trên VPS.
+- **Phạm vi backup**: Hỗ trợ `department`, `group` và `direct`; chỉ các phòng admin đánh dấu trong danh sách xem trước mới được backup/dọn. Mốc ngày được tính theo múi giờ `Asia/Ho_Chi_Minh`.
+- **Kiểm tra sau deploy**: `docker compose ps`, `curl -fsS http://localhost:8000/api/health` và đăng nhập admin để chạy **Xem trước** riêng từng loại 1:1/nhóm trước khi thực hiện backup thật.
 - **Thêm endpoint**: theo pattern `routers/chat.py` (`SessionLocal` + try/finally, trả `{"status":"success","data":...}`).
 - **Xoá User**: không được `DELETE FROM chat_messages WHERE sender_id=...` — FK SET NULL đã xử lý (D3).
 - **HDSD**: `docs/HDSD_Chat.md` (mirror `frontend/src/docs/HDSD_Chat.md`) + đăng ký trong `HelpPage.jsx`.

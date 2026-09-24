@@ -80,7 +80,9 @@ services:
 
   # 4. Draw.io (Diagrams.net)
   drawio:
-    image: jgraph/drawio:latest
+    # 31.4.4 fixes PDF export without an export server (browser Print -> Save as PDF).
+    # Pin the tested image: latest previously left this deployment on 31.4.2.
+    image: jgraph/drawio:31.4.4@sha256:7b0cd0d943b6b46825ce42bc0f406e26b1f5155bf71892fc2095069c73a817d5
     container_name: goldenfarm-drawio
     ports:
       - "${DRAWIO_PORT}:8080"

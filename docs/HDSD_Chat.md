@@ -76,13 +76,15 @@
 
 ### Bước 8: Backup và dọn dữ liệu chat cũ (admin)
 1. Nhấn biểu tượng **Backup** cạnh nút tạo phòng.
-2. Chọn kỳ backup **theo ngày**, **theo tháng** hoặc **khoảng tùy chọn**; chọn loại phòng **Chat 1-1 / Nhóm**.
-3. Nhấn **Xem trước** để kiểm tra số phòng và tin nhắn trong kỳ; thao tác này chưa thay đổi dữ liệu.
-4. Nhấn **Nén, backup và dọn tin nhắn** rồi xác nhận. Hệ thống tạo và kiểm tra ZIP (gồm nội dung, thông tin phòng/thành viên và tệp đính kèm) trước khi xoá các tin nhắn thuộc kỳ đã chọn.
+2. Chọn kỳ backup **theo ngày**, **theo tháng** hoặc **khoảng tùy chọn**; chọn loại phòng **Phòng ban / Nhóm / Chat 1-1**.
+3. Nhấn **Xem trước** để hiện danh sách tên nhóm và tên user của từng chat 1-1 có tin trong kỳ; thao tác này chưa thay đổi dữ liệu.
+4. Đánh dấu từng phòng cần backup hoặc dùng **Chọn tất cả**, sau đó nhấn **Backup và dọn ... phòng đã chọn** rồi xác nhận. Hệ thống tạo và kiểm tra ZIP (gồm nội dung, thông tin phòng/thành viên và tệp đính kèm) trước khi chỉ xoá tin nhắn của đúng các phòng đã chọn trong kỳ.
 5. Phòng chat và danh sách thành viên vẫn được giữ để tiếp tục trao đổi bình thường.
-6. Trong danh sách backup, dùng nút **Tải xuống** để lưu ngoại vi hoặc **Khôi phục** để nhập lại đúng đoạn lịch sử theo ngày/tháng/năm. Tin đã tồn tại sẽ tự động được bỏ qua, không tạo bản trùng.
+6. Tên ZIP lấy theo đúng tên các phòng đã backup, ví dụ `bk_01-08-2026_den_31-08-2026_nhan-su_khoa.zip`. Tên được bỏ dấu, ký tự không hợp lệ đổi thành `-`, nhiều phòng ngăn bằng `_`; nếu trùng, hệ thống thêm `_2`, `_3`. Không dùng `/` vì hệ điều hành hiểu đó là dấu phân cách thư mục.
+7. Để tiết kiệm dung lượng VPS: bấm **Tải xuống** lưu ZIP về PC, kiểm tra file đã tải xong, rồi bấm **Xóa khỏi server**.
+8. Khi cần xem lại: bấm **Tải backup từ PC**, chọn đúng ZIP gốc (tối đa 50 MB), chờ hệ thống kiểm tra rồi bấm **Khôi phục**. Tin đã tồn tại sẽ tự động được bỏ qua, không tạo bản trùng.
 
-> Phòng chat phòng ban không thuộc phạm vi dọn tự động. File backup được giữ trên server sau khi khôi phục để có thể đối chiếu lại.
+> Chỉ tin nhắn của các phòng đã đánh dấu mới được dọn; bản thân phòng và thành viên luôn được giữ lại. Không sửa cấu trúc hoặc nội dung ZIP sau khi tải về PC. File được giữ trên server sau khi khôi phục cho đến khi admin chủ động xóa.
 
 ---
 

@@ -10,17 +10,18 @@ import os
 import re
 import shutil
 import tempfile
-import uuid
+import unicodedata
 import zipfile
+from hashlib import sha256
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import BinaryIO, Iterable, Optional
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func
 
 from app.core.session import SessionLocal
-from app.models import ChatMessage, ChatRoom, ChatRoomMember, User
+from app.models import ChatMessage, ChatRoom, ChatRoomMember, Employee, User
 from app.services.upload_service import CHAT_UPLOAD_BASE
 
 
@@ -30,7 +31,8 @@ CHAT_ARCHIVE_BASE = Path(os.environ.get(
     "CHAT_ARCHIVE_DIR",
     str(Path(__file__).resolve().parents[2] / "storage" / "chat-archives"),
 ))
-_SAFE_ARCHIVE_NAME = re.compile(r"^chat-archive-[0-9TZ-]+-[0-9a-f]{8}\.zip$")
+MAX_ARCHIVE_UPLOAD_SIZE = 50 * 1024 * 1024
+MAX_ARCHIVE_UNCOMPRESSED_SIZE = 2 * 1024 * 1024 * 1024
 
 
 def _iso(value: Optional[datetime]) -> Optional[str]:
@@ -66,9 +68,9 @@ def _utc_bounds(start_date: str, end_date: str) -> tuple[date, date, datetime, d
 
 
 def _room_types(room_types: Iterable[str]) -> list[str]:
-    result = sorted(set(room_types) & {"direct", "group"})
+    result = sorted(set(room_types) & {"department", "direct", "group"})
     if not result:
-        raise ValueError("Chọn ít nhất một loại phòng chat 1-1 hoặc nhóm")
+        raise ValueError("Chọn ít nhất một loại phòng ban, chat 1-1 hoặc nhóm")
     return result
 
 
@@ -82,17 +84,64 @@ def _stored_attachment_name(url: Optional[str]) -> Optional[str]:
 
 
 def _archive_path(filename: str) -> Path:
-    if not _SAFE_ARCHIVE_NAME.fullmatch(filename or ""):
+    if not filename or Path(filename).name != filename or not filename.lower().endswith(".zip"):
         raise ValueError("Tên bản lưu không hợp lệ")
     return CHAT_ARCHIVE_BASE / filename
 
 
-def preview_message_archive(start_date: str, end_date: str, room_types: Iterable[str]) -> dict:
+def _room_display_name(db, room: ChatRoom) -> str:
+    if room.name:
+        return room.name
+    codes = [row[0] for row in db.query(ChatRoomMember.employee_code)
+             .filter(ChatRoomMember.room_id == room.id).all()]
+    names = []
+    if codes:
+        rows = db.query(Employee.employee_code, Employee.full_name).filter(Employee.employee_code.in_(codes)).all()
+        name_map = {row.employee_code: row.full_name for row in rows}
+        names = [name_map.get(code) or code for code in codes]
+    return "Chat 1-1 " + " - ".join(names) if names else "Chat 1-1"
+
+
+def _filename_slug(value: str) -> str:
+    """Chuẩn hóa tên phòng thành một phần tên file an toàn, dễ đọc."""
+    value = (value or "").replace("đ", "d").replace("Đ", "D")
+    ascii_value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii").lower()
+    return re.sub(r"[^a-z0-9]+", "-", ascii_value).strip("-") or "phong-chat"
+
+
+def _archive_filename(manifest: dict) -> str:
+    """Tên ZIP gồm kỳ backup và tên các phòng thực sự có trong gói."""
+    start = _parse_date(manifest["start_date"]).strftime("%d-%m-%Y")
+    end = _parse_date(manifest["end_date"]).strftime("%d-%m-%Y")
+    rooms = manifest.get("rooms") or []
+    labels = [_filename_slug(room.get("display_name") or room.get("name") or "phong-chat") for room in rooms]
+    category = "_".join(dict.fromkeys(labels)) or "chat"
+    prefix = f"bk_{start}_den_{end}_"
+    if len(prefix) + len(category) + 4 > 180:
+        digest_source = "|".join(str(room.get("id") or label) for room, label in zip(rooms, labels))
+        digest = sha256(digest_source.encode("utf-8")).hexdigest()[:8]
+        category = f"{category[:180 - len(prefix) - 13].rstrip('-_')}_{digest}"
+    return f"{prefix}{category}.zip"
+
+
+def _available_archive_path(manifest: dict) -> Path:
+    """Không ghi đè file cùng kỳ; lần tiếp theo tự thêm _2, _3..."""
+    filename = _archive_filename(manifest)
+    destination = CHAT_ARCHIVE_BASE / filename
+    sequence = 2
+    while destination.exists():
+        destination = CHAT_ARCHIVE_BASE / f"{Path(filename).stem}_{sequence}.zip"
+        sequence += 1
+    return destination
+
+
+def preview_message_archive(start_date: str, end_date: str, room_types: Iterable[str],
+                            room_ids: Optional[Iterable[str]] = None) -> dict:
     start, end, start_utc, end_utc = _utc_bounds(start_date, end_date)
     allowed_types = _room_types(room_types)
     db = SessionLocal()
     try:
-        rows = (
+        query = (
             db.query(
                 ChatRoom.id, ChatRoom.type, ChatRoom.name,
                 func.count(ChatMessage.id).label("message_count"),
@@ -102,16 +151,25 @@ def preview_message_archive(start_date: str, end_date: str, room_types: Iterable
             .join(ChatMessage, ChatMessage.room_id == ChatRoom.id)
             .filter(ChatRoom.type.in_(allowed_types))
             .filter(ChatMessage.created_at >= start_utc, ChatMessage.created_at < end_utc)
-            .group_by(ChatRoom.id, ChatRoom.type, ChatRoom.name)
+        )
+        selected_ids = sorted(set(room_ids or []))
+        if selected_ids:
+            query = query.filter(ChatRoom.id.in_(selected_ids))
+        rows = (
+            query.group_by(ChatRoom.id, ChatRoom.type, ChatRoom.name)
             .order_by(func.count(ChatMessage.id).desc())
             .all()
         )
-        rooms = [{
-            "id": row.id, "type": row.type, "name": row.name,
-            "message_count": int(row.message_count),
-            "first_message_at": _iso(row.first_message_at),
-            "last_message_at": _iso(row.last_message_at),
-        } for row in rows]
+        rooms = []
+        for row in rows:
+            room = db.get(ChatRoom, row.id)
+            rooms.append({
+                "id": row.id, "type": row.type, "name": row.name,
+                "display_name": _room_display_name(db, room),
+                "message_count": int(row.message_count),
+                "first_message_at": _iso(row.first_message_at),
+                "last_message_at": _iso(row.last_message_at),
+            })
         return {
             "start_date": start.isoformat(), "end_date": end.isoformat(),
             "room_types": allowed_types, "rooms": rooms,
@@ -123,15 +181,18 @@ def preview_message_archive(start_date: str, end_date: str, room_types: Iterable
 
 
 def _manifest_for_messages(db, start_date: str, end_date: str, start_utc: datetime,
-                           end_utc: datetime, allowed_types: list[str]):
-    messages = (
+                           end_utc: datetime, allowed_types: list[str],
+                           room_ids: Optional[Iterable[str]] = None):
+    query = (
         db.query(ChatMessage)
         .join(ChatRoom, ChatRoom.id == ChatMessage.room_id)
         .filter(ChatRoom.type.in_(allowed_types))
         .filter(ChatMessage.created_at >= start_utc, ChatMessage.created_at < end_utc)
-        .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
-        .all()
     )
+    selected_ids = sorted(set(room_ids or []))
+    if selected_ids:
+        query = query.filter(ChatRoom.id.in_(selected_ids))
+    messages = query.order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc()).all()
     room_ids = sorted({message.room_id for message in messages})
     rooms = db.query(ChatRoom).filter(ChatRoom.id.in_(room_ids)).all() if room_ids else []
     members = db.query(ChatRoomMember).filter(ChatRoomMember.room_id.in_(room_ids)).all() if room_ids else []
@@ -153,6 +214,7 @@ def _manifest_for_messages(db, start_date: str, end_date: str, start_utc: dateti
         "start_date": start_date, "end_date": end_date, "room_types": allowed_types,
         "rooms": [{
             "id": room.id, "type": room.type, "name": room.name,
+            "display_name": _room_display_name(db, room),
             "department": room.department, "owner_code": room.owner_code,
             "created_at": _iso(room.created_at),
         } for room in rooms],
@@ -173,25 +235,25 @@ def _manifest_for_messages(db, start_date: str, end_date: str, start_utc: dateti
     return manifest, attachments, [message.id for message in messages]
 
 
-def archive_messages(start_date: str, end_date: str, room_types: Iterable[str]) -> dict:
+def archive_messages(start_date: str, end_date: str, room_types: Iterable[str],
+                     room_ids: Optional[Iterable[str]] = None) -> dict:
     start, end, start_utc, end_utc = _utc_bounds(start_date, end_date)
     allowed_types = _room_types(room_types)
     CHAT_ARCHIVE_BASE.mkdir(parents=True, exist_ok=True)
-    filename = (
-        f"chat-archive-{start.isoformat()}-{end.isoformat()}-"
-        f"{datetime.utcnow().strftime('%Y-%m-%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}.zip"
-    )
-    destination = CHAT_ARCHIVE_BASE / filename
+    destination = None
     temp_path = None
     database_committed = False
     db = SessionLocal()
     try:
         manifest, attachments, message_ids = _manifest_for_messages(
-            db, start.isoformat(), end.isoformat(), start_utc, end_utc, allowed_types
+            db, start.isoformat(), end.isoformat(), start_utc, end_utc, allowed_types, room_ids
         )
         if not message_ids:
             return {"start_date": start.isoformat(), "end_date": end.isoformat(),
                     "room_count": 0, "message_count": 0, "filename": None, "size": 0}
+
+        destination = _available_archive_path(manifest)
+        filename = destination.name
 
         fd, raw_temp = tempfile.mkstemp(prefix=".chat-archive-", suffix=".zip", dir=CHAT_ARCHIVE_BASE)
         os.close(fd)
@@ -235,7 +297,7 @@ def archive_messages(start_date: str, end_date: str, room_types: Iterable[str]) 
         }
     except Exception:
         db.rollback()
-        if not database_committed and destination.exists():
+        if not database_committed and destination is not None and destination.exists():
             destination.unlink()
         raise
     finally:
@@ -260,13 +322,15 @@ def list_archives() -> list[dict]:
     if not CHAT_ARCHIVE_BASE.exists():
         return []
     result = []
-    for path in sorted(CHAT_ARCHIVE_BASE.glob("chat-archive-*.zip"), reverse=True):
+    for path in sorted(CHAT_ARCHIVE_BASE.glob("*.zip"), reverse=True):
         try:
             manifest = _read_manifest(path)
             result.append({
                 "filename": path.name, "size": path.stat().st_size,
                 "created_at": manifest.get("created_at"),
                 "start_date": manifest.get("start_date"), "end_date": manifest.get("end_date"),
+                "room_names": [room.get("display_name") or room.get("name") or "Phòng chat"
+                               for room in manifest.get("rooms", [])],
                 "room_count": len(manifest.get("rooms", [])),
                 "message_count": len(manifest.get("messages", [])),
                 "missing_attachments": len(manifest.get("missing_attachments", [])),
@@ -274,6 +338,63 @@ def list_archives() -> list[dict]:
         except Exception as exc:
             result.append({"filename": path.name, "size": path.stat().st_size, "error": str(exc)})
     return result
+
+
+def upload_archive(source: BinaryIO) -> dict:
+    """Stream an archive from a PC to disk, validate it, then register by listing."""
+    CHAT_ARCHIVE_BASE.mkdir(parents=True, exist_ok=True)
+    fd, raw_temp = tempfile.mkstemp(prefix=".chat-upload-", suffix=".zip", dir=CHAT_ARCHIVE_BASE)
+    os.close(fd)
+    temp_path = Path(raw_temp)
+    destination = None
+    size = 0
+    try:
+        with temp_path.open("wb") as output:
+            while True:
+                chunk = source.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > MAX_ARCHIVE_UPLOAD_SIZE:
+                    raise ValueError("File backup vượt quá giới hạn upload 50 MB")
+                output.write(chunk)
+        if size == 0:
+            raise ValueError("File backup rỗng")
+        try:
+            with zipfile.ZipFile(temp_path, "r") as archive:
+                if archive.testzip() is not None:
+                    raise ValueError("File ZIP bị lỗi")
+                total_size = sum(item.file_size for item in archive.infolist())
+                if total_size > MAX_ARCHIVE_UNCOMPRESSED_SIZE:
+                    raise ValueError("Dữ liệu giải nén vượt quá giới hạn an toàn 2 GB")
+                for item in archive.infolist():
+                    parts = Path(item.filename).parts
+                    if item.filename.startswith("/") or ".." in parts:
+                        raise ValueError("ZIP chứa đường dẫn không an toàn")
+        except zipfile.BadZipFile as exc:
+            raise ValueError("File tải lên không phải ZIP hợp lệ") from exc
+        manifest = _read_manifest(temp_path)
+        destination = _available_archive_path(manifest)
+        filename = destination.name
+        os.replace(temp_path, destination)
+        return {
+            "filename": filename, "size": size,
+            "start_date": manifest.get("start_date"), "end_date": manifest.get("end_date"),
+            "room_count": len(manifest.get("rooms", [])),
+            "message_count": len(manifest.get("messages", [])),
+        }
+    except Exception:
+        temp_path.unlink(missing_ok=True)
+        if destination is not None:
+            destination.unlink(missing_ok=True)
+        raise
+
+
+def delete_archive(filename: str) -> None:
+    path = _archive_path(filename)
+    if not path.is_file():
+        raise FileNotFoundError("Không tìm thấy bản backup")
+    path.unlink()
 
 
 def restore_archive(filename: str) -> dict:

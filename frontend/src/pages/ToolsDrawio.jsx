@@ -1,7 +1,37 @@
 import React, { useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { PenTool, Save, Download, FileEdit, Loader2, Check } from 'lucide-react'
+import { PenTool, Save, Download, FileEdit, Loader2, Check, Printer } from 'lucide-react'
 import DrawioViewer from '../components/DrawioViewer'
+
+function escapeHtml(str) {
+  return String(str || '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]))
+}
+
+// Mở cửa sổ in từ trang chính (không phải từ trong iframe) — trình duyệt không chặn.
+function writeSvgPrintDoc(win, svgData, baseName) {
+  const title = `${escapeHtml(baseName || 'ban_ve')}.pdf`
+  const html = [
+    '<!DOCTYPE html><html><head><meta charset="utf-8"/>',
+    `<title>${title}</title>`,
+    '<style>',
+    '@page { size: A4 portrait; margin: 10mm; }',
+    'html, body { margin: 0; padding: 0; }',
+    'body { display: flex; flex-direction: column; align-items: center; min-height: 100vh; }',
+    '#diagram { max-width: 100%; height: auto; display: block; }',
+    '</style></head><body>',
+    `<img id="diagram" src="${svgData}" alt="Sơ đồ"/>`,
+    '<script>',
+    'var im = document.getElementById("diagram");',
+    'function fire() { try { window.focus(); window.print(); } catch (e) {} }',
+    'if (im && im.complete) { setTimeout(fire, 300); } else if (im) { im.onload = function () { setTimeout(fire, 300); }; }',
+    'setTimeout(fire, 5000);',
+    '</script></body></html>',
+  ].join('')
+  win.document.write(html)
+  win.document.close()
+}
 
 const COLORS = {
   primary: '#0a5b35',
@@ -19,6 +49,7 @@ export default function ToolsDrawio() {
   const [xmlData, setXmlData] = useState(null)
   const [drawioOpen, setDrawioOpen] = useState(true)
   const inputRef = useRef(null)
+  const exportRequestRef = useRef(null)
 
   const handleDownloadLocal = useCallback((xml = null, name = null) => {
     const data = xml || xmlData

@@ -27,11 +27,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create directories for data, logs, templates, temp PDFs
-RUN mkdir -p /app/data /app/logs /app/templates /app/temp_pdf_gen
+# 1. Tạo trước các thư mục cần thiết
+RUN mkdir -p /app/data /app/logs /app/templates /app/temp_pdf_gen /app/storage/private_formulas
 
-# Set ownership for writable directories
-RUN chown -R nobody:nogroup /app/data /app/logs /app/temp_pdf_gen /app/storage
+# 2. Phân quyền toàn bộ thư mục /app cho user nobody
+RUN chown -R nobody:nogroup /app
 
 # Switch to non-root user for security
 USER nobody
@@ -43,6 +43,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')" || exit 1
 
-# Run application with Uvicorn
-# --reload for development, remove for production
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Production: không dùng --reload. Reloader có thể chờ vô hạn khi WebSocket
+# chat còn mở, khiến healthcheck và đăng nhập cùng bị treo.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

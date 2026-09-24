@@ -38,9 +38,11 @@ from app.services.upload_service import save_chat_upload, CHAT_UPLOAD_BASE
 from app.services.chat_archive_service import (
     CHAT_ARCHIVE_BASE,
     archive_messages,
+    delete_archive,
     list_archives,
     preview_message_archive,
     restore_archive,
+    upload_archive,
 )
 
 
@@ -62,7 +64,8 @@ class MemberUpdate(BaseModel):
 class ChatArchiveRequest(BaseModel):
     start_date: str
     end_date: str
-    room_types: List[str] = ["direct", "group"]
+    room_types: List[str] = ["department", "group", "direct"]
+    room_ids: List[str] = []
 
 
 class ChatRestoreRequest(BaseModel):
@@ -499,10 +502,10 @@ def preview_chat_archive(
     x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
     x_user_token: Optional[str] = Header(None, alias="X-User-Token"),
 ):
-    """Xem số tin 1-1/nhóm trong khoảng ngày mà chưa thay đổi dữ liệu."""
+    """Xem số tin phòng ban/nhóm/1-1 trong khoảng ngày mà chưa thay đổi dữ liệu."""
     _require_admin(x_user_code, x_user_role, x_user_dept, x_user_token)
     try:
-        result = preview_message_archive(data.start_date, data.end_date, data.room_types)
+        result = preview_message_archive(data.start_date, data.end_date, data.room_types, data.room_ids)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "success", "data": result}
@@ -519,7 +522,7 @@ def create_chat_archive(
     """Tạo ZIP đã kiểm tra thành công, sau đó mới xóa tin trong khoảng ngày."""
     _require_admin(x_user_code, x_user_role, x_user_dept, x_user_token)
     try:
-        result = archive_messages(data.start_date, data.end_date, data.room_types)
+        result = archive_messages(data.start_date, data.end_date, data.room_types, data.room_ids)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -539,6 +542,29 @@ def get_chat_archives(
     return {"status": "success", "data": list_archives()}
 
 
+@router.post("/archives/upload", status_code=201)
+def upload_chat_archive(
+    file: UploadFile = File(...),
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token"),
+):
+    """Nhập lại ZIP đã tải về PC để có thể khôi phục lịch sử chat."""
+    _require_admin(x_user_code, x_user_role, x_user_dept, x_user_token)
+    if not file.filename or not file.filename.lower().endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Chỉ chấp nhận file backup ZIP")
+    try:
+        result = upload_archive(file.file)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Không thể tải backup lên: {exc}") from exc
+    finally:
+        file.file.close()
+    return {"status": "success", "data": result, "message": "Đã tải và kiểm tra file backup"}
+
+
 @router.get("/archives/{filename}/download")
 def download_chat_archive(
     filename: str,
@@ -552,6 +578,22 @@ def download_chat_archive(
     if path.name != filename or not path.is_file():
         raise HTTPException(status_code=404, detail="Không tìm thấy bản backup")
     return FileResponse(path, filename=filename, media_type="application/zip")
+
+
+@router.delete("/archives/{filename}")
+def delete_chat_archive(
+    filename: str,
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token"),
+):
+    _require_admin(x_user_code, x_user_role, x_user_dept, x_user_token)
+    try:
+        delete_archive(filename)
+    except (ValueError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"status": "success", "message": "Đã xóa file backup khỏi server"}
 
 
 @router.post("/archives/restore")

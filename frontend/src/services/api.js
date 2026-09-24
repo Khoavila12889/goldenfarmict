@@ -1011,16 +1011,28 @@ export function unpinChatMessage(messageId) {
   return api.delete(`/chat/messages/${messageId}/pin`, { headers: chatAuthHeaders() })
 }
 
-export function previewChatArchive(startDate, endDate, roomTypes = ['direct', 'group']) {
-  return api.post('/chat/archives/preview', { start_date: startDate, end_date: endDate, room_types: roomTypes }, { headers: chatAuthHeaders() })
+export function previewChatArchive(startDate, endDate, roomTypes = ['department', 'group', 'direct'], roomIds = []) {
+  return api.post('/chat/archives/preview', { start_date: startDate, end_date: endDate, room_types: roomTypes, room_ids: roomIds }, { headers: chatAuthHeaders() })
 }
 
-export function createChatArchive(startDate, endDate, roomTypes = ['direct', 'group']) {
-  return api.post('/chat/archives', { start_date: startDate, end_date: endDate, room_types: roomTypes }, { headers: chatAuthHeaders() })
+export function createChatArchive(startDate, endDate, roomTypes = ['department', 'group', 'direct'], roomIds = []) {
+  return api.post('/chat/archives', { start_date: startDate, end_date: endDate, room_types: roomTypes, room_ids: roomIds }, { headers: chatAuthHeaders() })
 }
 
 export function getChatArchives() {
   return api.get('/chat/archives', { headers: chatAuthHeaders() })
+}
+
+export function uploadChatArchive(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return api.post('/chat/archives/upload', formData, {
+    headers: { ...chatAuthHeaders(), 'Content-Type': 'multipart/form-data' },
+  })
+}
+
+export function deleteChatArchive(filename) {
+  return api.delete(`/chat/archives/${encodeURIComponent(filename)}`, { headers: chatAuthHeaders() })
 }
 
 export function restoreChatArchive(filename) {

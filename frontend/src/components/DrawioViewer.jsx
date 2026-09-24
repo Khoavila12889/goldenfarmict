@@ -7,6 +7,9 @@ const DRAWIO_URL = import.meta.env.VITE_DRAWIO_PUBLIC_URL || '/drawio'
 
 const EMPTY_XML = '<mxfile><diagram><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel></diagram></mxfile>'
 
+// Đánh dấu request xuất PDF của riêng app (trả về trong msg.message.filename)
+const PDF_EXPORT_MARKER = 'drawio-pdf-export'
+
 /**
  * DrawioViewer — nhúng iframe Draw.io (Diagrams.net).
  *
@@ -14,26 +17,37 @@ const EMPTY_XML = '<mxfile><diagram><mxGraphModel><root><mxCell id="0"/><mxCell 
  *   <DrawioViewer file={...} configId={...} isOpen onClose />
  *
  * Chế độ 2 — Standalone / Tools (không storage, gọi onSave):
- *   <DrawioViewer isOpen onClose onSave={(xml) => ...} />
+ *   <DrawioViewer isOpen onClose onSave={(xml) => ...} exportRequestRef={ref} />
+ *
+ * exportRequestRef: nhận hàm requestPdfExport() → trả Promise<dataURI|false>.
+ * PDF export chạy ở phía parent (mở cửa sổ in từ trang chính, không phải từ trong
+ * iframe) nên không bị trình duyệt chặn popup/print như đường print-preview mặc định.
  */
-export default function DrawioViewer({ file, configId, isOpen, onClose, onSave }) {
+export default function DrawioViewer({ file, configId, isOpen, onClose, onSave, exportRequestRef }) {
   const iframeRef = useRef(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [ready, setReady] = useState(false)
   const savedRef = useRef(false)
+  const latestXmlRef = useRef(null)
+  const pdfReqRef = useRef(null)
 
   const userCode = sessionStorage.getItem('user_code') || ''
   const userRole = sessionStorage.getItem('user_role') || 'user'
 
   const isStandalone = !file && !configId
 
-  const handleClose = useCallback(() => {
+  const handleClose = useCallback((xml) => {
+    const finalXml = xml ?? latestXmlRef.current
     savedRef.current = false
     setReady(false)
     setError(null)
     setLoading(false)
-    onClose()
+    if (pdfReqRef.current) {
+      clearTimeout(pdfReqRef.current.timer)
+      pdfReqRef.current = null
+    }
+    onClose(finalXml)
   }, [onClose])
 
   useEffect(() => {
@@ -42,6 +56,10 @@ export default function DrawioViewer({ file, configId, isOpen, onClose, onSave }
       setReady(false)
       setError(null)
       setLoading(false)
+      if (pdfReqRef.current) {
+        clearTimeout(pdfReqRef.current.timer)
+        pdfReqRef.current = null
+      }
       return
     }
 
@@ -104,6 +122,8 @@ export default function DrawioViewer({ file, configId, isOpen, onClose, onSave }
               : `${currentPath.replace(/\/$/, '')}/${file.name}`
             const resp = await loadDrawioFile(configId, normalizedPath, userCode, userRole)
             xml = resp.data || EMPTY_XML
+          } else {
+            xml = latestXmlRef.current || EMPTY_XML
           }
 
           if (iframeRef.current) {
@@ -116,13 +136,14 @@ export default function DrawioViewer({ file, configId, isOpen, onClose, onSave }
           setLoading(false)
           setReady(true)
         } catch (err) {
-          const msg = err.response?.data?.detail || err.message || 'Không thể tải file Draw.io'
-          setError(typeof msg === 'string' ? msg : JSON.stringify(msg))
+          const errMsg = err.response?.data?.detail || err.message || 'Không thể tải file Draw.io'
+          setError(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg))
           setLoading(false)
         }
       }
 
       if (msg.event === 'save' || msg.event === 'autosave') {
+        if (msg.xml) latestXmlRef.current = msg.xml
         if (onSave) {
           onSave(msg.xml)
         }
@@ -141,6 +162,21 @@ export default function DrawioViewer({ file, configId, isOpen, onClose, onSave }
         } else {
           savedRef.current = true
         }
+
+        // Nút "Save & Exit" của drawio gửi {event:'save', exit:true} — cần tự thoát
+        if (msg.exit === true) {
+          handleClose(msg.xml)
+        }
+      }
+
+      // Trả lời request xuất PDF: drawio render SVG thuần client-side rồi gửi về
+      if (msg.event === 'export') {
+        const req = pdfReqRef.current
+        if (req && msg.format === 'svg' && msg.message?.filename === PDF_EXPORT_MARKER && msg.data) {
+          clearTimeout(req.timer)
+          pdfReqRef.current = null
+          req.resolve(msg.data)
+        }
       }
 
       if (msg.event === 'exit') {
@@ -152,9 +188,44 @@ export default function DrawioViewer({ file, configId, isOpen, onClose, onSave }
     return () => window.removeEventListener('message', handleMessage)
   }, [isOpen, file, configId, userCode, userRole, handleClose, onSave, isStandalone])
 
+  // Yêu cầu drawio render SVG hiện tại (không cần export server, không cần canvas)
+  const requestPdfExport = useCallback(() => {
+    return new Promise((resolve) => {
+      const frame = iframeRef.current
+      if (!frame?.contentWindow || !ready) {
+        resolve(false)
+        return
+      }
+      const req = {
+        timer: setTimeout(() => {
+          if (pdfReqRef.current === req) pdfReqRef.current = null
+          resolve(false)
+        }, 30000),
+      }
+      req.resolve = resolve
+      pdfReqRef.current = req
+      frame.contentWindow.postMessage(JSON.stringify({
+        action: 'export',
+        format: 'svg',
+        scale: 2,
+        border: 8,
+        currentPage: true,
+        filename: PDF_EXPORT_MARKER,
+      }), '*')
+    })
+  }, [ready])
+
+  useEffect(() => {
+    if (exportRequestRef) exportRequestRef.current = requestPdfExport
+    return () => {
+      if (exportRequestRef) exportRequestRef.current = null
+    }
+  }, [exportRequestRef, requestPdfExport])
+
   if (!isOpen) return null
 
-  const src = `${DRAWIO_URL}/?embed=1&proto=json&spin=1&saveAndExit=1&noSaveBtn=0&ui=min`
+  // noExitBtn=1: ẩn nút "Exit" của drawio, chỉ giữ "Save" và "Save & Exit"
+  const src = `${DRAWIO_URL}/?embed=1&proto=json&spin=1&saveAndExit=1&noSaveBtn=0&noExitBtn=1&ui=min`
 
   const overlayStyle = isStandalone
     ? { position: 'fixed', inset: 0, zIndex: 9999, background: 'transparent', pointerEvents: 'none' }
