@@ -16,6 +16,34 @@ Hệ thống quản lý ICT nội bộ — Quản lý nhân viên, thiết bị,
 | **Office Editor** | ONLYOFFICE Document Server + `@onlyoffice/document-editor-react` |
 | **Diagram Editor** | Draw.io (Diagrams.net) — iframe embed qua `jgraph/drawio` Docker image |
 
+## Pull branch kiểm thử client
+
+Branch tích hợp `15092026` chứa mã nguồn frontend, backend, tài liệu và tham chiếu Draw.io cần thiết để kiểm thử. `docker-drawio` là Git submodule, vì vậy client phải clone kèm submodule:
+
+```bash
+git clone --branch 15092026 --recurse-submodules https://github.com/Khoavila12889/goldenfarmict.git
+cd goldenfarmict
+```
+
+Nếu repository đã được clone trước đó:
+
+```bash
+git fetch origin
+git switch 15092026
+git pull --ff-only origin 15092026
+git submodule update --init --recursive
+```
+
+Sao chép `.env.example` thành `.env`, điền cấu hình của môi trường test rồi kiểm tra Compose mà không in secret:
+
+```bash
+docker compose config --quiet
+docker compose up -d --build
+docker compose ps
+```
+
+Không commit hoặc chuyển cho client các thư mục runtime `backend/uploads`, `backend/storage`, volume PostgreSQL hay file `.env`. Dữ liệu test phải được import/restore bằng quy trình riêng.
+
 ## Architecture
 
 ```
@@ -23,7 +51,7 @@ Hệ thống quản lý ICT nội bộ — Quản lý nhân viên, thiết bị,
 │                    Frontend (React 19)                       │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────────┐ │
 │  │  Pages   │  │Components│  │  Hooks   │  │   Utils     │ │
-│  │ (8 page) │  │(14 comp) │  │ (3 hooks)│  │(booking +   │ │
+│  │ Feature  │  │Shared UI │  │ Custom   │  │(booking +   │ │
 │  │          │  │          │  │          │  │ timeUtils)  │ │
 │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └─────────────┘ │
 │       └──────────────┴─────────────┘                        │
@@ -39,7 +67,7 @@ Hệ thống quản lý ICT nội bộ — Quản lý nhân viên, thiết bị,
 │              Backend (FastAPI)                               │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────────┐ │
 │  │  Auth    │  │ Routers  │  │  Core    │  │   Utils     │ │
-│  │ JWT-free │  │(8 modules)│  │ DB/Events│  │ Seed/Import │ │
+│  │ JWT-free │  │   APIs   │  │ DB/Events│  │ Seed/Import │ │
 │  └──────────┘  └──────────┘  └──────────┘  └─────────────┘ │
 │                         │                                    │
 │                    ┌────┴────┐                               │
@@ -49,7 +77,134 @@ Hệ thống quản lý ICT nội bộ — Quản lý nhân viên, thiết bị,
 └──────────────────────────────────────────────────────────────┘
 ```
 
+## Kiến trúc kỹ thuật và luồng code toàn hệ thống
+
+Phần này phản ánh code và schema đang chạy tại ngày 24/09/2026. Hệ thống là monolith tách frontend/backend: React gọi FastAPI qua `/api`; FastAPI dùng cả SQLAlchemy ORM lẫn helper raw SQL, lưu dữ liệu chính ở PostgreSQL và lưu file ở volume/bộ nhớ ngoài.
+
+### Vòng đời một request
+
+```text
+Browser/APK
+  → React Router kiểm tra phiên/route
+  → api.js chọn base URL web hoặc server URL của APK
+  → Nginx frontend
+      ├─ /api/*         → FastAPI :8000
+      ├─ /api/events    → SSE, tắt buffering
+      ├─ /api/chat/ws   → WebSocket
+      ├─ /onlyoffice/*  → ONLYOFFICE Document Server
+      └─ /drawio/*      → Draw.io
+  → FastAPI router
+  → xác thực/phân quyền của endpoint
+  → ORM SessionLocal hoặc helper raw SQL
+  → PostgreSQL / filesystem / SMB / FTP / Google Drive
+  → JSON, stream hoặc file response
+  → React cập nhật state; SSE/WS cập nhật realtime khi có sự kiện
+```
+
+Frontend có ba lớp bảo vệ route: `ProtectedRoute` yêu cầu token, `AdminRoute` kiểm tra role/quyền module, `StrictAdminRoute` chỉ nhận admin. Đây là lớp UX; backend vẫn phải xác minh lại vì dữ liệu trong `sessionStorage` có thể bị sửa từ trình duyệt.
+
+### Khởi động và dừng backend
+
+`backend/main.py` thực hiện theo thứ tự:
+
+1. Khởi tạo event loop SSE và runtime chat (WebSocket manager, hàng đợi persist, Redis bridge nếu cấu hình).
+2. Chạy `Base.metadata.create_all(checkfirst=True)` cho bảng chưa tồn tại.
+3. Seed role permission mặc định.
+4. Chạy các `ALTER TABLE ... IF NOT EXISTS`, tạo index chat/công thức và bổ sung unique constraint tương thích dữ liệu cũ.
+5. Khi shutdown, flush/dừng runtime chat.
+
+Đây là migration tự quản trong startup, chưa dùng Alembic. `create_all()` chỉ tạo bảng, không tự thay đổi cột cũ; mọi thay đổi schema mới phải có migration tường minh và phải idempotent.
+
+### Bản đồ module frontend–backend–database
+
+| Module | Frontend chính | Router/service backend | Bảng dữ liệu chính | Luồng kỹ thuật |
+|---|---|---|---|---|
+| Đăng nhập/Hồ sơ/RBAC | `Login`, `Profile`, `Permissions`, `Layout` | `auth.py`, `core/auth.py` | `users`, `employees`, `user_permissions`, `role_permissions`, `department_permissions`, `departments` | Xác thực mật khẩu → identity hiệu lực → permission theo user/phòng ban/role → lưu session phía client |
+| Dashboard | `Dashboard`, `AnnouncementsBox` | `dashboard.py`, một phần `forum.py` | Tổng hợp employee/equipment/ticket/booking/trip và `forum_posts` | Query KPI + dữ liệu user/head/admin; SSE làm mới khi module phát event |
+| Nhân viên | `Employees` | `employees.py` | `employees`, `users`, liên kết ứng dụng tới equipment/license | CRUD/import tạo employee và account cùng transaction; gán trưởng phòng đồng bộ role |
+| Thiết bị | `Equipment` | `equipment.py` | `equipment`, `equipment_history`, `employees` | Cấp phát/thu hồi/bàn giao; ghi history; import upsert theo asset code |
+| License | `Licenses` | `licenses.py` | `licenses`, `lic_categories`, `lic_items`, `equipment` | Key theo thiết bị/nhân viên; danh mục license và file hợp đồng |
+| Ticket | `Tickets` | `tickets.py` | `tickets`, `employees` | Tạo ticket → trạng thái/xử lý → tính vị trí queue → SSE |
+| Booking | `BookingPage`, component/hook booking | `bookings.py` | `resources`, `bookings` | Chọn tài nguyên/ngày/giờ → xác thực người tạo → kiểm tra lịch → cập nhật trạng thái → SSE |
+| Nghỉ phép/Công tác | `nghiphep`, booking dialogs/panel | `business_trips.py`, `approvals.py` | `business_trips`, `approval_requests`, workflow/log | Form tạo approval request; khi duyệt hết bước sẽ materialize sang business trip |
+| Phê duyệt | `Approvals`, `WorkflowTemplates` | `approvals.py` | `workflow_templates`, `workflow_steps`, `approval_requests`, `approval_logs` | Draft → submit → từng approver theo role/cá nhân + phòng ban → approved/rejected/cancelled |
+| Todos | `Todos` | `todos.py`, `comments.py`, `attachments.py`, `upload_service.py` | `todos`, `todo_subtasks`, `comments`, `attachments`, `notifications` | Lọc theo scope/quyền → CRUD/status/approve → comment/file/URL → notification/SSE |
+| Tài liệu | `Documents`, viewer/share components | `documents.py`, `shares.py`, storage utils | `storage_config`, `storage_permissions`, `document_shares` | Resolve storage → kiểm tra quyền folder → browse/stream/upload → ONLYOFFICE/Draw.io hoặc share link |
+| Chat | `Chat` | `chat.py`, `chat_*`, `chat_archive_service.py` | `chat_rooms`, `chat_room_members`, `chat_messages`, file chat | WS xác thực/member check → broadcast nhanh → queue ghi DB theo batch; REST tải lịch sử/quản lý phòng/backup |
+| Forum/Thông báo | `AnnouncementsBox`, viewer PDF | `forum.py`, `pdf_pages.py` | `forum_posts`, `forum_replies`, file forum | Bài đăng theo target → reply/attachment → SSE; PDF có thể render theo trang |
+| Phiếu lương | `SalarySlip`, `SalarySlipAdmin`, hooks | `salary_user.py`, `salary_slips.py`, PDF/Excel utils | `salaries`, `salary_slips`, `salary_upload_logs`, `employees`, `users` | Import Excel theo tháng → JSON/record → xem có password → xuất PDF/ZIP |
+| Công thức/In nhà máy | `FormulaManagement`, `FactoryPrinting` | `formulas.py`, formula hooks | `formula_recipes`, `formula_print_logs`, file Excel/PDF | Upload Excel → LibreOffice/PDF → search/stream print → ghi log và SSE |
+| Phần mềm | phần quản trị liên quan | `software.py` | `software_categories`, `software_items` | CRUD danh mục/mục phần mềm và hợp đồng |
+| Giám sát | `MonitorPage` | `monitor.py` | trạng thái runtime | Admin đọc tình trạng server/service |
+| Backup | `AdminBackups`, backup UI trong Chat | `module_backups.py`, `module_backup_service.py`, `chat_archive_service.py` | ZIP + bảng thuộc module | Scan → chọn → manifest/ZIP → tùy chọn cleanup → upload/restore idempotent |
+
+### Cơ sở dữ liệu
+
+Schema PostgreSQL hiện có 40 bảng vật lý; 39 bảng thuộc model/nghiệp vụ hiện hành và `users_backup` là bảng lưu cũ không có ORM model. Các nhóm dữ liệu:
+
+| Nhóm | Bảng |
+|---|---|
+| Nhân sự/tài khoản | `employees`, `users`, `departments` |
+| Tài sản/license/phần mềm | `equipment`, `equipment_history`, `licenses`, `lic_categories`, `lic_items`, `software_categories`, `software_items` |
+| Hỗ trợ/công việc | `tickets`, `todos`, `todo_subtasks`, `comments`, `attachments`, `notifications` |
+| Lịch/phê duyệt | `resources`, `bookings`, `business_trips`, `workflow_templates`, `workflow_steps`, `approval_requests`, `approval_logs` |
+| Lương | `salaries`, `salary_slips`, `salary_upload_logs` |
+| Tài liệu | `storage_config`, `storage_permissions`, `document_shares` |
+| Chat/forum | `chat_rooms`, `chat_room_members`, `chat_messages`, `forum_posts`, `forum_replies` |
+| Công thức | `formula_recipes`, `formula_print_logs` |
+| Phân quyền | `user_permissions`, `role_permissions`, `department_permissions` |
+
+Database thực tế chỉ có 7 foreign key: bốn FK của chat và ba FK của công thức. Chat room/member/message dùng `CASCADE` hoặc `SET NULL`; formula log dùng cascade theo recipe. Các quan hệ còn lại như employee–equipment, todo–children, booking–resource, workflow–step/request/log và storage–permission/share được giữ bằng ID/code nhưng kiểm soát ở code ứng dụng.
+
+Hệ quả kỹ thuật:
+
+- Xóa dữ liệu phải theo đúng thứ tự ở service/router; database không tự bảo vệ toàn bộ orphan record.
+- `employee_code` là khóa nghiệp vụ xuyên module nhưng phần lớn không có FK.
+- Nhiều trường ngày/giờ là `String`, nên format ISO phải được giữ nhất quán để lọc/sắp xếp đúng.
+- Index tập trung ở employee code, trạng thái, module permission, chat room/time và formula search. Các cột join không có index cần được đo bằng `EXPLAIN ANALYZE` trước khi bổ sung.
+- Số dòng từ `pg_stat_user_tables` chỉ là thống kê ước lượng và có thể cũ; không dùng thay cho `COUNT(*)` khi đối soát backup.
+
+### Xác thực và phân quyền
+
+- Mật khẩu mới dùng Argon2; hash SHA-256 cũ được kiểm tra rồi nâng cấp sang Argon2 sau login thành công.
+- Token phiên hiện là SHA-256 rút gọn từ `employee_code:role:SESSION_SALT`; không phải JWT, không lưu server-side và không có hạn dùng/revoke riêng.
+- Role hiệu lực lấy từ database; nhân viên được gán `departments.head_id` có thể được nâng thành `head`.
+- Quyền module hợp nhất từ role, department và override user; menu dựa trên quyền hiệu lực tải từ backend.
+- Chat, Todos, attachment/comment, formula, salary và backup mới có xác minh session tương đối rõ. Một số router cũ vẫn chỉ nhận `user_role`, `user_code` từ query/body hoặc chưa bắt buộc token cho mọi thao tác.
+
+### Realtime và file/storage
+
+- SSE `/api/events` là bus trong process, phát các sự kiện ticket/booking/trip/todo/approval và heartbeat 20 giây. Nếu chạy nhiều backend worker, SSE hiện chưa có broker dùng chung.
+- Chat WebSocket hỗ trợ nhiều tab/user, heartbeat, sweep socket chết và giới hạn gửi đồng thời. Tin nhắn được broadcast trước, sau đó queue ghi PostgreSQL theo batch; đây là eventual consistency. Redis Pub/Sub chỉ bật khi có `CHAT_REDIS_URL`.
+- Upload Todo/Chat/Forum nằm trong `backend/uploads`; backup ZIP nằm trong `backend/storage`; các thư mục này được bind mount để tồn tại qua recreate container.
+- Documents không lưu nội dung file trong PostgreSQL: database giữ cấu hình/quyền/share, còn byte file ở SMB, FTP hoặc Google Drive. ONLYOFFICE và Draw.io được reverse proxy cùng origin qua Nginx.
+
+### Đánh giá kỹ thuật toàn hệ thống
+
+| Mức | Phát hiện | Hướng xử lý |
+|---|---|---|
+| P0 bảo mật | Token xác định, salt hard-code, không hết hạn; nhiều endpoint cũ chưa xác thực backend thống nhất | Chuyển sang session ngẫu nhiên có expiry/revoke hoặc JWT ký bằng secret môi trường; dependency xác thực chung cho mọi router |
+| P0 bảo mật | Luồng reset bằng mã NV + email cá nhân không có OTP; một số API tin `user_role/user_code` client gửi | Bắt buộc phiên/OTP, luôn resolve identity từ token, không tin role/body/query |
+| P1 dữ liệu | Chỉ 7 FK cho 39 bảng, phần lớn quan hệ do code giữ | Lập migration bổ sung FK/index theo từng module sau khi quét orphan; không thêm hàng loạt trực tiếp trên production |
+| P1 dữ liệu | Ngày/giờ và JSON chủ yếu lưu `String/Text` | Chuyển dần sang `DATE/TIMESTAMP/TIME/JSONB` bằng migration có kiểm tra dữ liệu lỗi |
+| P1 vận hành | Migration nằm trong startup và lỗi có xu hướng fail-soft | Dùng Alembic, version schema, backup trước migration và fail startup khi migration bắt buộc thất bại |
+| P1 bảo mật | `storage_config.password` và ZIP Nhân viên là dữ liệu nhạy cảm | Mã hóa secret at rest, tách key khỏi DB, hạn chế quyền và mã hóa backup ngoại vi |
+| P2 kiến trúc | Router trộn validation, SQL và nghiệp vụ; dùng song song ORM/raw SQL | Tách schema/service/repository, chuẩn hóa transaction và response/error contract |
+| P2 realtime | Chat broadcast trước khi persist; SSE chỉ trong một process | Thêm transactional outbox/dead-letter; dùng Redis/broker chung khi scale nhiều worker |
+| P2 hiệu năng | Frontend bundle lớn và nhiều page import tĩnh; một số danh sách chưa phân trang server | Lazy route/code splitting, pagination, debounce và đo query chậm trước khi tạo index |
+| P2 chất lượng | Test tích hợp còn thiên về thao tác thủ công | Thêm pytest/API tests, restore fixtures, frontend tests và CI migration/build |
+
+Ưu tiên triển khai hợp lý: chuẩn hóa xác thực backend → backup toàn hệ thống và migration framework → bổ sung constraint/index theo dữ liệu thật → test CI → background job cho tác vụ ZIP/PDF/Excel lớn.
+
 ## Features
+
+### 🗄️ Backup dữ liệu theo module (admin)
+
+- Trang `/admin/backups` dành riêng cho role `admin`, truy cập từ menu **Backup dữ liệu**.
+- Scan theo khoảng ngày, xem dữ liệu liên quan, chọn từng bản ghi hoặc chọn tất cả trước khi tạo ZIP.
+- Hỗ trợ `Todos`, `Booking` và `Nhân viên`; Todos/Booking có snapshot hoặc backup+dọn, Nhân viên chỉ snapshot an toàn.
+- Có danh sách ZIP trên server, tải xuống, upload lại, restore idempotent và xóa bản backup.
+- File Todo được kiểm tra CRC, kích thước và SHA-256; giao diện cảnh báo attachment bị thiếu tại thời điểm backup.
 
 ### 📊 Dashboard
 - **Giao diện mới** (`frontend/src/pages/dashboard.css`, class `d-*`): layout **NEXUS CORE ERP** — hàng **5 thẻ KPI** (Tổng NV, Thiết bị, Ticket chờ xử lý, Lịch đặt hôm nay, **NV xin nghỉ/công tác**), nội dung chính **65/35** (Thông báo nội bộ + Ticket theo trạng thái), khu sự kiện dạng lưới. **Click vào thẻ số liệu** mở modal xem chi tiết danh sách (cuộn khi nhiều).
@@ -516,10 +671,14 @@ goldenfarm-ict-web/
 │   ├── app/
 │   │   ├── core/
 │   │   │   ├── __init__.py
-│   │   │   ├── database.py        # DB init, schema, indexes, seed resources
-│   │   │   ├── auth.py            # Xác thực (simple token), seed users
+│   │   │   ├── session.py         # Engine, SessionLocal, Base
+│   │   │   ├── db.py              # Helper raw SQL fetch/execute/insert
+│   │   │   ├── database.py        # DB init/compatibility helpers
+│   │   │   ├── auth.py            # Argon2, session token, effective identity
 │   │   │   ├── events.py          # SSE event bus (async generator)
-│   │   │   └── chat_ws.py         # WebSocket Connection Manager (chat nội bộ)
+│   │   │   ├── chat_ws.py         # WebSocket Connection Manager
+│   │   │   ├── chat_persist.py    # Queue batch ghi message
+│   │   │   └── chat_redis.py      # Redis bridge tùy chọn
 │   │   ├── routers/
 │   │   │   ├── __init__.py
 │   │   │   ├── auth.py            # Login, password, profile, user/permission admin
@@ -533,10 +692,23 @@ goldenfarm-ict-web/
 │   │   │   ├── licenses.py        # Keys + categories/items + bulk/scan + contract upload + import Excel
 │   │   │   ├── software.py        # Software categories/items + contract upload
 │   │   │   ├── approvals.py       # Workflows + steps + requests + approve/reject + SSE
-│   │   │   ├── documents.py       # Storage CRUD + browse/download + granular permissions
+│   │   │   ├── todos.py           # Todo CRUD/scope/status/subtask
+│   │   │   ├── comments.py        # Comment Todo
+│   │   │   ├── attachments.py     # File/URL Todo
+│   │   │   ├── documents.py       # Storage CRUD + browse/download + permissions
+│   │   │   ├── shares.py          # Public/internal document shares
 │   │   │   ├── salary_slips.py    # Admin salary CRUD + Excel + PDF (single/batch)
 │   │   │   ├── salary_user.py     # Employee salary view + PDF download
-│   │   │   └── chat.py            # Chat nội bộ: WebSocket + rooms/messages REST
+│   │   │   ├── chat.py            # WebSocket + rooms/messages/archive REST
+│   │   │   ├── forum.py           # Post/reply/attachment
+│   │   │   ├── formulas.py        # Công thức và in nhà máy
+│   │   │   ├── module_backups.py  # API backup Todos/Booking/Nhân viên
+│   │   │   └── monitor.py         # Trạng thái hệ thống
+│   │   ├── services/
+│   │   │   ├── chat_archive_service.py
+│   │   │   ├── module_backup_service.py
+│   │   │   ├── upload_service.py
+│   │   │   └── pdf_pages.py
 │   │   ├── utils/
 │   │   │   ├── pdf_generator.py    # Salary slip PDF generation
 │   │   │   └── ftp_utils.py        # FTP/SMB upload utility
@@ -556,13 +728,16 @@ goldenfarm-ict-web/
 │   │   │   ├── Employees.jsx      # CRUD nhân viên (cascade equipment)
 │   │   │   ├── Equipment.jsx      # Enterprise UI: 4 stats, sticky toolbar, sortable grid, 3-dot menu, detail drawer, form modal — lucide-react
 │   │   │   ├── Licenses.jsx       # Keys + categories/items + bulk import + scan
-│   │   │   ├── SoftwarePage.jsx   # Software categories/items + contract upload
 │   │   │   ├── Tickets.jsx        # User kanban / Admin filter+reply
 │   │   │   ├── Approvals.jsx      # Approval requests: tạo phiếu, duyệt/từ chối, timeline logs
 │   │   │   ├── WorkflowTemplates.jsx # Quản lý quy trình phê duyệt & bước duyệt
 │   │   │   ├── Documents.jsx      # Storage browser SMB/FTP/GDrive + ONLYOFFICE + Draw.io
 │   │   │   ├── ToolsDrawio.jsx    # Draw.io workspace (toolbar + iframe embed)
 │   │   │   ├── Todos.jsx, Todos.css # Kanban quản lý công việc
+│   │   │   ├── Chat.jsx           # Chat realtime + archive admin
+│   │   │   ├── AdminBackups.jsx   # Backup dữ liệu theo module
+│   │   │   ├── FormulaManagement.jsx
+│   │   │   ├── FactoryPrinting.jsx
 │   │   │   ├── Permissions.jsx    # Phân quyền 3 tab: Module + Documents (Nextcloud-style) + Roles + RBAC 3-Tier
 │   │   │   ├── Profile.jsx        # Hồ sơ cá nhân, đổi mật khẩu
 │   │   │   ├── SalarySlip.jsx     # Employee: xem phiếu lương JSON dạng HTML
@@ -593,7 +768,7 @@ goldenfarm-ict-web/
 │   │   │   ├── useCurrentTime.js  # Hook thời gian thực (update 30s)
 │   │   │   └── useSalarySlip.js   # Hook xem & tải PDF phiếu lương
 │   │   ├── services/
-│   │   │   └── api.js             # Axios instance + 93+ API functions (all modules)
+│   │   │   └── api.js             # Axios instance + API client của các module
 │   │   ├── styles/
 │   │   │   ├── booking.css        # Booking module styles (~960 dòng, CSS vars)
 │   │   │   ├── Documents.css      # Document storage styles (revamped: cards, tabs, OO overlay)
@@ -828,65 +1003,31 @@ goldenfarm-ict-web/
 
 ### Tables
 
-| Table | Records | Ghi chú |
-|-------|---------|---------|
-| `employees` | 354 | `employee_code` unique, `status` (active/inactive), `handover_date` (bàn giao), `start_date` (ngày vào làm) |
-| `equipment` | 100 | `asset_code` (TS-XXXXX), `lifecycle_status`, `storage` (in_stock/issued) |
-| `licenses` | 216 | `license_key` UNIQUE, gán theo equipment_id |
-| `lic_categories` | 4 | name, icon, order_index |
-| `lic_items` | 0 | category_id, name, registered_date, expiration_date, contract_info |
-| `equipment_history` | 1 | handover_date, return_date, old/new status, changed_by |
-| `tickets` | 126 | Yêu cầu hỗ trợ IT |
-| `users` | 355 | employee_code + password_hash + role |
-| `user_permissions` | 10 | Permission module theo user |
-| `resources` | 7 | Xe + Phòng họp, is_active |
-| `bookings` | 81 | resource_id, book_date, start/end_time, status |
-| `business_trips` | 21 | employee_code, destination, purpose, start/end_date, status, type (`business_trip`\|`leave`), approval_request_id |
-| `workflow_templates` | 3 | name, icon, is_active |
-| `workflow_steps` | 1 | template_id, step_order, approver_type/role/department_match |
-| `approval_requests` | 1 | requester_code, status, current_step, total_steps |
-| `approval_logs` | 0 | request_id, step_order, approver_code, action, comment |
-| `departments` | 20 | name UNIQUE, head_id → employees.id |
-| `storage_config` | 3 | Cấu hình storage SMB/FTP/GDrive |
-| `storage_permissions` | 0 | Phân quyền thư mục storage |
-| `document_shares` | 0 | Link chia sẻ file/folder — `item_type` ('file'/'folder'), `share_type` (ALL/DEPT/PUBLIC), `permissions` (comma list `view,download,edit`), `share_token` UNIQUE, `department_id`, `expires_at` |
-| `salary_slips` | 2 | Phiếu lương (dạng cột) |
-| `salaries` | 4 | Phiếu lương (dạng JSON), ON CONFLICT upsert |
-| `salary_upload_logs` | 1 | Lịch sử upload Excel |
-| `software_categories` | 4 | Danh mục phần mềm |
-| `software_items` | 0 | Mục phần mềm |
-| `todos` | 27 | Công việc theo phòng ban / cá nhân |
-| `todo_subtasks` | 32 | Checklist con của todo |
-| `chat_rooms` | 0 | Phòng chat nội bộ — id UUID (String 36), type (direct/group), name (nullable), created_at |
-| `chat_room_members` | 0 | Thành viên phòng chat — room_id + employee_code (UNIQUE), ondelete CASCADE theo phòng |
-| `chat_messages` | 0 | Tin nhắn chat — sender_id FK `users.employee_code` (**SET NULL** khi xoá user, D3), attachment_url nullable |
+Schema có 40 bảng vật lý. Danh sách đầy đủ được nhóm tại [Cơ sở dữ liệu](#cơ-sở-dữ-liệu); không ghi số record cố định vì dữ liệu production thay đổi liên tục và thống kê PostgreSQL có thể trễ.
 
-> Schema chung không dùng FOREIGN KEY constraints — xử lý integrity ở application layer. **Ngoại lệ**: các bảng chat (`chat_rooms`, `chat_room_members`, `chat_messages`) dùng FK với `ondelete` (CASCADE / SET NULL) để đảm bảo đúng quy tắc xoá.
+Các khóa chính đặc biệt:
+
+- Phần lớn bảng dùng `id SERIAL/INTEGER`.
+- `employees.employee_code` và `users.employee_code` là khóa nghiệp vụ unique.
+- `salaries` dùng khóa ghép `(employee_code, month)`.
+- `chat_rooms.id` và `chat_messages.id` là UUID dạng `String(36)`.
+- Các bảng permission có unique constraint theo đối tượng + module.
+- `chat_room_members` unique theo `(room_id, employee_code)`.
+
+`users_backup` tồn tại trong database nhưng không có ORM model và không thuộc runtime hiện tại; không xóa nếu chưa backup và xác nhận mục đích lịch sử.
 
 ### Indexes
 
-| Index | Table | Loại | Mục đích |
-|-------|-------|------|----------|
-| `idx_employee_code` | employees | INDEX | Tra cứu theo mã NV |
-| `idx_employee_status` | employees | INDEX | Lọc active |
-| `idx_employee_department` | employees | INDEX | Filter phòng ban |
-| `idx_equipment_employee` | equipment | INDEX | Thiết bị theo NV |
-| `idx_equipment_status` | equipment | INDEX | Lọc trạng thái |
-| `idx_equipment_asset_code` | equipment | INDEX | Tra cứu mã TS |
-| `idx_license_equipment` | licenses | INDEX | License theo thiết bị |
-| `idx_license_product` | licenses | INDEX | Tìm kiếm sản phẩm |
-| `idx_license_key` | licenses | **UNIQUE** | Chống trùng key |
-| `idx_license_expiry` | licenses | INDEX | Cảnh báo hết hạn |
-| `idx_ticket_status` | tickets | INDEX | Lọc trạng thái |
-| `idx_ticket_priority` | tickets | INDEX | Lọc mức độ |
-| `idx_ticket_employee` | tickets | INDEX | Ticket của user |
-| `idx_ticket_employee_code` | tickets | INDEX | Tra theo mã NV |
-| `idx_booking_resource_date` | bookings | INDEX | Overlap check |
-| `idx_booking_date` | bookings | INDEX | Lọc ngày |
-| `idx_booking_status` | bookings | INDEX | Lọc trạng thái |
-| `idx_booking_employee` | bookings | INDEX | Lịch user |
-| `idx_eq_history_equipment` | equipment_history | INDEX | Lịch sử thiết bị |
-| `idx_eq_history_employee` | equipment_history | INDEX | Lịch sử NV |
+Các nhóm index đã xác minh trong schema đang chạy:
+
+- Identity: employee/user code, username, employee status.
+- Nghiệp vụ: equipment asset/status, license product/expiry, ticket status/priority/code, booking status, trip employee/department/status.
+- Todos: scope, department, creator, assignee, status và `todo_id` ở bảng con.
+- RBAC/share: target + module, storage target và các trường document share.
+- Chat: room/type/member/sender, pinned, `created_at` và composite `(room_id, created_at)`.
+- Formula: recipe code/name/active, print log theo recipe/user.
+
+Không giả định index từ tên cột. Trước khi thêm index cần lấy query thật, chạy `EXPLAIN (ANALYZE, BUFFERS)` trên bản sao dữ liệu và kiểm tra chi phí ghi. Các join ứng dụng như `equipment.employee_id`, `bookings.resource_id`, `workflow_steps.template_id` cần được đánh giá theo tải thực tế.
 
 ## Booking Module — Chi tiết
 
@@ -998,6 +1139,468 @@ Checklist kiểm thử tích hợp attachment đã dùng: tạo tin demo PNG + X
 - **Xoá User**: không được `DELETE FROM chat_messages WHERE sender_id=...` — FK SET NULL đã xử lý (D3).
 - **HDSD**: `docs/HDSD_Chat.md` (mirror `frontend/src/docs/HDSD_Chat.md`) + đăng ký trong `HelpPage.jsx`.
 - **Menu**: `Layout.jsx` (`allNavItems`, `iconMap`, `MODULE_MAP`, `hasModuleAccess`).
+
+---
+
+## 🗄️ Admin Backup dữ liệu module
+
+Trang `/admin/backups` quản lý backup logic độc lập cho `Todos`, `Booking` và `Nhân viên`. Menu **Backup dữ liệu** chỉ hiện với role `admin`; frontend dùng `StrictAdminRoute`, còn mọi API xác minh session và role tại backend. ZIP runtime nằm tại `backend/storage/module-backups` và được loại khỏi Git.
+
+### Thành phần thay đổi
+
+| Tầng | File | Vai trò |
+|---|---|---|
+| Backend | `backend/app/services/module_backup_service.py` | Scan, manifest/ZIP, kiểm tra file, cleanup và restore |
+| Backend | `backend/app/routers/module_backups.py` | API admin và validate upload `.zip` |
+| Backend | `backend/main.py` | Đăng ký router backup module |
+| Frontend | `frontend/src/pages/AdminBackups.jsx` | Scan/chọn/snapshot/dọn/upload/restore |
+| Frontend | `frontend/src/pages/AdminBackups.css` | Layout responsive và trạng thái cảnh báo |
+| Frontend | `frontend/src/services/api.js` | Client API và download dạng blob |
+| Frontend | `frontend/src/App.jsx` | Route với `StrictAdminRoute` |
+| Frontend | `frontend/src/components/Layout.jsx` | Menu admin **Backup dữ liệu** |
+| Vận hành | `.gitignore` | Bỏ qua ZIP runtime của module backup |
+
+### Quy trình scan và backup
+
+```text
+Admin chọn module + khoảng ngày
+  → POST /api/admin/module-backups/scan
+  → chọn từng record / chọn tất cả
+  → tạo manifest + gom record liên quan + file vật lý
+  → tạo ZIP tạm → testzip()
+  → đổi tên ZIP chính thức
+  → nếu bật Dọn: xóa record trong transaction, sau commit mới xóa file vật lý
+```
+
+- Khoảng ngày dùng `YYYY-MM-DD`, bao gồm cả hai đầu và tối đa 10 năm.
+- Trường scan là `todos.created_at`, `bookings.book_date`, `employees.created_at`. Nhân viên có ngày tạo rỗng/null vẫn được đưa vào kết quả để không bỏ sót dữ liệu cũ.
+- Khi có `record_ids`, backend backup đúng danh sách admin đã chọn; kỳ ngày vẫn được ghi vào manifest để truy vết.
+- **Snapshot**: chỉ tạo ZIP, dữ liệu đang hoạt động không đổi.
+- **Backup và dọn**: hỗ trợ Todos và Booking; chỉ chạy sau khi ZIP đã được kiểm tra.
+- **Nhân viên**: chỉ snapshot, backend từ chối `cleanup=true` vì nhân viên liên kết với tài khoản, thiết bị, ticket, booking, lương và phân quyền.
+- **Upload**: chỉ nhận `.zip`, tối đa 100 MB; dữ liệu giải nén tối đa 3 GB; kiểm tra CRC, manifest/version, path traversal, kích thước và SHA-256 từng file đính kèm. File lớn được kiểm tra/restore theo luồng 1 MB để không nạp toàn bộ vào RAM.
+- **Restore idempotent**: ID hoặc `employee_code` đã tồn tại sẽ được bỏ qua; không ghi đè dữ liệu mới hơn.
+- **An toàn cleanup**: record được khóa trong transaction; ZIP không bị xóa nếu database đã commit nhưng bước dọn file vật lý gặp lỗi. File Todo dùng chung chỉ bị xóa khi không còn attachment nào tham chiếu.
+
+### Tên file và cấu trúc ZIP
+
+```text
+bk_YYYYMMDD_YYYYMMDD_todos.zip
+bk_YYYYMMDD_YYYYMMDD_booking.zip
+bk_YYYYMMDD_YYYYMMDD_nhan-vien.zip
+```
+
+Nếu trùng tên, hệ thống thêm `_2`, `_3`, ... và không ghi đè file cũ. ZIP có cấu trúc:
+
+```text
+manifest.json                 # version, module, kỳ, records, related, files, missing_files
+attachments/<stored-name>    # attachment vật lý của Todos
+```
+
+Mỗi phần tử `files` lưu `path`, `size`, `sha256`. `missing_files` ghi attachment có record trong database nhưng mất file vật lý; danh sách server và giao diện hiển thị số file thiếu.
+
+### Ma trận dữ liệu theo module
+
+| Module | Record chính | Dữ liệu liên quan trong ZIP | Chính sách dọn |
+|---|---|---|---|
+| Todos | `todos` | `todo_subtasks`, `comments`, `notifications`, `attachments`, file trong `backend/uploads/todos` | Được phép; xóa con trước cha, file sau commit |
+| Booking | `bookings` | `resources` được tham chiếu | Chỉ xóa booking; không xóa resource |
+| Nhân viên | `employees` | `users` (gồm password hash), `user_permissions` | Không cho dọn tự động; ZIP phải được bảo vệ như dữ liệu nhạy cảm |
+
+### Quan hệ cơ sở dữ liệu
+
+Nhiều quan hệ nghiệp vụ chưa được ràng buộc hoàn toàn bằng foreign key PostgreSQL, nên service truy vấn rõ từng bảng thay vì chỉ dựa vào database cascade:
+
+- `Todo.id` → `todo_subtasks.todo_id`, `comments.todo_id`, `notifications.todo_id`, `attachments.todo_id`.
+- `Booking.resource_id` → `resources.id`; cleanup chỉ xóa booking và giữ resource dùng chung.
+- `Employee.employee_code` → `users.employee_code`, `user_permissions.employee_code`; mã nhân viên còn được thiết bị, ticket, booking, lương và các module nghiệp vụ khác tham chiếu.
+
+Restore dùng ID tường minh có thể làm sequence PostgreSQL thấp hơn ID lớn nhất, vì vậy service đồng bộ sequence của mọi bảng đã chạm trước khi commit.
+
+### Restore database
+
+1. Đọc và xác minh `manifest.json`.
+2. Booking khôi phục resource còn thiếu trước booking.
+3. Todos khôi phục record cha trước subtasks/comments/attachments/notifications, sau đó chép file chưa tồn tại.
+4. Nhân viên khôi phục theo `employee_code`, sau đó bổ sung user và permission còn thiếu; permission kiểm tra cặp `(employee_code, module)` để tránh vi phạm unique constraint.
+5. Nếu lỗi, transaction rollback và các file vừa chép được xóa.
+6. Sau restore, sequence PostgreSQL được đồng bộ theo ID lớn nhất để lần tạo record kế tiếp không đụng khóa chính.
+
+> Backup module là backup logic có chọn lọc để admin vận hành, không thay thế backup toàn bộ PostgreSQL (`pg_dump`) và volume upload theo lịch. Riêng Nhân viên hiện snapshot hồ sơ, tài khoản và phân quyền; thiết bị, ticket, booking, lương và các bảng nghiệp vụ khác vẫn phải được bảo vệ bằng backup database toàn hệ thống.
+
+### API admin
+
+| Method | Endpoint | Chức năng |
+|---|---|---|
+| `POST` | `/api/admin/module-backups/scan` | Scan record theo module và khoảng ngày |
+| `POST` | `/api/admin/module-backups` | Tạo snapshot hoặc backup+dọn các `record_ids` |
+| `GET` | `/api/admin/module-backups` | Liệt kê ZIP trên server |
+| `POST` | `/api/admin/module-backups/upload` | Upload và kiểm tra ZIP |
+| `POST` | `/api/admin/module-backups/restore` | Restore idempotent |
+| `GET` | `/api/admin/module-backups/{filename}/download` | Tải ZIP |
+| `DELETE` | `/api/admin/module-backups/{filename}` | Xóa ZIP khỏi server |
+
+### Quy trình vận hành khuyến nghị
+
+1. Chọn module và kỳ, bấm **Scan dữ liệu**; đối chiếu record và dữ liệu liên quan.
+2. Tạo **snapshot** trước; kiểm tra tên ZIP, số record, số file và cảnh báo file thiếu.
+3. Tải ZIP ra nơi lưu trữ ngoài VPS. Không sửa manifest hoặc nội dung ZIP.
+4. Chỉ bật **Dọn dữ liệu** sau khi snapshot đã được kiểm tra; không cleanup Nhân viên.
+5. Khi cần phục hồi, upload ZIP, xác nhận ZIP hợp lệ trong danh sách rồi bấm **Khôi phục**.
+6. Kiểm tra lại module. Restore lần hai phải bỏ qua record đã có, không nhân đôi dữ liệu.
+
+### Kiểm thử và trạng thái xác minh — 24/09/2026
+
+- Fixture tạm bao phủ Todo với subtask/comment/notification/attachment/file, Booking với resource và Nhân viên với account/permission.
+- Đã kiểm tra restore idempotent, nội dung/file sau restore và dọn fixture thử nghiệm.
+- Frontend production build thành công; backend/frontend đã recreate, health endpoint trả `200`.
+- API danh sách không có session trả `401`; dữ liệu không phải ZIP bị từ chối bằng lỗi nghiệp vụ, không làm trắng trang.
+- Scan chỉ đọc tại thời điểm kiểm tra: Todos `53`, Booking `0`, Nhân viên `378`. Đây là snapshot kiểm thử, không phải số cố định.
+
+### Đánh giá và giới hạn
+
+| Hạng mục | Đánh giá | Nhận xét |
+|---|---|---|
+| Phân quyền | Tốt | Chặn ở menu, route frontend và API backend; backend là lớp quyết định cuối |
+| Toàn vẹn ZIP | Tốt | File tạm + CRC; attachment có size/SHA-256; upload chống path traversal |
+| Cleanup | Khá an toàn | Khóa record, xóa con trước cha, giữ file còn tham chiếu và giữ ZIP sau DB commit |
+| Restore | Tốt cho phục hồi chọn lọc | Idempotent, rollback khi lỗi, dọn file vừa chép và đồng bộ sequence |
+| Nhân viên | Chưa phải snapshot toàn hệ sinh thái | Chỉ hồ sơ/account/permission; không gồm thiết bị, ticket, lương; cấm cleanup |
+| Dữ liệu lớn | Phù hợp quy mô vừa | Job đồng bộ; upload tối đa 100 MB, dữ liệu giải nén tối đa 3 GB |
+| Disaster recovery | Chưa thay thế backup hệ thống | Vẫn cần `pg_dump`, backup volume upload và kiểm thử restore độc lập |
+
+Rủi ro và hướng nâng cấp:
+
+- ZIP Nhân viên chứa password hash và dữ liệu cá nhân; phải mã hóa hoặc khoanh quyền ở nơi lưu ngoài VPS.
+- Kỳ/file rất lớn nên chuyển sang background job có tiến độ và audit log.
+- Chưa có retention tự động, ZIP encryption, chữ ký số, lịch chạy định kỳ hoặc object storage.
+- Record tồn tại được bỏ qua hoàn toàn để tránh ghi đè dữ liệu mới hơn; hệ thống chưa merge phiên bản.
+- Nên đưa bộ fixture vào CI; kiểm thử tích hợp hiện được chạy thủ công trên Docker.
+
+Checklist triển khai: scan trước; tạo snapshot trước cleanup; tải ZIP ngoại vi; kiểm tra record/file; sau đó mới cân nhắc dọn.
+
+### Kiến trúc backup mục tiêu
+
+Hệ thống backup được phát triển theo ba lớp độc lập. Không dùng backup module thay cho backup thảm họa và không dùng bản sao volume PostgreSQL đang chạy thay cho công cụ backup nhất quán.
+
+| Lớp | Mục tiêu | Phạm vi | Công cụ định hướng |
+|---|---|---|---|
+| Backup toàn hệ thống | Khôi phục khi hỏng VPS, database hoặc triển khai lỗi | PostgreSQL, uploads, storage, metadata phiên bản và cấu hình cần thiết | `pg_dump -Fc` trước; pgBackRest + WAL/PITR khi vận hành ổn định |
+| Backup dữ liệu ứng dụng | Tạo một recovery set có thể kiểm tra và di chuyển | Database dump + file vật lý + manifest + checksum | Background job của ứng dụng phối hợp công cụ hệ thống |
+| Backup theo module | Khôi phục chọn lọc record nghiệp vụ | Record chính, record phụ thuộc và attachment của từng module | Module adapter trong backend |
+
+Luồng tổng quát mục tiêu:
+
+```text
+Schedule hoặc admin yêu cầu
+  → tạo backup_job
+  → khóa chống chạy trùng
+  → collect dữ liệu bằng adapter/công cụ tương ứng
+  → ghi artifact tạm
+  → checksum + kiểm tra cấu trúc
+  → publish artifact bằng atomic rename
+  → sao chép off-site
+  → verify bản sao
+  → cập nhật catalog + audit + thông báo
+```
+
+Backup chỉ được xem là **đạt** khi artifact đọc được, checksum đúng và có kết quả verify. Với backup quan trọng, cần có ít nhất một bản ngoài VPS và một lần restore thử thành công.
+
+### Quy ước ngày giờ và tên file
+
+- Người dùng luôn nhìn thấy ngày theo `dd/mm/yyyy`, giờ theo `HH:mm:ss`, múi giờ `Asia/Ho_Chi_Minh`.
+- API và database tiếp tục trao đổi ngày theo ISO `YYYY-MM-DD`; không đổi payload sang `dd/mm/yyyy` vì dễ gây lỗi locale và sắp xếp.
+- Tên file dùng `dd-mm-yyyy` vì dấu `/` là ký tự phân cách đường dẫn.
+- `created_at` trong manifest nên dùng ISO 8601 có offset, ví dụ `2026-09-25T23:00:00+07:00`.
+- Tên file phải có timestamp hoặc backup ID để tránh phụ thuộc hậu tố `_2`, `_3` khi có nhiều job đồng thời.
+
+Quy ước tên mục tiêu:
+
+```text
+backup-tong_25-09-2026_23-00-00_<backup-id>.dump
+backup-todos_01-09-2026_den_25-09-2026_<backup-id>.zip
+backup-nhan-vien_25-09-2026_14-30-22_<backup-id>.zip
+```
+
+> Trạng thái hiện tại: code đang tạo tên `bk_YYYYMMDD_YYYYMMDD_<module>.zip`. Đây là việc cần migrate có tương thích ngược; reader/restore phải tiếp tục nhận file tên cũ.
+
+### Recovery set toàn hệ thống
+
+Một lần backup tổng nên tạo catalog cho một recovery set thay vì chỉ tạo một file dump rời:
+
+```text
+full_25-09-2026_23-00-00_<backup-id>/
+├── database.dump                 # pg_dump custom format
+├── globals.sql                   # pg_dumpall --globals-only
+├── uploads.tar.zst               # backend/uploads
+├── app-storage.tar.zst           # dữ liệu ứng dụng cần phục hồi
+├── manifest.json
+├── checksums.sha256
+└── restore-instructions.txt
+```
+
+`manifest.json` tối thiểu phải ghi:
+
+- `format`, `format_version`, `backup_id`, loại backup và trạng thái;
+- thời điểm bắt đầu/kết thúc, timezone, người hoặc schedule khởi tạo;
+- phiên bản PostgreSQL, phiên bản ứng dụng/Git commit và schema version;
+- danh sách artifact, kích thước, SHA-256, mã hóa và nơi lưu;
+- số bảng/record kiểm tra, cảnh báo file thiếu và kết quả verify;
+- backup cha đối với incremental/differential;
+- thời điểm hết hạn theo retention và cờ giữ lâu dài.
+
+Không đưa `.env`, khóa mã hóa hoặc secret thô vào recovery set. Cấu hình cần thiết phải được lọc secret hoặc lưu bằng secret manager riêng. Không sao chép nóng trực tiếp volume `postgres-data`; giai đoạn đầu dùng `pg_dump -Fc`, sau đó triển khai pgBackRest và WAL archive để có Point-in-Time Recovery.
+
+### Thiết kế adapter cho backup module
+
+Khi thêm module mới, không tiếp tục mở rộng chuỗi `if module == ...` trong một service lớn. Mỗi module nên có adapter riêng và đăng ký trong registry:
+
+```text
+backend/app/backups/
+├── registry.py
+├── contracts.py
+├── services/
+│   ├── job_service.py
+│   ├── artifact_service.py
+│   ├── verification_service.py
+│   └── restore_service.py
+└── adapters/
+    ├── todos.py
+    ├── bookings.py
+    ├── employees.py
+    ├── chat.py
+    └── equipment.py
+```
+
+Mỗi adapter phải khai báo rõ:
+
+| Thuộc tính | Ý nghĩa |
+|---|---|
+| `module_key`, `format_version` | Định danh và phiên bản định dạng độc lập |
+| `root_model`, `identity_key` | Bảng chính và khóa dùng khi restore |
+| `date_field`, `timezone` | Trường lọc kỳ và quy tắc thời gian |
+| `dependencies` | Bảng cha/con, thứ tự export và restore |
+| `file_collectors` | Cách tìm file vật lý và chống trùng tên |
+| `cleanup_policy` | Cấm, cho phép có điều kiện hoặc cần hai bước duyệt |
+| `conflict_policy` | `skip-tree`, `clone` hoặc `overwrite` |
+| `sensitive_fields` | Dữ liệu phải mã hóa, che hoặc loại bỏ |
+| `verify()` | Kiểm tra record, quan hệ, file và checksum |
+
+Thứ tự mở rộng khuyến nghị:
+
+1. Hoàn thiện Nhân viên với thiết bị, ticket, booking, lương và các tham chiếu theo `employee_code`.
+2. Hợp nhất Chat archive vào backup registry dùng chung nhưng giữ tương thích API/file cũ.
+3. Thiết bị + license + equipment history.
+4. Ticket, công tác/nghỉ phép, approval và workflow.
+5. Salary, formula/print log, forum và document share metadata.
+
+### Catalog và trạng thái job
+
+Không nên dùng thao tác scan thư mục ZIP làm nguồn dữ liệu chính lâu dài. File là artifact; catalog trong database là nguồn cho tìm kiếm, audit, retention và monitoring. Các bảng định hướng:
+
+| Bảng | Vai trò |
+|---|---|
+| `backup_jobs` | Yêu cầu, loại, module, tiến độ, trạng thái và lỗi |
+| `backup_artifacts` | File/repository object, size, checksum, encryption và location |
+| `backup_schedules` | Cron, timezone, loại backup và trạng thái bật/tắt |
+| `backup_policies` | Retention, số bản sao, yêu cầu off-site/immutable |
+| `backup_destinations` | Local, S3-compatible, SFTP hoặc repository chuyên dụng |
+| `backup_restore_tests` | Lịch sử restore thử và kết quả đối soát |
+| `backup_audit_logs` | Ai tạo, tải, verify, restore, purge hoặc xóa artifact |
+
+Vòng đời chuẩn của job:
+
+```text
+queued → running → verifying → copying_offsite → success
+                    └──────────────→ warning
+queued/running/verifying/copying_offsite → failed hoặc cancelled
+```
+
+Các thao tác nặng phải chạy bằng background worker, không giữ HTTP request đến khi hoàn tất. Trên VPS dùng chung chỉ cho một job backup/restore nặng do ứng dụng khởi tạo chạy tại một thời điểm; job cần lock có TTL, heartbeat và khả năng nhận diện job bị treo.
+
+### Tách backup, restore và purge
+
+`cleanup` hiện đang chạy trong cùng yêu cầu tạo backup. Kiến trúc mục tiêu phải tách thành các hành động độc lập:
+
+```text
+Backup → verify local → copy off-site → verify off-site
+       → đánh dấu protected → chờ thời gian an toàn/duyệt
+       → tạo purge job riêng
+```
+
+Không cho purge khi có một trong các điều kiện:
+
+- artifact chưa verify hoặc checksum sai;
+- có `missing_files`;
+- chưa đủ số bản sao theo policy;
+- chưa có bản off-site bắt buộc;
+- đang có restore/backup khác trên cùng phạm vi;
+- chưa hết thời gian an toàn hoặc thiếu phê duyệt.
+
+Restore phải chọn rõ chiến lược xung đột:
+
+- `skip-tree`: nếu record cha đã tồn tại thì bỏ qua toàn bộ cây, an toàn mặc định;
+- `clone`: cấp ID mới và remap toàn bộ khóa liên quan;
+- `overwrite`: chỉ dùng khi được cấp quyền đặc biệt và đã tạo pre-restore backup.
+
+Không trộn record con từ backup vào record cha hiện hành nếu chưa có quy tắc merge cụ thể. Chỉ giải nén/restore entry được khai báo trong manifest; mọi entry thừa phải bị từ chối. Restore production phải có preview, xác nhận phạm vi, audit và bước kiểm tra hậu restore.
+
+### Bảo mật và toàn vẹn
+
+- Mã hóa repository hoặc artifact chứa hồ sơ nhân viên, password hash, lương và dữ liệu cá nhân.
+- Khóa mã hóa không lưu cùng artifact, không ghi vào manifest/log và phải có bản sao quản trị an toàn.
+- SHA-256 cho từng artifact/file; ký manifest hoặc dùng authenticated encryption để phát hiện manifest bị thay đổi.
+- Chống ZIP bomb bằng cả tổng dung lượng, số entry, kích thước từng entry và tỷ lệ nén.
+- Từ chối absolute path, `..`, symlink, hardlink, device file và tên trùng sau khi chuẩn hóa.
+- File restore phải ghi tạm, checksum lại rồi atomic rename; không ghi đè file hiện có ngoài policy.
+- Quyền backend là lớp quyết định cuối; frontend chỉ hỗ trợ trải nghiệm, không phải ranh giới bảo mật.
+- Audit log không được chứa secret, password hash hoặc toàn bộ payload backup.
+
+### Retention, off-site và mục tiêu phục hồi
+
+Policy khởi điểm, cần điều chỉnh sau khi đo kích thước database và WAL thực tế:
+
+| Loại | Lịch | Retention gợi ý |
+|---|---|---|
+| Logical full database | Hằng ngày ngoài giờ cao điểm | 14 bản ngày |
+| Full tuần | Mỗi tuần | 8 tuần |
+| Full tháng | Cuối tháng | 12 tháng |
+| Module snapshot thủ công | Theo nhu cầu | 90 ngày hoặc gắn `keep` |
+| WAL/PITR | Liên tục khi triển khai pgBackRest | Recovery window 7–14 ngày |
+
+Mục tiêu ban đầu:
+
+- RPO backup logic: tối đa 24 giờ.
+- RPO khi có WAL/PITR: 15 phút hoặc thấp hơn theo tốc độ archive.
+- RTO phải được đo bằng restore drill, không ước lượng chỉ từ thời gian tạo backup.
+- Ít nhất một bản nằm ngoài VPS; production và backup không được cùng một failure domain duy nhất.
+- Retention phải hiểu dependency của full/differential/incremental và WAL; không xóa file đơn lẻ bằng tuổi file.
+
+### API mục tiêu
+
+API hiện tại tiếp tục hoạt động trong thời gian migrate. API job mới nên dùng resource-oriented endpoints:
+
+| Method | Endpoint | Chức năng |
+|---|---|---|
+| `POST` | `/api/admin/backups/jobs` | Tạo full hoặc module backup job |
+| `GET` | `/api/admin/backups/jobs` | Tìm kiếm lịch sử job |
+| `GET` | `/api/admin/backups/jobs/{id}` | Tiến độ, log an toàn và artifact |
+| `POST` | `/api/admin/backups/jobs/{id}/cancel` | Hủy job nếu trạng thái cho phép |
+| `POST` | `/api/admin/backups/{id}/verify` | Verify lại local/off-site artifact |
+| `POST` | `/api/admin/backups/{id}/restore-plan` | Preview kế hoạch và xung đột restore |
+| `POST` | `/api/admin/backups/{id}/restore` | Tạo restore job sau xác nhận |
+| `POST` | `/api/admin/backups/{id}/purge-plan` | Preview dữ liệu đủ điều kiện dọn |
+| `POST` | `/api/admin/backups/{id}/purge` | Tạo purge job riêng |
+| `GET/PUT` | `/api/admin/backups/policies` | Xem/cập nhật schedule và retention |
+
+Endpoint tạo job trả `202 Accepted` cùng `job_id`; frontend poll hoặc dùng SSE để cập nhật tiến độ. Error response cần có `error_code`, thông báo an toàn và correlation ID để tra log.
+
+### Giao diện quản trị mục tiêu
+
+Trang `/admin/backups` nên được tách thành bốn tab:
+
+1. **Tổng quan**: backup gần nhất, RPO/RTO, dung lượng, cảnh báo, off-site và restore test gần nhất.
+2. **Toàn hệ thống**: tạo full backup, lịch chạy, retention, trạng thái WAL/PITR.
+3. **Theo module**: scan, preview dependency/dung lượng, chọn record và tạo snapshot.
+4. **Lịch sử & phục hồi**: lọc job, verify, tải xuống, lập restore plan và xem audit.
+
+Nút purge không đặt cạnh nút tạo snapshot. Các hành động restore, purge và xóa artifact phải hiển thị phạm vi ảnh hưởng, yêu cầu xác nhận rõ ràng và vô hiệu hóa khi policy chưa đạt.
+
+### Lộ trình triển khai
+
+#### Giai đoạn 0 — Chuẩn hóa nền tảng
+
+- [ ] Chốt RPO, RTO, retention và nơi lưu off-site với người vận hành.
+- [ ] Chuẩn hóa hiển thị `dd/mm/yyyy`, tên file `dd-mm-yyyy`, giữ API ISO.
+- [ ] Thêm `backup_id`, format version và timestamp có timezone vào manifest.
+- [ ] Kiểm tra checksum manifest/toàn artifact và từ chối ZIP entry không khai báo.
+- [ ] Tách backup khỏi purge; mặc định `skip-tree` khi restore xung đột.
+- [ ] Chuyển kiểm thử fixture thủ công thành pytest/CI.
+
+**Điều kiện hoàn thành:** file cũ vẫn restore được; backup mới verify được; không thể purge artifact chưa đạt policy.
+
+#### Giai đoạn 1 — Backup tổng có thể phục hồi
+
+- [ ] Tạo `pg_dump -Fc` và `pg_dumpall --globals-only` theo lịch.
+- [ ] Đóng gói `backend/uploads` và phần `backend/storage` cần phục hồi.
+- [ ] Tạo recovery-set manifest và checksum.
+- [ ] Thêm catalog job/artifact/audit và cảnh báo thất bại.
+- [ ] Sao chép ít nhất một bản ra ngoài VPS.
+- [ ] Viết runbook và restore thử vào PostgreSQL/container tạm.
+
+**Điều kiện hoàn thành:** một recovery set có thể dựng hệ thống tạm, đăng nhập và đối soát dữ liệu/file quan trọng.
+
+#### Giai đoạn 2 — Job engine và module adapter
+
+- [ ] Background worker, lock, heartbeat, progress và retry có giới hạn.
+- [ ] Tách service hiện tại thành registry + adapter.
+- [ ] Bổ sung module theo thứ tự ưu tiên phía trên.
+- [ ] Restore plan, conflict report và audit đầy đủ.
+- [ ] Retention theo catalog; reconcile catalog với repository.
+
+**Điều kiện hoàn thành:** HTTP không bị giữ bởi tác vụ dài; job chạy lại an toàn; mỗi module có test export/verify/restore/idempotency.
+
+#### Giai đoạn 3 — Disaster recovery chuyên nghiệp
+
+- [ ] Triển khai pgBackRest repository mã hóa.
+- [ ] WAL archive và Point-in-Time Recovery.
+- [ ] Object storage/S3-compatible hoặc backup host riêng.
+- [ ] Immutable retention/object lock nếu hạ tầng hỗ trợ.
+- [ ] Restore drill tự động định kỳ và dashboard RPO/RTO.
+- [ ] Cân nhắc backup từ standby khi tải production tăng.
+
+**Điều kiện hoàn thành:** restore được tới thời điểm chỉ định trong recovery window và có bằng chứng restore drill định kỳ.
+
+### Checklist thêm hoặc sửa module
+
+Mỗi pull request liên quan backup phải trả lời đủ các mục sau:
+
+- [ ] Phạm vi bảng chính, bảng liên quan và file vật lý đã được liệt kê.
+- [ ] Thứ tự export/restore phù hợp dependency và foreign key.
+- [ ] Trường ngày, timezone và record ngày rỗng đã có quy tắc.
+- [ ] Khóa định danh và chiến lược conflict đã rõ.
+- [ ] Dữ liệu nhạy cảm được mã hóa/loại bỏ phù hợp.
+- [ ] Manifest có version và reader tương thích file cũ.
+- [ ] ZIP/archive validation bao phủ traversal, symlink, entry thừa và zip bomb.
+- [ ] Test bao phủ backup, verify, restore, chạy restore lần hai và rollback khi lỗi.
+- [ ] Sequence/identity được đồng bộ sau restore nếu dùng ID tường minh.
+- [ ] File thiếu, file trùng tên và file đang được module khác tham chiếu đã được xử lý.
+- [ ] Không cho purge nếu verify/off-site/policy chưa đạt.
+- [ ] README, API client và giao diện được cập nhật cùng thay đổi.
+
+### Runbook kiểm thử và bảo trì
+
+Kiểm thử tối thiểu cho mỗi release có thay đổi backup:
+
+1. Tạo fixture tạm gồm record cha, record con, Unicode tiếng Việt và file nhị phân.
+2. Tạo backup, kiểm tra manifest, số record/file và SHA-256.
+3. Verify artifact độc lập với bước tạo.
+4. Restore vào database/thư mục tạm, không restore thẳng production khi kiểm thử.
+5. Đối soát khóa, quan hệ, byte file và nghiệp vụ đăng nhập/truy cập.
+6. Restore lần hai để xác minh conflict policy/idempotency.
+7. Làm hỏng có chủ đích một artifact trong fixture để chắc chắn verify từ chối.
+8. Xác minh rollback không để record/file mồ côi.
+9. Ghi thời gian backup/restore, CPU, RAM, disk I/O và kích thước để theo dõi xu hướng.
+10. Xóa fixture bằng quy trình kiểm thử đã định nghĩa, không dùng lệnh xóa rộng trên volume production.
+
+Bảo trì định kỳ:
+
+- Hằng ngày: kiểm tra job thất bại, tuổi backup gần nhất, dung lượng và off-site lag.
+- Hằng tuần: verify mẫu một backup và kiểm tra retention không xóa chuỗi còn phụ thuộc.
+- Hằng tháng: restore drill recovery set đầy đủ vào môi trường cô lập.
+- Hằng quý: rà soát quyền admin, khóa mã hóa, RPO/RTO, dung lượng và runbook sự cố.
+- Khi đổi schema: tăng format version khi cần, thêm migration reader và fixture tương thích ngược trước khi deploy.
+
+### Nguyên tắc maintain lâu dài
+
+- Backup format là API lâu dài: không thay đổi âm thầm cấu trúc manifest hoặc ý nghĩa field.
+- Writer mới có thể thay đổi, nhưng reader phải hỗ trợ các version còn trong retention window.
+- Không gọi shell bằng chuỗi ghép từ input người dùng; dùng argv cố định và secret qua file/secret store.
+- Không lưu toàn bộ log stdout có thể chứa thông tin nhạy cảm; chuẩn hóa error code.
+- Không tối ưu dựa trên số record giả định; đo dung lượng, WAL và thời gian restore thực tế.
+- Không đánh dấu `success` chỉ vì process exit `0`; phải chạy verify và ghi bằng chứng.
+- Không xóa backup thủ công khỏi repository chuyên dụng; mọi expire đi qua retention engine và audit.
+- Mọi thay đổi phá vỡ restore phải có migration hoặc tuyên bố version hết hỗ trợ kèm thời hạn rõ ràng.
 
 ---
 

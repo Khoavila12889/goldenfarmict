@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Monitor, Key, Ticket, CheckCircle, 
   Settings, Calendar, Receipt, Folder, Shield, Menu, X, User, 
   Lock, Eye, EyeOff, CheckSquare, HelpCircle, Activity, MessageSquare,
-  CalendarOff, PenTool, Printer, FileSpreadsheet
+  CalendarOff, PenTool, Printer, FileSpreadsheet, Archive
 } from 'lucide-react'
 import { changePassword, getProfile, apiUrl } from '../services/api'
 import { driver } from 'driver.js'
@@ -33,6 +33,7 @@ const iconMap = {
   drawioTools: PenTool,
   formulaPrint: Printer,
   formulaManage: FileSpreadsheet,
+  backups: Archive,
 }
 
 const allNavItems = [
@@ -55,6 +56,7 @@ const allNavItems = [
   { path: '/salary-slip-admin', label: 'Quản lý lương', icon: 'salaryAdmin', roles: ['head', 'admin'] },
   { path: '/permissions', label: 'Phân quyền', icon: 'permissions', roles: ['admin'] },
   { path: '/monitor', label: 'Giám sát', icon: 'monitor', roles: ['admin'] },
+  { path: '/admin/backups', label: 'Backup dữ liệu', icon: 'backups', roles: ['admin'] },
   { path: '/help', label: 'Trợ giúp', icon: 'help', roles: ['user', 'head', 'admin'] },
 ]
 
@@ -78,6 +80,7 @@ const MODULE_MAP = {
   '/formulas/manage': 'formula-management',
   '/permissions': 'permissions',
   '/monitor': 'monitor',
+  '/admin/backups': 'backups',
   '/help': 'help',
 }
 

@@ -1059,6 +1059,18 @@ export function chatWebSocketUrl() {
   return `${protocol}//${host}/api/chat/ws?token=${encodeURIComponent(token)}&employee_code=${encodeURIComponent(code)}`
 }
 
+// ─── Admin module backups ───────────────────────────────────────
+export const scanModuleBackup = (module, startDate, endDate) => api.post('/admin/module-backups/scan', { module, start_date: startDate, end_date: endDate }, { headers: chatAuthHeaders() })
+export const createModuleBackup = (module, startDate, endDate, recordIds, cleanup) => api.post('/admin/module-backups', { module, start_date: startDate, end_date: endDate, record_ids: recordIds, cleanup }, { headers: chatAuthHeaders() })
+export const getModuleBackups = () => api.get('/admin/module-backups', { headers: chatAuthHeaders() })
+export const restoreModuleBackup = filename => api.post('/admin/module-backups/restore', { filename }, { headers: chatAuthHeaders() })
+export const deleteModuleBackup = filename => api.delete(`/admin/module-backups/${encodeURIComponent(filename)}`, { headers: chatAuthHeaders() })
+export const downloadModuleBackup = filename => api.get(`/admin/module-backups/${encodeURIComponent(filename)}/download`, { headers: chatAuthHeaders(), responseType: 'blob' })
+export function uploadModuleBackup(file) {
+  const formData = new FormData(); formData.append('file', file)
+  return api.post('/admin/module-backups/upload', formData, { headers: { ...chatAuthHeaders(), 'Content-Type': 'multipart/form-data' } })
+}
+
 // ─── Forum — Thông báo nội bộ (forum-like) ──────────────────────────
 function forumAuthHeaders() {
   return {

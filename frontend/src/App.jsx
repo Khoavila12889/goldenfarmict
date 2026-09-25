@@ -23,6 +23,7 @@ import PublicSharePage from './pages/PublicSharePage'
 import ToolsDrawio from './pages/ToolsDrawio'
 import FactoryPrinting from './pages/FactoryPrinting'
 import FormulaManagement from './pages/FormulaManagement'
+import AdminBackups from './pages/AdminBackups'
 import Layout from './components/Layout'
 
 function ProtectedRoute({ children }) {
@@ -43,6 +44,10 @@ function AdminRoute({ children, requiredModule }) {
     if (perms['employees.import']?.can_edit || perms['employees.delete']?.can_edit) return children
   }
   return <Navigate to="/" replace />
+}
+
+function StrictAdminRoute({ children }) {
+  return sessionStorage.getItem('user_role') === 'admin' ? children : <Navigate to="/" replace />
 }
 
 function LoginGuard() {
@@ -79,6 +84,7 @@ export default function App() {
         <Route path="profile" element={<Profile />} />
         <Route path="permissions" element={<AdminRoute><Permissions /></AdminRoute>} />
         <Route path="monitor" element={<AdminRoute><MonitorPage /></AdminRoute>} />
+        <Route path="admin/backups" element={<StrictAdminRoute><AdminBackups /></StrictAdminRoute>} />
         <Route path="help" element={<HelpPage />} />
         <Route path="chat" element={<Chat />} />
         <Route path="tools/drawio" element={<AdminRoute requiredModule="drawio"><ToolsDrawio /></AdminRoute>} />
@@ -89,4 +95,3 @@ export default function App() {
     </Routes>
   )
 }
-
