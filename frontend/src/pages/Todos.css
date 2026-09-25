@@ -351,25 +351,24 @@
   flex: 1;
 }
 
-/* ---- Assignee Group Divider ---- */
-.assignee-group-divider {
+/* Tên user nằm bên trong góc trên của card */
+.todo-card-user-header {
   display: flex;
   align-items: center;
   gap: 6px;
   background-color: #f1f5f9;
-  color: #475569;
-  padding: 6px 10px;
+  color: #0f172a;
+  padding: 5px 10px;
   border-radius: 6px;
   font-size: 0.8rem;
-  font-weight: 600;
-  margin-top: 12px;
-  margin-bottom: 8px;
-  border-left: 3px solid #64748b;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+  font-weight: 700;
+  border-left: 3px solid var(--todo-accent);
+  margin-bottom: 2px;
 }
 
-.assignee-group-divider:first-child {
-  margin-top: 0;
+.todo-card-user-header svg {
+  color: var(--todo-accent);
+  flex-shrink: 0;
 }
 
 /* ---- Read-only Card ---- */
@@ -394,7 +393,7 @@ select.form-control:disabled {
   background: var(--todo-card-bg);
   border-radius: var(--todo-radius);
   border: 1px solid var(--todo-border);
-  padding: 1rem;
+  padding: 0.85rem;
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
@@ -444,12 +443,14 @@ select.form-control:disabled {
   border: 1px solid rgba(37, 99, 235, 0.15);
 }
 
+/* Tiêu đề công việc: nổi bật và dễ đọc hơn trên thẻ Kanban */
 .todo-card-title {
-  font-size: 0.925rem;
-  font-weight: 600;
-  color: var(--todo-text-primary);
-  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 4px 0;
   line-height: 1.4;
+  letter-spacing: -0.01em;
 }
 
 .todo-card-desc {
@@ -526,15 +527,14 @@ select.form-control:disabled {
 /* ---- Card Footer ---- */
 .todo-card-footer {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   border-top: 1px solid var(--todo-border);
   padding-top: 0.6rem;
   margin-top: 0.2rem;
-  font-size: 0.75rem;
+  font-size: 0.8rem;
 }
 
-.todo-assignee,
 .todo-due {
   display: flex;
   align-items: center;
@@ -542,10 +542,19 @@ select.form-control:disabled {
   color: var(--todo-text-secondary);
 }
 
+.todo-due {
+  font-weight: 600 !important;
+  color: #334155 !important;
+  margin-left: auto;
+}
+
+.todo-due svg {
+  color: #64748b !important;
+}
+
 .todo-due.is-overdue {
-  color: #ef4444;
-  font-weight: 600;
-  background: #fef2f2;
+  color: #dc2626 !important;
+  background: #fee2e2;
   padding: 2px 6px;
   border-radius: 4px;
 }
@@ -752,13 +761,20 @@ select.form-control:hover {
 .subtask-add-row {
   display: flex;
   gap: 8px;
+  align-items: flex-start;
 }
 
-.subtask-add-row .form-control {
+.subtask-add-row textarea.form-control {
   flex: 1;
+  resize: vertical;
+  min-height: 42px;
+  max-height: 120px;
+  font-size: 0.85rem;
+  padding: 8px 10px;
 }
 
 .subtask-add-row .btn-primary {
+  height: 42px;
   flex-shrink: 0;
   white-space: nowrap;
 }
@@ -1499,4 +1515,3 @@ select.form-control:hover {
     height: 95vh;
   }
 }
-

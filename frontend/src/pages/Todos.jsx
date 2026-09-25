@@ -41,9 +41,6 @@ export default function Todos() {
   const [assigneeFilter, setAssigneeFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   
-  // Trạng thái thu gọn/mở rộng nhóm nhân viên
-  const [collapsedGroups, setCollapsedGroups] = useState({})
-
   // Modal states
   const [showModal, setShowModal] = useState(false)
   const [editingTodo, setEditingTodo] = useState(null)
@@ -337,7 +334,13 @@ export default function Todos() {
 
   const handleAddSubtask = () => {
     if (!newSubtaskTitle.trim()) return
-    setFormSubtasks([...formSubtasks, { title: newSubtaskTitle.trim(), is_completed: 0 }])
+    const lines = newSubtaskTitle
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean)
+    if (lines.length === 0) return
+    const newItems = lines.map(title => ({ title, is_completed: 0 }))
+    setFormSubtasks(prev => [...prev, ...newItems])
     setNewSubtaskTitle('')
   }
   const handleToggleSubtask = (index) => {
@@ -408,9 +411,14 @@ export default function Todos() {
   }
 
   const handleDetailAddSubtask = () => {
-    const title = detailNewSubtask.trim()
-    if (!title) return
-    const next = [...detailSubtasks, { title, is_completed: 0 }]
+    if (!detailNewSubtask.trim() || detailSubtaskBusy) return
+    const lines = detailNewSubtask
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean)
+    if (lines.length === 0) return
+    const newItems = lines.map(title => ({ title, is_completed: 0 }))
+    const next = [...detailSubtasks, ...newItems]
     setDetailSubtasks(next)
     setDetailNewSubtask('')
     persistDetailSubtasks(next, detailSubtasks)
@@ -530,10 +538,6 @@ export default function Todos() {
     } catch (err) {
       alert(err.response?.data?.detail || 'Không thể xóa file đính kèm');
     }
-  }
-
-  const toggleGroup = (groupName) => {
-    setCollapsedGroups(prev => ({ ...prev, [groupName]: !prev[groupName] }))
   }
 
   // Loại bỏ cột 'review' khỏi Kanban Board
@@ -672,7 +676,6 @@ export default function Todos() {
           }
 
           const ColIcon = col.icon
-          let currentAssigneeGroup = null;
 
           return (
             <div key={col.id} className={`kanban-column column-${col.id}`}>
@@ -688,37 +691,19 @@ export default function Todos() {
                 {colTodos.map(todo => {
                   const overdue = isOverdue(todo.due_date, todo.status)
                   const assigneeName = todo.assignee_name || todo.creator_name || 'Chưa giao';
-                  
-                  let showAssigneeDivider = false;
-                  if (scopeFilter === 'department' && currentAssigneeGroup !== assigneeName) {
-                    showAssigneeDivider = true;
-                    currentAssigneeGroup = assigneeName;
-                  }
-
-                  const isCollapsed = collapsedGroups[assigneeName];
 
                   return (
-                    <React.Fragment key={todo.id}>
-                      {showAssigneeDivider && (
-                        <div 
-                          className="assignee-group-divider" 
-                          onClick={() => toggleGroup(assigneeName)}
-                          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#f1f5f9', padding: '6px 10px', borderRadius: '6px', marginTop: '12px', marginBottom: '8px', borderLeft: '3px solid #64748b' }}
-                        >
-                          <User size={14} />
-                          <span style={{ fontWeight: 600 }}>{assigneeName}</span>
-                          <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#64748b' }}>
-                            {isCollapsed ? '▼ Hiện' : '▲ Ẩn'}
-                          </span>
-                        </div>
-                      )}
+                    <div
+                      key={todo.id}
+                      className={`todo-card${!canEditTodo(todo) ? ' todo-card-readonly' : ''}`}
+                      onClick={() => openTodoDetail(todo)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <div className="todo-card-user-header">
+                        <User size={13} />
+                        <span>{assigneeName}</span>
+                      </div>
 
-                      {(!isCollapsed || scopeFilter !== 'department') && (
-                        <div 
-                          className={`todo-card${!canEditTodo(todo) ? ' todo-card-readonly' : ''}`}
-                          onClick={() => openTodoDetail(todo)}
-                          style={{ cursor: 'pointer' }}
-                        >
                           <div className="todo-card-top">
                             <span className={`badge-priority priority-${todo.priority}`}>
                               {todo.priority === 'urgent' ? 'Khẩn cấp' : todo.priority === 'high' ? 'Cao' : todo.priority === 'medium' ? 'Trung bình' : 'Thấp'}
@@ -793,20 +778,16 @@ export default function Todos() {
                           </div>
 
                           <div className="todo-card-footer">
-                            <div className="todo-assignee" title={`Giao cho: ${todo.assignee_name || 'Chưa giao'}`}>
-                              <User size={12} />
-                              <span>{todo.assignee_name || todo.creator_name || 'Cá nhân'}</span>
+                            <div className={`todo-due ${overdue ? 'is-overdue' : ''}`}>
+                              <Calendar size={12} />
+                              <span>
+                                {todo.due_date
+                                  ? `Hạn hoàn thành: ${formatDate(todo.due_date)}`
+                                  : 'Chưa đặt hạn'}
+                              </span>
                             </div>
-                            {todo.due_date && (
-                              <div className={`todo-due ${overdue ? 'is-overdue' : ''}`}>
-                                <Calendar size={12} />
-                                <span>{formatDate(todo.due_date)}</span>
-                              </div>
-                            )}
                           </div>
-                        </div>
-                      )}
-                    </React.Fragment>
+                    </div>
                   )
                 })}
                 {colTodos.length === 0 && (
@@ -865,13 +846,23 @@ export default function Todos() {
 
                   {canManageSubtasks(viewingTodo) && (
                     <div className="subtask-add-row" style={{ marginBottom: 10 }}>
-                      <input
-                        type="text"
+                      <textarea
                         className="form-control"
-                        placeholder="Thêm mục việc cần hoàn thành..."
+                        rows={2}
+                        placeholder="Nhập hoặc dán danh sách việc (mỗi việc một dòng)..."
                         value={detailNewSubtask}
                         onChange={(e) => setDetailNewSubtask(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleDetailAddSubtask(); } }}
+                        onKeyDown={(e) => {
+                          if (
+                            e.key === 'Enter' &&
+                            !e.shiftKey &&
+                            !e.nativeEvent.isComposing &&
+                            e.nativeEvent.keyCode !== 229
+                          ) {
+                            e.preventDefault()
+                            handleDetailAddSubtask()
+                          }
+                        }}
                         disabled={detailSubtaskBusy}
                       />
                       <button type="button" className="btn-primary" onClick={handleDetailAddSubtask} disabled={detailSubtaskBusy || !detailNewSubtask.trim()}>
@@ -1164,13 +1155,23 @@ export default function Todos() {
                   <label className="subtask-panel-label">Danh sách việc nhỏ (Subtasks Checklist)</label>
                   {canManageFormSubtasks && (
                     <div className="subtask-add-row">
-                      <input
-                        type="text"
+                      <textarea
                         className="form-control"
-                        placeholder="Thêm mục việc cần hoàn thành..."
+                        rows={2}
+                        placeholder="Nhập hoặc dán danh sách việc (mỗi việc một dòng)..."
                         value={newSubtaskTitle}
                         onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddSubtask(); } }}
+                        onKeyDown={(e) => {
+                          if (
+                            e.key === 'Enter' &&
+                            !e.shiftKey &&
+                            !e.nativeEvent.isComposing &&
+                            e.nativeEvent.keyCode !== 229
+                          ) {
+                            e.preventDefault()
+                            handleAddSubtask()
+                          }
+                        }}
                       />
                       <button type="button" className="btn-primary" onClick={handleAddSubtask}>
                         Thêm
