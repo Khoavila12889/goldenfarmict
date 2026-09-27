@@ -1,9 +1,16 @@
 import hashlib
+import hmac
+import os
 from typing import Optional, List
 from argon2 import PasswordHasher
 from .db import fetchone, fetchall, execute
 
-SESSION_SALT = "goldenfarm_ict_2024"
+def _session_secret() -> str:
+    # Keep old deployments working while allowing a dedicated secret to be set.
+    secret = os.getenv("SESSION_SECRET") or os.getenv("ONLYOFFICE_SECRET")
+    if not secret:
+        raise RuntimeError("SESSION_SECRET must be configured")
+    return secret
 
 _ph = PasswordHasher()
 
@@ -44,7 +51,8 @@ def rehash_if_argon2(user_code: str, stored: str, password: str) -> None:
 
 
 def make_session_token(user_code: str, role: str) -> str:
-    return hashlib.sha256(f"{user_code}:{role}:{SESSION_SALT}".encode()).hexdigest()[:16]
+    message = f"{user_code}:{role}".encode("utf-8")
+    return hmac.new(_session_secret().encode("utf-8"), message, hashlib.sha256).hexdigest()
 
 
 def resolve_login(login_id: str):
@@ -178,7 +186,7 @@ def authenticate(login_id: str, password: str):
 
 def verify_token(user_code: str, token: str, role: str) -> bool:
     expected = make_session_token(user_code, role)
-    return token == expected
+    return hmac.compare_digest(token or "", expected)
 
 
 from fastapi import HTTPException
@@ -194,9 +202,8 @@ def verify_session(
     if not code:
         raise HTTPException(status_code=401, detail="Thiếu thông tin người dùng")
 
-    if x_user_token:
-        if not verify_token(code, x_user_token, x_user_role or "user"):
-            raise HTTPException(status_code=401, detail="Token không hợp lệ")
+    if not x_user_token or not verify_token(code, x_user_token, x_user_role or "user"):
+        raise HTTPException(status_code=401, detail="Token không hợp lệ")
 
     user = fetchone(
         "SELECT u.role FROM users u WHERE u.employee_code = :code",

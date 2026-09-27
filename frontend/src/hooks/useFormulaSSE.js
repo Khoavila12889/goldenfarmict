@@ -9,7 +9,7 @@
  * Auto-reconnect khi mất kết nối SSE.
  */
 import { useEffect, useRef, useCallback, useState } from 'react'
-import { apiUrl } from '../services/api'
+import { eventStreamUrl } from '../services/api'
 
 export default function useFormulaSSE({ onCreated, onDeleted, onUpdated } = {}) {
   const [connected, setConnected] = useState(false)
@@ -29,8 +29,7 @@ export default function useFormulaSSE({ onCreated, onDeleted, onUpdated } = {}) 
       try { esRef.current.close() } catch (_) {}
     }
 
-    const token = sessionStorage.getItem('token') || ''
-    const url = apiUrl(`/events${token ? `?token=${token}` : ''}`)
+    const url = eventStreamUrl()
 
     let es
     try {

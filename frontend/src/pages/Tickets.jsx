@@ -2,7 +2,7 @@
 import '../styles/shared.css'
 import './TicketsKanban.css'
 import {
-  getEmployeeByCode, getTickets, createTicket, updateTicket, apiUrl,
+  getEmployeeByCode, getTickets, createTicket, updateTicket, eventStreamUrl,
 } from '../services/api'
 import { formatDate } from '../utils/date'
 import { Clock, TicketCheck, Search } from 'lucide-react'
@@ -76,7 +76,7 @@ export default function Tickets() {
     
     function connect() {
       try {
-        es = new EventSource(apiUrl('/events'))
+        es = new EventSource(eventStreamUrl())
         
         if (isAdmin) {
           es.addEventListener('new_ticket', (e) => {
@@ -427,5 +427,4 @@ export default function Tickets() {
     </div>
   )
 }
-
 

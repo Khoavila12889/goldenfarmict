@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Plus, RefreshCw } from 'lucide-react'
 import {
   listApprovalRequests, getPendingApprovals, getEmployeeByCode,
-  approveRequest, rejectRequest, apiUrl,
+  approveRequest, rejectRequest, eventStreamUrl,
 } from '../services/api'
 import LeaveRequestDialog from '../components/booking/LeaveRequestDialog'
 import { formatDate } from '../utils/date'
@@ -230,7 +230,7 @@ export default function NghiPhep() {
       if (closed) return
       if (es) { es.close(); es = null }
       try {
-        es = new EventSource(apiUrl(`/events${token ? `?token=${token}` : ''}`))
+        es = new EventSource(eventStreamUrl())
         es.addEventListener('connected', () => scheduleSilentSync())
         es.addEventListener('request_submitted', onSubmitted)
         es.addEventListener('request_approved', onApproved)

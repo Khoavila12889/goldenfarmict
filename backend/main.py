@@ -3,6 +3,7 @@ GOLDENFARM ICT Management - Backend API (FastAPI)
 Run: uvicorn main:app --host 127.0.0.1 --port 8080 --reload
 """
 import asyncio
+import json
 import os
 from datetime import datetime
 from fastapi import FastAPI, Request
@@ -10,7 +11,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from sqlalchemy import text
-from app.core.auth import hash_password
+from app.core.auth import hash_password, verify_session
+from app.core.db import fetchone
+from app.core.todo_permissions import can_view
 from app.core import events
 from app.routers import auth, employees, equipment, tickets, bookings, dashboard, licenses, software, approvals, business_trips, departments, salary_slips, salary_user, documents, todos, comments, attachments, monitor, shares, chat, forum, formulas, module_backups
 
@@ -433,6 +436,11 @@ async def on_shutdown():
 
 @app.get("/api/events")
 async def global_sse(request: Request):
+    params = request.query_params
+    user = verify_session(
+        params.get("user_code"), params.get("user_role"), None, params.get("token")
+    )
+
     async def stream():
         try:
             # Send initial connection message
@@ -441,6 +449,22 @@ async def global_sse(request: Request):
             async for msg in events.event_generator():
                 if await request.is_disconnected():
                     break
+                event_name = next((line[7:] for line in msg.splitlines() if line.startswith("event: ")), "")
+                if event_name in {"todo_created", "todo_updated", "todo_deleted", "comment_added", "attachment_added", "attachment_deleted"}:
+                    try:
+                        data_line = next(line[6:] for line in msg.splitlines() if line.startswith("data: "))
+                        payload = json.loads(data_line)
+                        todo_id = payload.get("todo_id") or payload.get("id")
+                        todo = fetchone("SELECT * FROM todos WHERE id = :id", {"id": todo_id}) if todo_id else None
+                        if todo:
+                            if not can_view(user, dict(todo)):
+                                continue
+                        elif event_name == "todo_deleted" and not can_view(user, payload):
+                            continue
+                        elif event_name != "todo_deleted":
+                            continue
+                    except (StopIteration, ValueError, TypeError):
+                        continue
                 yield msg
                 
                 # Send heartbeat every few messages to keep connection alive

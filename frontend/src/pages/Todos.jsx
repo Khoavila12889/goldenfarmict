@@ -11,8 +11,7 @@ import {
   deleteTodo, getTodoAssignees, getDepartments, approveTodo,
   getTodoComments, addTodoComment, getTodoAttachments,
   uploadTodoAttachment, addTodoUrl, deleteTodoAttachment,
-  exportTodosReport,
-  apiUrl,
+  exportTodosReport, downloadTodoAttachment, eventStreamUrl,
 } from '../services/api'
 import { formatDate } from '../utils/date'
 import './Todos.css'
@@ -25,12 +24,22 @@ function normAtt(a) {
     url: a.file_url,
     ext: a.file_type,
     uploader_code: a.uploader_code,
+    permissions: a.permissions || {},
     created_at: a.created_at,
   }
 }
 
 export default function Todos() {
   const [todos, setTodos] = useState([])
+  const [todoCapabilities, setTodoCapabilities] = useState({
+    can_create: false,
+    can_create_personal: false,
+    can_create_department: false,
+    can_choose_department: false,
+    allowed_departments: [],
+    requires_department_approval: false,
+    default_scope: 'personal',
+  })
   const [stats, setStats] = useState({ total: 0, todo: 0, in_progress: 0, completed: 0, overdue: 0 })
   const [loading, setLoading] = useState(true)
   
@@ -72,65 +81,17 @@ export default function Todos() {
   const [formSubtasks, setFormSubtasks] = useState([])
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('')
 
-  const userRole = sessionStorage.getItem('user_role') || 'user'
   const userDept = sessionStorage.getItem('user_department') || ''
   const userCode = sessionStorage.getItem('user_code') || ''
   
   const userName = sessionStorage.getItem('user_name') || userCode
-
-  const canEditTodo = (todo) => {
-    if (userRole === 'admin') return true
-    if (userRole === 'head') {
-      if (todo.scope === 'department' && String(todo.department) === userDept) return true
-      if (String(todo.creator_code) === userCode || String(todo.assignee_code) === userCode) return true
-      return false
-    }
-    return String(todo.creator_code) === userCode || String(todo.assignee_code) === userCode
-  }
-
-  const canDeleteTodo = (todo) => {
-    if (userRole === 'admin') return true
-    if (userRole === 'head') {
-      if (todo.scope === 'department' && String(todo.department) === userDept) return true
-      if (todo.scope === 'personal' && String(todo.creator_code) === userCode) return true
-      return false
-    }
-    return String(todo.creator_code) === userCode
-  }
-
-  const canManageSubtasks = (todo) => {
-    if (!todo) return false
-    if (userRole === 'admin') return true
-    if (userRole === 'head') {
-      if (todo.scope === 'department' && String(todo.department) === userDept) return true
-      return String(todo.creator_code) === userCode
-    }
-    return String(todo.creator_code) === userCode
-  }
-
-  const canChangeStatus = (todo) => {
-    if (userRole === 'admin') return true
-    if (userRole === 'head') {
-      if (todo.scope === 'department' && String(todo.department) === userDept) return true
-      if (String(todo.creator_code) === userCode || String(todo.assignee_code) === userCode) return true
-      return false
-    }
-    return String(todo.creator_code) === userCode || String(todo.assignee_code) === userCode
-  }
-
-  const canSeeCancelledOption = (todo) => {
-    return userRole === 'admin' || userRole === 'head'
-  }
+  const allowedDepartmentNames = todoCapabilities.allowed_departments
+  const visibleDepartments = Array.isArray(allowedDepartmentNames)
+    ? departments.filter(d => allowedDepartmentNames.some(name => String(name).trim().toLowerCase() === String(d.name).trim().toLowerCase()))
+    : departments
 
   const isPendingApproval = (todo) => {
     return todo.scope === 'department' && Number(todo.is_dept_approved) === 0
-  }
-
-  const canApproveTodo = (todo) => {
-    if (!isPendingApproval(todo)) return false
-    if (userRole === 'admin') return true
-    if (userRole === 'head') return String(todo.department) === userDept
-    return false
   }
 
   const handleApproveTodo = async (todoId) => {
@@ -155,14 +116,9 @@ export default function Todos() {
     let sse = null
     function connectSSE() {
       try {
-        sse = new EventSource(apiUrl('/events'))
-        sse.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data)
-            if (['todo_created', 'todo_updated', 'todo_deleted', 'comment_added', 'attachment_added'].includes(data.event || data.type)) {
-              fetchData()
-            }
-          } catch (err) {}
+        sse = new EventSource(eventStreamUrl())
+        for (const eventName of ['todo_created', 'todo_updated', 'todo_deleted', 'comment_added', 'attachment_added', 'attachment_deleted']) {
+          sse.addEventListener(eventName, fetchData)
         }
         sse.onerror = (err) => {
           setTimeout(() => {
@@ -181,11 +137,7 @@ export default function Todos() {
       const [empRes, deptRes] = await Promise.all([getTodoAssignees(), getDepartments()])
       setEmployees(empRes.data?.data || [])
       const allDepts = deptRes.data?.data || []
-      if (userRole === 'admin') {
-        setDepartments(allDepts)
-      } else {
-        setDepartments(allDepts.filter(d => d.name === userDept))
-      }
+      setDepartments(allDepts)
     } catch (e) {
       console.error(e)
     }
@@ -198,6 +150,8 @@ export default function Todos() {
         getTodos({ scope: scopeFilter, status: statusFilter, priority: priorityFilter, search: searchQuery }),
         getTodoStats()
       ])
+      const capabilities = resTodos.data?.permissions || {}
+      setTodoCapabilities(capabilities)
       setTodos(resTodos.data?.data || [])
       setStats(resStats.data?.data || { total: 0, todo: 0, in_progress: 0, completed: 0, overdue: 0 })
     } catch (err) {} finally {
@@ -236,9 +190,11 @@ export default function Todos() {
     setEditingTodo(null)
     setFormTitle('')
     setFormDesc('')
-    setFormScope(userRole === 'head' ? 'department' : 'personal')
-    setFormDept(userDept)
-    setFormAssigneeCode(userRole === 'head' ? '' : userCode)
+    const defaultScope = todoCapabilities.default_scope || 'personal'
+    const allowed = todoCapabilities.allowed_departments
+    setFormScope(defaultScope)
+    setFormDept(Array.isArray(allowed) ? (allowed.find(d => String(d).toLowerCase() === String(userDept).toLowerCase()) || allowed[0] || '') : '')
+    setFormAssigneeCode(defaultScope === 'department' ? '' : userCode)
     setFormPriority('medium')
     setFormDueDate('')
     setDueDateError('')
@@ -461,7 +417,7 @@ export default function Todos() {
 
   const handleSendComment = async (e) => {
     e.preventDefault();
-    if (!commentText.trim() || !viewingTodo) return;
+    if (!commentText.trim() || !viewingTodo?.permissions?.can_comment) return;
     
     const optimistic = {
       id: `tmp-${Date.now()}`,
@@ -490,7 +446,7 @@ export default function Todos() {
   const handleAttachFile = async (e) => {
     const file = e.target.files[0];
     e.target.value = '';
-    if (!file || !viewingTodo) return;
+    if (!file || !viewingTodo?.permissions?.can_manage_attachments) return;
     
     const ext = file.name.split('.').pop().toLowerCase();
     const allowed = ['jpg', 'jpeg', 'png', 'webp', 'xlsx', 'doc', 'docx', 'pdf'];
@@ -514,7 +470,7 @@ export default function Todos() {
 
   const handleAddUrl = async (e) => {
     e?.preventDefault()
-    if (!viewingTodo || !urlValue.trim()) return
+    if (!viewingTodo?.permissions?.can_manage_attachments || !urlValue.trim()) return
     const url = urlValue.trim()
     const title = urlTitle.trim() || url
     try {
@@ -540,6 +496,24 @@ export default function Todos() {
     }
   }
 
+  const handleDownloadAttachment = async (e, att) => {
+    if (att.type === 'url') return
+    e.preventDefault()
+    try {
+      const response = await downloadTodoAttachment(att.id)
+      const blobUrl = URL.createObjectURL(response.data)
+      const anchor = document.createElement('a')
+      anchor.href = blobUrl
+      anchor.download = att.name || 'attachment'
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(blobUrl)
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Không thể tải file đính kèm')
+    }
+  }
+
   // Loại bỏ cột 'review' khỏi Kanban Board
   const columns = [
     { id: 'todo', label: 'Cần làm', icon: Clock, color: '#64748b' },
@@ -554,8 +528,8 @@ export default function Todos() {
     return dateStr < today
   }
 
-  const canManageFormSubtasks = !editingTodo || canManageSubtasks(editingTodo)
-  const canToggleFormSubtasks = !editingTodo || canEditTodo(editingTodo)
+  const canManageFormSubtasks = !editingTodo || editingTodo.permissions?.can_manage_subtasks
+  const canToggleFormSubtasks = !editingTodo || editingTodo.permissions?.can_edit
 
   return (
     <div className="todos-container">
@@ -570,9 +544,9 @@ export default function Todos() {
             <div className="todos-subtitle">Theo dõi, phân công & tối ưu hiệu suất công việc cá nhân và phòng ban</div>
           </div>
         </div>
-        <button className="btn-primary" onClick={openCreateModal}>
-          <Plus size={18} /> Tạo công việc mới
-        </button>
+          {todoCapabilities.can_create && <button className="btn-primary" onClick={openCreateModal}>
+            <Plus size={18} /> Tạo công việc mới
+          </button>}
       </div>
 
       {/* KPI Stats Cards - Đã bỏ thẻ Chờ kiểm tra */}
@@ -695,7 +669,7 @@ export default function Todos() {
                   return (
                     <div
                       key={todo.id}
-                      className={`todo-card${!canEditTodo(todo) ? ' todo-card-readonly' : ''}`}
+                      className={`todo-card${!todo.permissions?.can_edit ? ' todo-card-readonly' : ''}`}
                       onClick={() => openTodoDetail(todo)}
                       style={{ cursor: 'pointer' }}
                     >
@@ -718,7 +692,7 @@ export default function Todos() {
                                   <Clock size={10} /> Chờ duyệt
                                 </span>
                               )}
-                              {canApproveTodo(todo) && (
+                              {todo.permissions?.can_approve && (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); handleApproveTodo(todo.id); }}
                                   className="todo-approve-btn"
@@ -727,21 +701,18 @@ export default function Todos() {
                                   <CheckCircle2 size={13} /> Phê duyệt
                                 </button>
                               )}
-                              {canEditTodo(todo) ? (
+                              {todo.permissions?.can_edit ? (
                                 <button onClick={(e) => { e.stopPropagation(); openEditModal(todo); }} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '2px' }} title="Chỉnh sửa">
                                   <Edit2 size={13} />
                                 </button>
                               ) : (
                                 <span style={{ color: '#f59e0b', fontSize: '0.65rem', padding: '2px', cursor: 'default' }} title="Chỉ xem, không có quyền chỉnh sửa">⚠️</span>
                               )}
-                              {canDeleteTodo(todo) ? (
+                              {todo.permissions?.can_delete ? (
                                 <button onClick={(e) => { e.stopPropagation(); handleDeleteTodo(todo.id); }} style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', padding: '2px' }} title="Xóa">
                                   <Trash2 size={13} />
                                 </button>
                               ) : null}
-                              {!canDeleteTodo(todo) && todo.creator_code === userCode && (
-                                <span style={{ color: '#94a3b8', fontSize: '0.65rem', padding: '2px', cursor: 'default' }} title="Tự tạo không được xóa (để xem report)">🔒</span>
-                              )}
                             </div>
                           </div>
 
@@ -764,16 +735,16 @@ export default function Todos() {
                             <select
                               value={todo.status}
                               onChange={(e) => {
-                                if (canChangeStatus(todo)) handleStatusChange(todo.id, e.target.value)
+                                if (todo.permissions?.can_change_status) handleStatusChange(todo.id, e.target.value)
                               }}
                               className={`form-control status-${todo.status}`}
-                              disabled={!canChangeStatus(todo)}
-                              title={!canChangeStatus(todo) ? 'Chỉ xem, không có quyền thay đổi' : ''}
+                              disabled={!todo.permissions?.can_change_status}
+                              title={!todo.permissions?.can_change_status ? 'Chỉ xem, không có quyền thay đổi' : ''}
                             >
                               <option value="todo">Cần làm</option>
                               <option value="in_progress">Đang xử lý</option>
                               <option value="completed">Hoàn thành</option>
-                              {canSeeCancelledOption(todo) && <option value="cancelled">Hủy</option>}
+                              <option value="cancelled">Hủy</option>
                             </select>
                           </div>
 
@@ -819,7 +790,7 @@ export default function Todos() {
                     {isPendingApproval(viewingTodo) && (
                       <span className="badge-pending"><Clock size={12}/> Chờ trưởng phòng duyệt</span>
                     )}
-                    {canApproveTodo(viewingTodo) && (
+                    {viewingTodo.permissions?.can_approve && (
                       <button
                         className="todo-approve-btn"
                         onClick={() => handleApproveTodo(viewingTodo.id)}
@@ -844,7 +815,7 @@ export default function Todos() {
                     </span>
                   </div>
 
-                  {canManageSubtasks(viewingTodo) && (
+                  {viewingTodo.permissions?.can_manage_subtasks && (
                     <div className="subtask-add-row" style={{ marginBottom: 10 }}>
                       <textarea
                         className="form-control"
@@ -881,12 +852,12 @@ export default function Todos() {
                             <input
                               type="checkbox"
                               checked={!!sub.is_completed}
-                              onChange={() => { if (canEditTodo(viewingTodo)) handleDetailToggleSubtask(idx); }}
-                              disabled={!canEditTodo(viewingTodo) || detailSubtaskBusy}
+                              onChange={() => { if (viewingTodo.permissions?.can_edit) handleDetailToggleSubtask(idx); }}
+                              disabled={!viewingTodo.permissions?.can_edit || detailSubtaskBusy}
                             />
                             <span className={`subtask-item-input${sub.is_completed ? ' done' : ''}`}>{sub.title}</span>
                           </div>
-                          {canManageSubtasks(viewingTodo) && (
+                          {viewingTodo.permissions?.can_manage_subtasks && (
                             <button type="button" className="subtask-remove-btn" onClick={() => handleDetailRemoveSubtask(idx)} disabled={detailSubtaskBusy} title="Xóa">
                               <X size={14} />
                             </button>
@@ -900,7 +871,7 @@ export default function Todos() {
                 <div className="todo-detail-section">
                   <div className="section-header-flex">
                     <h3><Paperclip size={16}/> Đính kèm ({todoAttachments.length})</h3>
-                    <div className="attach-actions">
+                    {viewingTodo.permissions?.can_manage_attachments && <div className="attach-actions">
                       <label className="attach-btn" title="Đính kèm file (Ảnh, PDF, Excel, Word)">
                         <Plus size={14}/> Thêm File
                         <input type="file" hidden accept=".jpg,.jpeg,.png,.webp,.xlsx,.doc,.docx,.pdf" onChange={handleAttachFile} />
@@ -934,7 +905,7 @@ export default function Todos() {
                           </button>
                         </form>
                       )}
-                    </div>
+                    </div>}
                   </div>
                   
                   <div className="attachments-list">
@@ -945,9 +916,9 @@ export default function Todos() {
                            ['jpg','jpeg','png','webp'].includes(att.ext) ? <ImageIcon size={18}/> : 
                            ['xlsx','xls'].includes(att.ext) ? <FileSpreadsheet size={18}/> : <FileText size={18}/>}
                         </div>
-                        <a href={att.url} target="_blank" rel="noreferrer" className="att-name" title={att.name}>{att.name}</a>
+                        <a href={att.type === 'url' ? att.url : '#'} onClick={(e) => handleDownloadAttachment(e, att)} target={att.type === 'url' ? '_blank' : undefined} rel="noreferrer" className="att-name" title={att.name}>{att.name}</a>
                         {att.type === 'url' && <ExternalLink size={14} style={{ color: '#94a3b8' }}/>}
-                        {(userRole === 'admin' || att.uploader_code === userCode) && (
+                        {att.permissions?.can_delete && (
                           <button className="att-delete-btn" onClick={() => handleDeleteAttachment(att)} title="Xóa đính kèm">
                             <Trash2 size={14} />
                           </button>
@@ -982,7 +953,7 @@ export default function Todos() {
                   )}
                 </div>
 
-                <form className="todo-chat-input-area" onSubmit={handleSendComment}>
+                {viewingTodo.permissions?.can_comment && <form className="todo-chat-input-area" onSubmit={handleSendComment}>
                   <input 
                     type="text" 
                     placeholder="Viết nhận xét, bình luận..." 
@@ -992,7 +963,7 @@ export default function Todos() {
                   <button type="submit" disabled={!commentText.trim()}>
                     <Send size={16} />
                   </button>
-                </form>
+                </form>}
               </div>
 
             </div>
@@ -1043,13 +1014,13 @@ export default function Todos() {
                       value={formScope}
                       onChange={(e) => handleScopeChange(e.target.value)}
                     >
-                      <option value="personal">Cá nhân</option>
-                      <option value="department">Phòng ban {userRole === 'user' ? '(Chờ duyệt)' : '(Giao việc)'}</option>
+                      {todoCapabilities.can_create_personal && <option value="personal">Cá nhân</option>}
+                      {todoCapabilities.can_create_department && <option value="department">Phòng ban {todoCapabilities.requires_department_approval ? '(Chờ duyệt)' : '(Giao việc)'}</option>}
                     </select>
-                    {userRole === 'user' && formScope === 'department' && (
+                    {todoCapabilities.requires_department_approval && formScope === 'department' && (
                       <small className="todos-form-hint">Công việc phòng ban bạn tạo sẽ được trưởng phòng phê duyệt trước khi hiển thị cho phòng ban</small>
                     )}
-                    {userRole === 'user' && (
+                    {todoCapabilities.requires_department_approval && formScope === 'personal' && (
                       <small className="todos-form-hint">Công việc cá nhân — bạn tự tạo và tự theo dõi</small>
                     )}
                   </div>
@@ -1057,14 +1028,14 @@ export default function Todos() {
                   {formScope === 'department' && (
                     <div className="form-group">
                       <label>Chọn Phòng ban</label>
-                      {userRole === 'admin' ? (
+                      {todoCapabilities.can_choose_department ? (
                         <select
                           className="form-control"
                           value={formDept}
                           onChange={(e) => setFormDept(e.target.value)}
                         >
                           <option value="">-- Chọn phòng ban --</option>
-                          {departments.map(d => (
+                          {visibleDepartments.map(d => (
                             <option key={d.id || d.name} value={d.name}>{d.name}</option>
                           ))}
                         </select>
@@ -1098,15 +1069,15 @@ export default function Todos() {
                         required={!editingTodo}
                       >
                         <option value="">-- Chọn nhân viên --</option>
-                        {employees.map(emp => (
+                        {employees.filter(emp => !formDept || String(emp.department).trim().toLowerCase() === String(formDept).trim().toLowerCase()).map(emp => (
                           <option key={emp.employee_code} value={emp.employee_code}>
                             {emp.full_name} ({emp.employee_code}) - {emp.department}
                           </option>
                         ))}
                       </select>
                     )}
-                    {formScope === 'department' && userRole === 'head' && (
-                      <small className="todos-form-hint">Chọn nhân viên trong phòng ban {userDept} để giao việc</small>
+                    {formScope === 'department' && todoCapabilities.can_choose_department && (
+                      <small className="todos-form-hint">Chỉ chọn nhân viên thuộc phòng ban được phép</small>
                     )}
                   </div>
 

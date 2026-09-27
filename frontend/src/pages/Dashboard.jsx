@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
-import { getDashboardStats, getEmployeeByCode, getTickets, getTicketQueuePosition, getPendingApprovals, listApprovalRequests, approveRequest, rejectRequest, apiUrl } from '../services/api'
+import { getDashboardStats, getEmployeeByCode, getTickets, getTicketQueuePosition, getPendingApprovals, listApprovalRequests, approveRequest, rejectRequest, apiUrl, eventStreamUrl } from '../services/api'
 import { formatDate } from '../utils/date'
 import { Ticket, Calendar, Users, Monitor, Clock, AlertCircle, CheckCircle2, XCircle, ArrowRight, CalendarOff } from 'lucide-react'
 import AnnouncementsBox from '../components/AnnouncementsBox'
@@ -218,7 +218,7 @@ export default function Dashboard() {
       if (closed) return
       if (es) { es.close(); es = null }
       try {
-        const sseUrl = apiUrl(`/events${token ? `?token=${token}` : ''}`)
+        const sseUrl = eventStreamUrl()
         es = new EventSource(sseUrl)
 
         es.addEventListener('connected', () => { loadDataRef.current() })

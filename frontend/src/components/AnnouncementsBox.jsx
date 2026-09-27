@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { Megaphone, Bell, Plus, Pin, MessageCircle, Send, X, Trash2, Pencil, ChevronDown, ChevronUp, Users, Building2, UserPlus, Loader2, Paperclip, Link2, FileText, Eye, File as FileIcon, Image as ImageIcon } from 'lucide-react'
-import { getForumPosts, createForumPost, updateForumPost, deleteForumPost, getForumReplies, createForumReply, getForumOnlyOfficeConfig, getEmployees, uploadForumFile, apiUrl } from '../services/api'
+import { getForumPosts, createForumPost, updateForumPost, deleteForumPost, getForumReplies, createForumReply, getForumOnlyOfficeConfig, getEmployees, uploadForumFile, apiUrl, eventStreamUrl } from '../services/api'
 import { formatDate } from '../utils/date'
 import OnlyOfficeViewer from './OnlyOfficeViewer'
 import PdfPagesViewer from './PdfPagesViewer'
@@ -99,7 +99,7 @@ export default function AnnouncementsBox({ compact = false }) {
     let timer = null
     function connect() {
       try {
-        es = new EventSource(apiUrl('/events'))
+        es = new EventSource(eventStreamUrl())
         es.addEventListener('forum_post_added', loadPosts)
         es.addEventListener('forum_post_updated', loadPosts)
         es.addEventListener('forum_post_deleted', loadPosts)

@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Header
 from app.core.db import fetchall, fetchone, execute, insert
 from app.core.auth import verify_session
+from app.core.todo_permissions import require_view
 from app.core import events
 from app.services.mention_parser import parse_mentions, create_mention_notifications
 
@@ -34,9 +35,10 @@ def get_comments(
 ):
     user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
 
-    todo = fetchone("SELECT id FROM todos WHERE id = :id", {"id": todo_id})
+    todo = fetchone("SELECT * FROM todos WHERE id = :id", {"id": todo_id})
     if not todo:
         raise HTTPException(status_code=404, detail="Không tìm thấy công việc")
+    require_view(user, dict(todo))
 
     rows = fetchall(
         """
@@ -64,9 +66,10 @@ def create_comment(
 ):
     user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
 
-    todo = fetchone("SELECT id FROM todos WHERE id = :id", {"id": todo_id})
+    todo = fetchone("SELECT * FROM todos WHERE id = :id", {"id": todo_id})
     if not todo:
         raise HTTPException(status_code=404, detail="Không tìm thấy công việc")
+    require_view(user, dict(todo))
 
     if not data.content.strip():
         raise HTTPException(status_code=400, detail="Nội dung bình luận không được để trống")

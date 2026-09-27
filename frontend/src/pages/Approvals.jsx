@@ -2,7 +2,7 @@
 import {
   listApprovalRequests, getPendingApprovals, getApprovalRequest,
   createApprovalRequest, submitApprovalRequest, cancelApprovalRequest,
-  approveRequest, rejectRequest, getWorkflows, apiUrl,
+  approveRequest, rejectRequest, getWorkflows, eventStreamUrl,
 } from '../services/api'
 import { formatDate } from '../utils/date'
 import {
@@ -82,7 +82,7 @@ export default function Approvals() {
     }
     function connect() {
       try {
-        es = new EventSource(apiUrl(`/events${token ? `?token=${token}` : ''}`))
+        es = new EventSource(eventStreamUrl())
         es.addEventListener('request_submitted', reload)
         es.addEventListener('request_approved', reload)
         es.addEventListener('request_rejected', reload)
@@ -779,6 +779,5 @@ export default function Approvals() {
     </div>
   )
 }
-
 
 

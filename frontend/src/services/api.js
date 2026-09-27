@@ -63,6 +63,15 @@ export function apiUrl(path) {
   return `${getApiBase()}${p}`
 }
 
+export function eventStreamUrl() {
+  const query = new URLSearchParams({
+    user_code: sessionStorage.getItem('user_code') || '',
+    user_role: sessionStorage.getItem('user_role') || '',
+    token: sessionStorage.getItem('token') || '',
+  })
+  return apiUrl(`/events?${query.toString()}`)
+}
+
 const api = axios.create({
   baseURL: getApiBase(),
   headers: { 'Content-Type': 'application/json' },
@@ -622,6 +631,13 @@ export function addTodoUrl(todoId, url, title = '') {
 
 export function deleteTodoAttachment(attachmentId) {
   return api.delete(`/attachments/${attachmentId}`, { headers: todoAuthHeaders() })
+}
+
+export function downloadTodoAttachment(attachmentId) {
+  return api.get(`/attachments/${attachmentId}/download`, {
+    headers: todoAuthHeaders(),
+    responseType: 'blob'
+  })
 }
 
 // ─── Documents / Storage ──────────────────────────────────────
