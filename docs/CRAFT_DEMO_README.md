@@ -15,21 +15,22 @@ Tải bản portable Windows từ GitHub Releases, mở file công ty để xem:
 
 ## Cách 2 — Demo ngay trong webapp (trang /craft-demo)
 
-1. Cài Rust + trunk (một lần): `cargo install trunk`, thêm target `wasm32-unknown-unknown`.
-2. Clone + chạy 3 bản web (mỗi cái một terminal, port khác nhau):
+> Bạn chạy project bằng `docker compose`: 3 bản web đã có sẵn service riêng
+> (profile `craft`, không chạy mặc định, không ảnh hưởng stack chính).
+
+1. Bỏ bản web vào thư mục (trên PC, ngang hàng `docker-compose.yml`):
+   `craft-web/wordcraft/`, `craft-web/gridcraft/`, `craft-web/pdfcraft/`
+   (build `trunk build --release` hoặc giải nén release `*-web-*.zip`).
+2. Chạy:
    ```bash
-   git clone https://github.com/storytold/wordcraft
-   cd wordcraft/apps/wordcraft-web && trunk serve            # :8771
-   git clone https://github.com/storytold/gridcraft
-   cd gridcraft/apps/gridcraft-web && trunk serve --port 8772
-   git clone https://github.com/storytold/pdfcraft
-   cd pdfcraft/apps/pdfcraft-web && trunk serve --port 8773
+   docker compose --profile craft up -d wordcraft-web gridcraft-web pdfcraft-web
    ```
-   Không có Rust thì thay bằng release `*-web-*.zip` (static site, serve bằng nginx/`npx serve`).
-3. Checkout branch này, chạy webapp như bình thường, mở `/craft-demo`.
-4. Mỗi tab đã điền sẵn URL localhost — nếu đổi port thì sửa trong ô URL.
-5. Trong khung iframe dùng **file picker của app** để mở file công ty, đối chiếu với
+   Mở `http://<pc>:8771` kiểm tra từng bản trước.
+3. Mở webapp GoldenFarmICT → `/craft-demo` (URL mặc định trong trang đã khớp
+   3 port này; đổi port thì sửa trong ô URL).
+4. Trong khung iframe dùng **file picker của app** để mở file công ty, đối chiếu với
    OnlyOffice ở module Tài liệu, ghi kết quả vào checklist trong trang.
+5. Không demo nữa: `docker compose --profile craft down`.
 
 ## Cách 3 — So convert (quyết định có thay OnlyOffice cho in ấn không)
 

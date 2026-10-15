@@ -1,0 +1,14 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>PdfCraft Web — chưa có bản build</title></head>
+<body style="font-family:sans-serif;max-width:720px;margin:40px auto">
+<h2>Thư mục này chưa có bản web PdfCraft</h2>
+<p>Chọn 1 trong 2 cách rồi đặt toàn bộ file vào đúng thư mục này
+(<code>craft-web/pdfcraft/</code>):</p>
+<ol>
+<li><b>Build từ source:</b> <code>cd pdfcraft/apps/pdfcraft-web && trunk build --release</code> (cần Rust 1.95+),
+copy nội dung <code>dist/</code> vào đây.</li>
+<li><b>Dùng release:</b> tải <code>pdfcraft-web-&lt;ver&gt;.zip</code> từ GitHub Releases,
+giải nén vào đây.</li>
+</ol>
+<p>Xong chạy: <code>docker compose --profile craft up -d pdfcraft-web</code>,
+mở webapp GoldenFarmICT → <code>/craft-demo</code> tab PDF.</p>
+</body></html>

@@ -124,6 +124,48 @@ services:
       retries: 3
       start_period: 60s
 
+  # 6. ArtCraft web demos (Word/Grid/Pdf) — OPTIONAL, branch wordcraft-viewer.
+  # Không chạy mặc định. Chạy khi cần demo ở /craft-demo:
+  #   docker compose --profile craft up -d wordcraft-web gridcraft-web pdfcraft-web
+  # Mỗi service serve 1 thư mục tĩnh ./craft-web/<app> (trunk build --release hoặc
+  # giải nén release *-web-*.zip vào đó). Chưa có dist thì trang placeholder
+  # trong thư mục sẽ hướng dẫn.
+  wordcraft-web:
+    image: nginx:alpine
+    container_name: goldenfarm-wordcraft-web
+    profiles: ["craft"]
+    ports:
+      - "8771:80"
+    volumes:
+      - ./craft-web/wordcraft:/usr/share/nginx/html:ro
+    restart: unless-stopped
+    networks:
+      - goldenfarm-network
+
+  gridcraft-web:
+    image: nginx:alpine
+    container_name: goldenfarm-gridcraft-web
+    profiles: ["craft"]
+    ports:
+      - "8772:80"
+    volumes:
+      - ./craft-web/gridcraft:/usr/share/nginx/html:ro
+    restart: unless-stopped
+    networks:
+      - goldenfarm-network
+
+  pdfcraft-web:
+    image: nginx:alpine
+    container_name: goldenfarm-pdfcraft-web
+    profiles: ["craft"]
+    ports:
+      - "8773:80"
+    volumes:
+      - ./craft-web/pdfcraft:/usr/share/nginx/html:ro
+    restart: unless-stopped
+    networks:
+      - goldenfarm-network
+
 networks:
   goldenfarm-network:
     driver: bridge
