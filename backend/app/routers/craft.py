@@ -95,7 +95,8 @@ def craft_preview(
     cached = os.path.join(CRAFT_CACHE_DIR, f"{digest}.{out_ext}")
     if not os.path.isfile(cached):
         tmp_src = os.path.join(CRAFT_CACHE_DIR, f"{digest}.src")
-        tmp_dst = os.path.join(CRAFT_CACHE_DIR, f"{digest}.out")
+        # CLI đoán định dạng đầu ra theo đuôi file -> file tạm phải có đuôi thật.
+        tmp_dst = os.path.join(CRAFT_CACHE_DIR, f"{digest}.tmp.{out_ext}")
         with open(tmp_src, "wb") as f:
             f.write(raw)
         try:
@@ -108,5 +109,11 @@ def craft_preview(
                 except OSError:
                     pass
 
-    return FileResponse(cached, media_type=media, filename=f"{filename}.{out_ext}",
-                        headers={"Content-Disposition": f'inline; filename="{filename}.{out_ext}"'})
+    from urllib.parse import quote
+    dl_name = f"{filename}.{out_ext}"
+    ascii_fallback = dl_name.encode("ascii", "ignore").decode() or f"craft-preview.{out_ext}"
+    return FileResponse(
+        cached, media_type=media, filename=ascii_fallback,
+        headers={"Content-Disposition":
+                 f"inline; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quote(dl_name)}"},
+    )
