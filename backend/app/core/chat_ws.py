@@ -57,6 +57,7 @@ class ConnectionMeta:
     last_seen: float = field(default_factory=time.monotonic)
     # id() của ws — dùng làm key reverse map, tránh giữ strong ref vòng.
     ws_id: int = 0
+    send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def __post_init__(self) -> None:
         self.ws_id = id(self.ws)
@@ -210,9 +211,9 @@ class ConnectionManager:
             try:
                 if meta.ws.client_state != WebSocketState.CONNECTED:
                     return meta
-                await meta.ws.send_json(message)
-                # Send thành công → connection còn sống (không cần client pong).
-                meta.touch()
+                async with asyncio.timeout(5):
+                    async with meta.send_lock:
+                        await meta.ws.send_json(message)
                 return None
             except Exception as exc:
                 logger.debug("WS send fail %s: %s", meta.employee_code, exc)
@@ -238,7 +239,7 @@ class ConnectionManager:
                         fully_offline.append(meta.employee_code)
         for meta in dead_list:
             try:
-                await meta.ws.close(code=1011)
+                await asyncio.wait_for(meta.ws.close(code=1011), timeout=2)
             except Exception:
                 pass
         return fully_offline

@@ -11,7 +11,7 @@ import {
   getChatRoomMembers, renameChatRoom, deleteChatRoom, addChatRoomMembers, removeChatRoomMember,
   getChatPinnedMessages, pinChatMessage, unpinChatMessage, getChatOnline,
   previewChatArchive, createChatArchive, getChatArchives, restoreChatArchive, downloadChatArchive,
-  uploadChatArchive, deleteChatArchive,
+  uploadChatArchive, deleteChatArchive, chatFileUrl,
 } from '../services/api'
 import { getEmployees, getDepartments } from '../services/api'
 import './Chat.css'
@@ -136,7 +136,7 @@ const ChatInput = React.memo(({ wsStatus, uploading, attachment, setAttachment, 
   const handleSubmit = (e) => {
     e.preventDefault()
     const content = text.trim()
-    if ((!content && !attachment) || uploading) return
+    if ((!content && !attachment) || uploading || wsStatus !== 'open') return
     onSend(content)
     setText('')
   }
@@ -146,7 +146,7 @@ const ChatInput = React.memo(({ wsStatus, uploading, attachment, setAttachment, 
       {(attachment || uploading) && (
         <div className="chat-pending-attach">
           {attachment && isImageType(attachment.type) && (
-            <img className="chat-pending-thumb" src={attachment.url} alt="" />
+            <img className="chat-pending-thumb" src={chatFileUrl(attachment.url)} alt="" />
           )}
           <span className="chat-pending-icon">
             {attachment && !isImageType(attachment.type) && (
@@ -225,6 +225,8 @@ const MessageItem = React.memo(({ m, mine, showDay, pinBusy, handleTogglePin, se
         <div className="chat-bubble">
           {!mine && <div className="chat-msg-sender">{senderName}</div>}
           {m.content && <div className="chat-msg-text">{m.content}</div>}
+          {m.failed && <div role="alert" className="chat-attach-error">Gửi thất bại — hãy sao chép nội dung và gửi lại.</div>}
+          {m.is_sent === false && !m.failed && <small>{m.uncertain ? 'Mất kết nối trước xác nhận. Kiểm tra lịch sử trước khi gửi lại.' : 'Đang chờ xác nhận lưu…'}</small>}
           {m.attachment_url && isImageType(m.attachment_type) ? (
             <button
               type="button"
@@ -232,11 +234,11 @@ const MessageItem = React.memo(({ m, mine, showDay, pinBusy, handleTogglePin, se
               onClick={() => setPreview({ url: m.attachment_url, name: attachmentFileName(m), type: m.attachment_type })}
               title="Xem ảnh"
             >
-              <img className="chat-msg-img" src={m.attachment_url} alt={attachmentFileName(m)} loading="lazy" />
+              <img className="chat-msg-img" src={chatFileUrl(m.attachment_url)} alt={attachmentFileName(m)} loading="lazy" />
             </button>
           ) : (
             m.attachment_url && (
-              <a className="chat-msg-attach" href={m.attachment_url} target="_blank" rel="noreferrer">
+              <a className="chat-msg-attach" href={chatFileUrl(m.attachment_url)} target="_blank" rel="noreferrer">
                 <span className="chat-file-card">
                   <span className="chat-file-icon">
                     {(() => {
@@ -401,6 +403,7 @@ export default function Chat() {
     let targetRoom = roomList.find(r => r.last_message) || roomList.find(r => r.type === 'department') || roomList[0]
     if (!targetRoom || activeRoomIdRef.current) return // Đã có phòng được chọn rồi
     
+    activeRoomIdRef.current = targetRoom.id
     setActiveRoomId(targetRoom.id)
     setLoadingMsgs(true)
     try {
@@ -408,15 +411,16 @@ export default function Chat() {
         getChatMessages(targetRoom.id, PAGE_SIZE, 0),
         getChatPinnedMessages(targetRoom.id),
       ])
+      if (activeRoomIdRef.current !== targetRoom.id) return
       if (msgRes.status === 'fulfilled') {
         setMessages(msgRes.value.data?.data || [])
-        setHasMore((msgRes.value.data?.data || []).length === PAGE_SIZE)
+        setHasMore(Boolean(msgRes.value.data?.has_more))
       }
       if (pinRes.status === 'fulfilled') setPinnedMessages(pinRes.value.data?.data || [])
     } catch (_) {
-      setMessages([])
+      if (activeRoomIdRef.current === targetRoom.id) setMessages([])
     } finally {
-      setLoadingMsgs(false)
+      if (activeRoomIdRef.current === targetRoom.id) setLoadingMsgs(false)
     }
   }, [])
 
@@ -462,6 +466,11 @@ export default function Chat() {
       return
     }
     if (msg.event === 'pong') return
+    if (msg.event === 'message_error') {
+      setAttachError(msg.detail || 'Không thể lưu tin nhắn. Vui lòng thử lại.')
+      setMessages(prev => prev.map(m => m.id === msg.client_temp_id ? { ...m, failed: true } : m))
+      return
+    }
     if (msg.event === 'pin_updated') {
       if (msg.room_id === activeRoomIdRef.current) setPinnedMessages(msg.pinned || [])
       return
@@ -516,7 +525,9 @@ export default function Chat() {
   }, [userCode])
 
   const connectWs = useCallback(() => {
-    if (!shouldReconnectRef.current) return
+    if (!shouldReconnectRef.current || navigator.onLine === false) return
+    if (wsRef.current && [WebSocket.OPEN, WebSocket.CONNECTING].includes(wsRef.current.readyState)) return
+    clearTimeout(reconnectTimerRef.current)
     setWsStatus('connecting')
     let url, ws
     try {
@@ -529,6 +540,7 @@ export default function Chat() {
 
     wsRef.current = ws
     ws.onopen = () => {
+      if (wsRef.current !== ws || !shouldReconnectRef.current) return
       setWsStatus('open')
       retryCountRef.current = 0
       // Client-side heartbeat: ping server every 20s
@@ -544,24 +556,28 @@ export default function Chat() {
       const activeId = activeRoomIdRef.current
       if (activeId && lastMsgTimestampRef.current) {
         getChatMessages(activeId, PAGE_SIZE, 0).then(res => {
+          if (activeRoomIdRef.current !== activeId) return
+          setHasMore(Boolean(res.data?.has_more))
           const rows = res.data?.data || []
           if (rows.length) {
             setMessages(prev => {
-              const existingIds = new Set(prev.map(m => m.id))
-              const newMsgs = rows.filter(m => !existingIds.has(m.id))
-              return newMsgs.length ? [...prev, ...newMsgs] : prev
+              if (activeRoomIdRef.current !== activeId) return prev
+              return [...rows, ...prev.filter(m => m.id?.startsWith('temp-'))]
             })
           }
         }).catch(() => {})
       }
     }
-    ws.onmessage = (e) => handleWsMessage(e.data)
+    ws.onmessage = (e) => { if (wsRef.current === ws) handleWsMessage(e.data) }
     ws.onclose = (ev) => {
+      if (wsRef.current !== ws) return
+      setMessages(prev => prev.map(m => m.is_sent === false ? { ...m, uncertain: true } : m))
       setWsStatus('closed')
+      if (ev.code === 1008) shouldReconnectRef.current = false
       clearInterval(heartbeatRef.current)
       if (shouldReconnectRef.current && ev.code !== 1008) {
         retryCountRef.current += 1
-        const delay = Math.min(3000 * Math.pow(2, retryCountRef.current - 1), 30000)
+        const delay = Math.min(3000 * Math.pow(2, retryCountRef.current - 1), 30000) * (0.75 + Math.random() * 0.5)
         reconnectTimerRef.current = setTimeout(connectWs, delay)
       }
     }
@@ -571,12 +587,31 @@ export default function Chat() {
   useEffect(() => {
     shouldReconnectRef.current = true
     connectWs()
+    const resume = () => {
+      if (document.visibilityState === 'hidden' || navigator.onLine === false || !shouldReconnectRef.current) return
+      // Android may retain an OPEN socket after suspending the WebView.
+      // Retire it first; late callbacks must not mutate the replacement socket.
+      const previous = wsRef.current
+      wsRef.current = null
+      clearInterval(heartbeatRef.current)
+      if (previous) {
+        setMessages(prev => prev.map(m => m.is_sent === false ? { ...m, uncertain: true } : m))
+        try { previous.close() } catch (_) {}
+      }
+      connectWs()
+    }
+    window.addEventListener('online', resume)
+    document.addEventListener('visibilitychange', resume)
     return () => {
+      window.removeEventListener('online', resume)
+      document.removeEventListener('visibilitychange', resume)
       shouldReconnectRef.current = false
       clearTimeout(reconnectTimerRef.current)
       clearInterval(heartbeatRef.current)
       clearInterval(pollTimerRef.current)
-      if (wsRef.current) { try { wsRef.current.close() } catch (_) {} }
+      const previous = wsRef.current
+      wsRef.current = null
+      if (previous) { try { previous.close() } catch (_) {} }
     }
   }, [connectWs])
 
@@ -584,7 +619,7 @@ export default function Chat() {
   useEffect(() => {
     if (messages.length) {
       const last = messages[messages.length - 1]
-      if (last?.created_at) lastMsgTimestampRef.current = last.created_at
+      if (last?.created_at && !last.id?.startsWith('temp-')) lastMsgTimestampRef.current = last.created_at
     }
   }, [messages])
 
@@ -595,14 +630,15 @@ export default function Chat() {
       return
     }
     pollTimerRef.current = setInterval(() => {
-      if (!activeRoomIdRef.current) return
-      getChatMessages(activeRoomIdRef.current, PAGE_SIZE, 0).then(res => {
+      if (!activeRoomIdRef.current || !shouldReconnectRef.current || navigator.onLine === false || document.visibilityState === 'hidden') return
+      const requestedRoom = activeRoomIdRef.current
+      getChatMessages(requestedRoom, PAGE_SIZE, 0).then(res => {
+        if (activeRoomIdRef.current !== requestedRoom) return
+        setHasMore(Boolean(res.data?.has_more))
         const rows = res.data?.data || []
         if (rows.length) {
           setMessages(prev => {
-            const existingIds = new Set(prev.map(m => m.id))
-            const newMsgs = rows.filter(m => !existingIds.has(m.id))
-            return newMsgs.length ? [...prev, ...newMsgs] : prev
+            return [...rows, ...prev.filter(m => m.id?.startsWith('temp-'))]
           })
           // Also update rooms sidebar
           if (rows.length) {
@@ -621,6 +657,8 @@ export default function Chat() {
   }, [wsStatus, activeRoomId])
 
   const selectRoom = useCallback(async (roomId) => {
+    activeRoomIdRef.current = roomId
+    isAtBottomRef.current = true
     setActiveRoomId(roomId)
     setNewMessageRooms(prev => {
       const newSet = new Set(prev)
@@ -637,31 +675,43 @@ export default function Chat() {
         getChatMessages(roomId, PAGE_SIZE, 0),
         getChatPinnedMessages(roomId),
       ])
+      if (activeRoomIdRef.current !== roomId) return
       if (msgRes.status === 'fulfilled') {
         const rows = msgRes.value.data?.data || []
         setMessages(rows)
-        setHasMore(rows.length === PAGE_SIZE)
+        setHasMore(Boolean(msgRes.value.data?.has_more))
       }
       if (pinRes.status === 'fulfilled') setPinnedMessages(pinRes.value.data?.data || [])
     } catch (_) {
-      setHasMore(false)
+      if (activeRoomIdRef.current === roomId) setHasMore(false)
     } finally {
-      setLoadingMsgs(false)
+      if (activeRoomIdRef.current === roomId) setLoadingMsgs(false)
     }
   }, [])
 
   const loadOlder = async () => {
-    if (!activeRoomId) return
+    const oldest = messages.find(m => !m.id?.startsWith('temp-'))
+    if (!activeRoomId || !oldest || loadingMsgs) return
+    const roomId = activeRoomId
+    const box = msgsBoxRef.current
+    const oldHeight = box?.scrollHeight || 0
+    const oldTop = box?.scrollTop || 0
     setLoadingMsgs(true)
     try {
-      const res = await getChatMessages(activeRoomId, PAGE_SIZE, messages.length)
+      const res = await getChatMessages(roomId, PAGE_SIZE, 0, `${oldest.created_at}|${oldest.id}`)
+      if (activeRoomIdRef.current !== roomId) return
       const older = res.data?.data || []
-      setHasMore(older.length === PAGE_SIZE)
-      setMessages(prev => [...older, ...prev])
+      setHasMore(Boolean(res.data?.has_more))
+      isAtBottomRef.current = false
+      setMessages(prev => {
+        const ids = new Set(prev.map(m => m.id))
+        return [...older.filter(m => !ids.has(m.id)), ...prev]
+      })
+      requestAnimationFrame(() => { if (box) box.scrollTop = oldTop + box.scrollHeight - oldHeight })
     } catch (_) {
-      setHasMore(false)
+      setAttachError('Không tải được lịch sử. Vui lòng thử lại.')
     } finally {
-      setLoadingMsgs(false)
+      if (activeRoomIdRef.current === roomId) setLoadingMsgs(false)
     }
   }
 
@@ -671,7 +721,7 @@ export default function Chat() {
     const box = msgsBoxRef.current
     if (!box) return
     // Auto-scroll chỉ khi đang ở gần cuối hoặc mới vào phòng
-    if (isAtBottomRef.current || activeRoomId) {
+    if (isAtBottomRef.current) {
       requestAnimationFrame(() => {
         box.scrollTop = box.scrollHeight
       })
@@ -688,7 +738,7 @@ export default function Chat() {
     }
     box.addEventListener('scroll', handleScroll)
     return () => box.removeEventListener('scroll', handleScroll)
-  }, [])
+  }, [activeRoomId])
 
   // ─── Tương tác tin nhắn ─────────────────────────────────────
   const handleSend = useCallback(async (content) => {
@@ -698,12 +748,18 @@ export default function Chat() {
 
     const tempMsg = {
       id: tempId,
+      room_id: activeRoomId,
+      attachment_url: attachment?.url || null,
+      attachment_name: attachment?.name || null,
+      attachment_type: attachment?.type || null,
+      attachment_size: attachment?.size ?? null,
       content,
       sender_id: userCode,
       created_at: new Date().toISOString(),
       is_sent: false,
     }
 
+    isAtBottomRef.current = true
     setMessages(prev => [...prev, tempMsg])
 
     try {
@@ -717,7 +773,7 @@ export default function Chat() {
         attachment_size: attachment?.size ?? null,
       }))
     } catch (err) {
-      setMessages(prev => prev.filter(m => m.id !== tempId))
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, failed: true } : m))
     }
 
     setAttachment(null)
@@ -1634,13 +1690,13 @@ export default function Chat() {
             <div className="chat-lightbox-header">
               <span className="chat-lightbox-name" title={preview.name}>{preview.name}</span>
               <div className="chat-lightbox-actions">
-                <a className="chat-lightbox-btn" href={preview.url} download={preview.name} title="Tải xuống"><Download size={16} /></a>
-                <a className="chat-lightbox-btn" href={preview.url} target="_blank" rel="noreferrer" title="Mở trong tab mới"><ExternalLink size={16} /></a>
+                <a className="chat-lightbox-btn" href={chatFileUrl(preview.url)} download={preview.name} title="Tải xuống"><Download size={16} /></a>
+                <a className="chat-lightbox-btn" href={chatFileUrl(preview.url)} target="_blank" rel="noreferrer" title="Mở trong tab mới"><ExternalLink size={16} /></a>
                 <button className="chat-lightbox-btn" onClick={() => setPreview(null)}><X size={18} /></button>
               </div>
             </div>
             <div className="chat-lightbox-body" onClick={() => setPreview(null)}>
-              <img src={preview.url} alt={preview.name} />
+              <img src={chatFileUrl(preview.url)} alt={preview.name} />
             </div>
           </div>
         </>

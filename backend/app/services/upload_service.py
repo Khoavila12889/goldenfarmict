@@ -1,4 +1,5 @@
 import os
+import asyncio
 import uuid
 from fastapi import HTTPException, UploadFile
 
@@ -61,7 +62,26 @@ async def save_upload(file: UploadFile) -> dict:
 
 
 async def save_chat_upload(file: UploadFile) -> dict:
-    return await _store(file, CHAT_UPLOAD_BASE, "/api/chat/uploads")
+    _ensure_dir(CHAT_UPLOAD_BASE)
+    _validate(file)
+    ext = os.path.splitext(file.filename)[1].lower()
+    stored_name = f"{uuid.uuid4().hex}{ext}"
+    path = os.path.join(CHAT_UPLOAD_BASE, stored_name)
+    size = 0
+    try:
+        with open(path, "xb") as destination:
+            while chunk := await file.read(256 * 1024):
+                size += len(chunk)
+                if size > MAX_FILE_SIZE:
+                    raise HTTPException(status_code=413, detail="Dung lượng file vượt quá giới hạn 10MB")
+                await asyncio.to_thread(destination.write, chunk)
+        return {"file_name": file.filename, "stored_name": stored_name,
+                "file_type": ext.lstrip('.'), "file_size": size,
+                "file_url": f"/api/chat/uploads/{stored_name}"}
+    except BaseException:
+        if os.path.exists(path):
+            os.unlink(path)
+        raise
 
 
 async def save_forum_upload(file: UploadFile) -> dict:

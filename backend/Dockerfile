@@ -45,4 +45,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 
 # Production: không dùng --reload. Reloader có thể chờ vô hạn khi WebSocket
 # chat còn mở, khiến healthcheck và đăng nhập cùng bị treo.
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--ws-max-size", "65536", "--ws-max-queue", "16"]

@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { nativePlatform, buildChatWebSocketUrl, chatAttachmentUrl } from './chatConnection.js'
 
 // URL backend được cấu hình lúc build cho Web — đổi nhanh trong frontend/.env (VITE_API_URL).
 // - Khi deploy VPS/domain khác: chỉ cần sửa frontend/.env rồi npm run build.
@@ -22,7 +23,7 @@ function normalizeOrigin(url) {
 
 export function isNativeApp() {
   try {
-    return !!((window.Capacitor?.isNativePlatform?.() && window.Capacitor.isNativePlatform()) || window.Capacitor || window.cordova)
+    return nativePlatform(window)
   } catch { return false }
 }
 
@@ -39,6 +40,10 @@ export function getServerOrigin() {
 
 export function currentServerLabel() {
   return getServerOrigin() || 'mặc định'
+}
+
+export function chatFileUrl(path) {
+  return chatAttachmentUrl(path, getServerOrigin())
 }
 
 export function setServerUrl(url) {
@@ -968,9 +973,9 @@ export function getChatRooms() {
   return api.get('/chat/rooms', { headers: chatAuthHeaders() })
 }
 
-export function getChatMessages(roomId, limit = 50, offset = 0) {
+export function getChatMessages(roomId, limit = 50, offset = 0, before = undefined) {
   return api.get(`/chat/messages/${roomId}`, {
-    params: { limit, offset },
+    params: { limit, offset, before },
     headers: chatAuthHeaders(),
   })
 }
@@ -1066,13 +1071,7 @@ export function chatWebSocketUrl() {
   const code = sessionStorage.getItem('user_code') || ''
   const token = sessionStorage.getItem('token') || ''
   const origin = getServerOrigin()
-  // origin luôn dạng http(s)://host[:port] (đã được normalize bỏ '/api' + trailing slash).
-  const originHttps = origin && origin.startsWith('https')
-  const pageHttps = window.location.protocol === 'https:'
-  const protocol = (originHttps || pageHttps) ? 'wss:' : 'ws:'
-  // Lấy host KHÔNG bao gồm scheme — tránh tạo URL sai kiểu 'ws://http://host'.
-  const host = origin ? origin.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '') : window.location.host
-  return `${protocol}//${host}/api/chat/ws?token=${encodeURIComponent(token)}&employee_code=${encodeURIComponent(code)}`
+  return buildChatWebSocketUrl(origin, window.location.origin, token, code)
 }
 
 // ─── Admin module backups ───────────────────────────────────────

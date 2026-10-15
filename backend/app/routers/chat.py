@@ -6,12 +6,7 @@ Hoạt động ĐỘC LẬP với hệ thống SSE (`core/events.py`).
 - REST:       `GET /api/chat/rooms`, `GET /api/chat/messages/{room_id}`,
               `POST /api/chat/rooms`
 
-Performance path (WS message):
-  1. Validate membership (TTL cache)
-  2. Sinh UUID + payload optimistic
-  3. Broadcast song song (ConnectionManager) — không chờ DB
-  4. Enqueue persist background (MessagePersistQueue / bulk insert)
-  5. (Optional) Redis Pub/Sub fan-out multi-worker
+Message path: validate → bounded batch commit → acknowledgement/fan-out.
 """
 import asyncio
 import os
@@ -22,6 +17,7 @@ from typing import Dict, List, Optional, Tuple
 from fastapi import APIRouter, HTTPException, Header, Query, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from sqlalchemy import and_, or_, func, text
 
 from app.core.auth import verify_session, verify_token
 from app.core.chat_persist import (
@@ -30,6 +26,7 @@ from app.core.chat_persist import (
     new_message_id,
     persist_queue,
 )
+from app.core.chat_files import signed_file_url, validate_attachment, verify_file_signature
 from app.core.chat_redis import ChatRedisBridge
 from app.core.chat_ws import ConnectionManager
 from app.core.session import SessionLocal
@@ -219,7 +216,7 @@ def _serialize_message(msg: ChatMessage, sender_name: str = "") -> dict:
         "sender_id": msg.sender_id,
         "sender_name": sender_name,
         "content": msg.content,
-        "attachment_url": msg.attachment_url,
+        "attachment_url": signed_file_url(msg.attachment_url),
         "attachment_name": msg.attachment_name,
         "attachment_type": msg.attachment_type,
         "attachment_size": msg.attachment_size,
@@ -333,23 +330,24 @@ def _resolve_ws_user(employee_code: str, token: str) -> Optional[dict]:
 
 
 async def _handle_incoming_message(user: dict, data: dict) -> Optional[dict]:
-    """
-    Optimistic path — KHÔNG chờ DB commit trước khi trả payload broadcast.
-
-    1. Validate nhanh (cache membership)
-    2. Sinh UUID + created_at
-    3. Enqueue background persist (bulk insert worker)
-    4. Trả payload để fan-out realtime ngay
-
-    Fallback: nếu queue đầy → ghi DB sync trong threadpool (không block loop).
-    """
+    """Validate and commit before broadcasting; database I/O runs off-loop."""
     if not isinstance(data, dict):
-        return None
+        raise ValueError("Dữ liệu tin nhắn không hợp lệ")
 
     # Application-level heartbeat từ client
     event = data.get("event")
     if event in ("pong", "ping"):
         return None
+
+    for field, maximum in {"room_id": 36, "content": 10000, "attachment_url": 512,
+                           "attachment_name": 255, "attachment_type": 50,
+                           "client_temp_id": 100}.items():
+        value = data.get(field)
+        if value is not None and (not isinstance(value, str) or len(value) > maximum):
+            raise ValueError(f"Trường {field} không hợp lệ hoặc quá dài")
+    size = data.get("attachment_size")
+    if size is not None and (type(size) is not int or not 0 <= size <= 10 * 1024 * 1024):
+        raise ValueError("Kích thước tệp không hợp lệ")
 
     room_id = (data.get("room_id") or "").strip()
     content = (data.get("content") or "").strip()
@@ -359,10 +357,8 @@ async def _handle_incoming_message(user: dict, data: dict) -> Optional[dict]:
     attachment_size = data.get("attachment_size")
     client_temp_id = (data.get("client_temp_id") or "").strip() or None
 
-    if not room_id:
-        return None
-    if not content and not attachment_url:
-        return None
+    if not room_id or (not content and not attachment_url):
+        raise ValueError("Tin nhắn hoặc phòng chat trống")
 
     # Membership check — cache hit = 0 DB round-trip
     loop = asyncio.get_running_loop()
@@ -370,9 +366,12 @@ async def _handle_incoming_message(user: dict, data: dict) -> Optional[dict]:
         None, _cached_is_member, room_id, user["employee_code"]
     )
     if not is_member:
-        return None
+        raise ValueError("Bạn không còn là thành viên phòng chat")
 
-    msg_id = (data.get("client_msg_id") or "").strip() or new_message_id()
+    if attachment_url:
+        attachment_url = validate_attachment(attachment_url)
+
+    msg_id = new_message_id()
     created_at = datetime.utcnow()
 
     pending = PendingMessage(
@@ -387,14 +386,7 @@ async def _handle_incoming_message(user: dict, data: dict) -> Optional[dict]:
         created_at=created_at,
     )
 
-    ok = await persist_queue.enqueue(pending)
-    if not ok:
-        # Back-pressure: ghi sync trong threadpool thay vì drop im lặng.
-        try:
-            await loop.run_in_executor(None, persist_queue._bulk_insert_sync, [pending])
-        except Exception as exc:
-            print(f"Chat persist fallback failed: {exc}")
-            return None
+    await persist_queue.persist(pending)
 
     return build_optimistic_payload(
         msg_id=msg_id,
@@ -402,7 +394,7 @@ async def _handle_incoming_message(user: dict, data: dict) -> Optional[dict]:
         sender_id=user["employee_code"],
         sender_name=user.get("full_name") or user["employee_code"],
         content=content,
-        attachment_url=attachment_url,
+        attachment_url=signed_file_url(attachment_url),
         attachment_name=attachment_name,
         attachment_type=attachment_type,
         attachment_size=attachment_size,
@@ -438,19 +430,30 @@ async def chat_ws(
     try:
         await _broadcast_presence(code, True)
         while True:
-            data = await websocket.receive_json()
+            try:
+                data = await websocket.receive_json()
+            except ValueError:
+                await manager.send_personal_message({"event": "message_error", "detail": "JSON không hợp lệ"}, code)
+                continue
             manager.touch(websocket)
 
             # Client pong / ignore control frames
             if isinstance(data, dict) and data.get("event") in ("pong", "ping"):
                 if data.get("event") == "ping":
                     try:
-                        await websocket.send_json({"event": "pong", "ts": data.get("ts")})
+                        await manager.send_personal_message({"event": "pong", "ts": data.get("ts")}, code)
                     except Exception:
                         break
                 continue
 
-            message = await _handle_incoming_message(user, data)
+            try:
+                message = await _handle_incoming_message(user, data)
+            except (ValueError, RuntimeError) as exc:
+                await manager.send_personal_message({
+                    "event": "message_error", "detail": str(exc),
+                    "client_temp_id": data.get("client_temp_id") if isinstance(data, dict) else None,
+                }, code)
+                continue
             if message:
                 # Lấy member codes (cache) trong executor nếu cache miss có DB.
                 members = await loop.run_in_executor(
@@ -720,19 +723,30 @@ def get_rooms(
     try:
         _ensure_department_room(db, user["department"])
 
-        rows = db.query(ChatRoom).all()
+        membership = db.query(ChatRoomMember.room_id).filter(ChatRoomMember.employee_code == user["employee_code"])
+        department_filter = ChatRoom.type == "department"
+        if user["role"] != "admin":
+            department_filter = and_(department_filter,
+                func.lower(func.trim(ChatRoom.department)) == (user["department"] or "").strip().lower())
+        latest_id = (db.query(ChatMessage.id).filter(ChatMessage.room_id == ChatRoom.id)
+                     .order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc())
+                     .limit(1).correlate(ChatRoom).scalar_subquery())
+        rows = (db.query(ChatRoom, ChatMessage).outerjoin(ChatMessage, ChatMessage.id == latest_id)
+                .filter(or_(ChatRoom.id.in_(membership), department_filter)).all())
+        room_ids = [room.id for room, _ in rows]
+        members = {}
+        for room_id, code in db.query(ChatRoomMember.room_id, ChatRoomMember.employee_code).filter(ChatRoomMember.room_id.in_(room_ids)).all():
+            members.setdefault(room_id, []).append(code)
+        employees = db.query(Employee.employee_code, Employee.full_name, Employee.department).join(User, User.employee_code == Employee.employee_code).all()
+        names = {code: name for code, name, _ in employees}
+        departments = {}
+        for code, _, dept in employees:
+            departments.setdefault((dept or "").strip().lower(), []).append(code)
         rooms = []
         online = _online_codes()
-        for room in rows:
-            if not _is_room_member(db, room, user["employee_code"]):
-                continue
-            member_codes = _room_member_codes(room.id)
-            last_msg = (
-                db.query(ChatMessage)
-                .filter(ChatMessage.room_id == room.id)
-                .order_by(ChatMessage.created_at.desc())
-                .first()
-            )
+        for room, last_msg in rows:
+            member_codes = (departments.get((room.department or "").strip().lower(), [])
+                            if room.type == "department" else members.get(room.id, []))
             online_codes = [c for c in member_codes if c in online]
             rooms.append({
                 "id": room.id,
@@ -746,12 +760,12 @@ def get_rooms(
                 "online_count": len(online_codes),
                 "can_manage": _can_manage_room(user, room),
                 "last_message": (
-                    _serialize_message(last_msg, _sender_name(db, last_msg.sender_id))
+                    _serialize_message(last_msg, names.get(last_msg.sender_id, last_msg.sender_id))
                     if last_msg else None
                 ),
                 "created_at": room.created_at.isoformat() if room.created_at else None,
             })
-        rooms.sort(key=lambda r: r["created_at"] or "", reverse=True)
+        rooms.sort(key=lambda r: (r["last_message"] or {}).get("created_at") or r["created_at"] or "", reverse=True)
         return {"status": "success", "data": rooms}
     finally:
         db.close()
@@ -762,6 +776,7 @@ def get_messages(
     room_id: str,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    before: Optional[str] = Query(None, max_length=100),
     x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
     x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
     x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
@@ -779,16 +794,25 @@ def get_messages(
         if not _is_room_member(db, room, user["employee_code"]):
             raise HTTPException(status_code=403, detail="Bạn không phải thành viên của phòng chat này")
 
-        rows = (
-            db.query(ChatMessage)
-            .filter(ChatMessage.room_id == room_id)
-            .order_by(ChatMessage.created_at.asc())
-            .offset(offset)
-            .limit(limit)
-            .all()
-        )
-        messages = [_serialize_message(m, _sender_name(db, m.sender_id)) for m in rows]
-        return {"status": "success", "data": messages}
+        query = db.query(ChatMessage).filter(ChatMessage.room_id == room_id)
+        if before:
+            try:
+                timestamp, message_id = before.rsplit("|", 1)
+                cursor_time = datetime.fromisoformat(timestamp)
+                if cursor_time.tzinfo is not None or not message_id:
+                    raise ValueError()
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Cursor không hợp lệ")
+            query = query.filter(or_(ChatMessage.created_at < cursor_time,
+                and_(ChatMessage.created_at == cursor_time, ChatMessage.id < message_id)))
+        rows = query.order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc()).offset(offset).limit(limit + 1).all()
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        next_cursor = f"{rows[-1].created_at.isoformat()}|{rows[-1].id}" if rows else None
+        names = dict(db.query(Employee.employee_code, Employee.full_name).filter(
+            Employee.employee_code.in_({m.sender_id for m in rows})).all()) if rows else {}
+        messages = [_serialize_message(m, names.get(m.sender_id, m.sender_id)) for m in reversed(rows)]
+        return {"status": "success", "data": messages, "has_more": has_more, "next_cursor": next_cursor}
     finally:
         db.close()
 
@@ -874,6 +898,25 @@ def create_room(
                 status_code=400,
                 detail=f"Mã nhân viên không tồn tại: {', '.join(missing)}",
             )
+
+        if room_type == "direct":
+            if len(codes) != 2:
+                raise HTTPException(status_code=400, detail="Chat cá nhân cần đúng hai người")
+            pair_key = "chat-direct:" + ":".join(sorted(codes))
+            db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": pair_key})
+            candidates = (db.query(ChatRoomMember.room_id)
+                .group_by(ChatRoomMember.room_id)
+                .having(func.count() == 2)
+                .having(func.count().filter(ChatRoomMember.employee_code.in_(codes)) == 2))
+            existing = db.query(ChatRoom).filter(ChatRoom.type == "direct", ChatRoom.id.in_(candidates)).first()
+            if existing:
+                return {"status": "success", "data": {
+                    "id": existing.id, "type": existing.type, "name": existing.name,
+                    "member_codes": codes, "owner_code": existing.owner_code,
+                    "created_at": existing.created_at.isoformat() if existing.created_at else None,
+                }}
+        if len(codes) > 500:
+            raise HTTPException(status_code=400, detail="Nhóm hỗ trợ tối đa 500 thành viên")
 
         room = ChatRoom(
             type=room_type,
@@ -1038,6 +1081,11 @@ def add_room_members(
             raise HTTPException(status_code=400, detail="Chỉ phòng nhóm mới thêm/bớt thành viên thủ công")
         if not _can_manage_room(user, room):
             raise HTTPException(status_code=403, detail="Bạn không có quyền thêm thành viên")
+
+        db.query(ChatRoom).filter(ChatRoom.id == room_id).with_for_update().one()
+        current_codes = {r[0] for r in db.query(ChatRoomMember.employee_code).filter(ChatRoomMember.room_id == room_id).all()}
+        if len(current_codes.union(codes)) > 500:
+            raise HTTPException(status_code=400, detail="Nhóm hỗ trợ tối đa 500 thành viên")
 
         valid = {r[0] for r in db.query(User.employee_code).filter(User.employee_code.in_(codes)).all()}
         missing = [c for c in codes if c not in valid]
@@ -1215,6 +1263,7 @@ async def upload_chat_file(
     user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
 
     result = await save_chat_upload(file)
+    result["file_url"] = signed_file_url(result["file_url"])
     return {
         "status": "success",
         "data": result,
@@ -1223,16 +1272,18 @@ async def upload_chat_file(
 
 
 @router.get("/uploads/{filename}")
-def serve_chat_file(filename: str):
+def serve_chat_file(filename: str, expires: int = Query(0), signature: str = Query("", max_length=64)):
+    if not verify_file_signature(filename, expires, signature):
+        raise HTTPException(status_code=403, detail="Liên kết hết hạn hoặc không hợp lệ; mở lại phòng chat")
     file_path = os.path.join(CHAT_UPLOAD_BASE, filename)
 
     # Security: prevent path traversal
     real_path = os.path.realpath(file_path)
     real_base = os.path.realpath(CHAT_UPLOAD_BASE)
-    if not real_path.startswith(real_base):
+    if os.path.commonpath([real_path, real_base]) != real_base:
         raise HTTPException(status_code=400, detail="Đường dẫn file không hợp lệ")
 
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File không tồn tại")
 
-    return FileResponse(file_path, filename=filename)
+    return FileResponse(file_path, filename=filename, headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})

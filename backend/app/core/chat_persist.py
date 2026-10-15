@@ -1,22 +1,4 @@
-"""
-Background Message Persistence — tách DB I/O khỏi luồng WebSocket.
-
-Vấn đề:
-  await db.commit() trong handler WS là sync I/O (SQLAlchemy default) →
-  block event loop → user khác bị trễ dù chỉ đang idle.
-
-Giải pháp:
-  1. Sinh message_id + created_at *trước* khi broadcast (optimistic).
-  2. Broadcast realtime ngay (user thấy tin tức thì).
-  3. Đẩy payload vào asyncio.Queue → worker background ghi DB
-     (single / bulk insert theo batch).
-
-Đảm bảo:
-  - Message id ổn định (UUID) → client dedupe / history fetch khớp.
-  - Nếu persist fail → log + optional retry; không rollback tin đã broadcast
-    (trade-off: eventual consistency; có thể bổ sung outbox pattern sau).
-  - Bulk insert giảm round-trip khi spam (load test / group sôi động).
-"""
+"""Bounded batch persistence. Acknowledgements resolve only after DB commit."""
 from __future__ import annotations
 
 import asyncio
@@ -82,6 +64,7 @@ class MessagePersistQueue:
         self._flush_interval = flush_interval
         self._worker: Optional[asyncio.Task] = None
         self._started = False
+        self._receipts: dict[str, asyncio.Future] = {}
         # Metrics
         self.enqueued = 0
         self.persisted = 0
@@ -104,20 +87,23 @@ class MessagePersistQueue:
         self._started = False
         if self._worker is None:
             return
-        try:
-            # Sentinel None → worker thoát sau khi flush batch hiện tại.
-            await self._queue.put(None)
-        except Exception:
-            pass
-        try:
-            await asyncio.wait_for(self._worker, timeout=10.0)
-        except (asyncio.TimeoutError, asyncio.CancelledError):
-            self._worker.cancel()
-            try:
-                await self._worker
-            except Exception:
-                pass
+        # Drain accepted work. Do not cancel an in-flight database commit.
+        await self._queue.put(None)
+        await self._worker
         self._worker = None
+
+    async def persist(self, msg: PendingMessage) -> None:
+        """Bounded admission; never report success before durable storage."""
+        if not self._started:
+            raise RuntimeError("Chat storage is unavailable")
+        receipt = asyncio.get_running_loop().create_future()
+        self._receipts[msg.id] = receipt
+        try:
+            if not await self.enqueue(msg):
+                raise RuntimeError("Chat storage is busy")
+            await receipt
+        finally:
+            self._receipts.pop(msg.id, None)
 
     async def enqueue(self, msg: PendingMessage) -> bool:
         """
@@ -148,7 +134,7 @@ class MessagePersistQueue:
         batch: List[PendingMessage] = []
         while True:
             try:
-                timeout = self._flush_interval if batch else None
+                timeout = max(0.001, self._flush_interval - (time.monotonic() - batch[0].enqueued_at)) if batch else None
                 try:
                     item = await asyncio.wait_for(self._queue.get(), timeout=timeout)
                 except asyncio.TimeoutError:
@@ -162,6 +148,7 @@ class MessagePersistQueue:
                     # Shutdown sentinel.
                     if batch:
                         await self._flush(batch)
+                        batch = []
                     # Drain remaining (nếu có).
                     while not self._queue.empty():
                         try:
@@ -198,6 +185,10 @@ class MessagePersistQueue:
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, self._bulk_insert_sync, items)
                 self.persisted += len(items)
+                for item in items:
+                    receipt = self._receipts.get(item.id)
+                    if receipt is not None and not receipt.done():
+                        receipt.set_result(None)
                 logger.debug("Persisted batch n=%d (attempt=%d)", len(items), attempt)
                 return
             except Exception as exc:
@@ -212,6 +203,10 @@ class MessagePersistQueue:
                 if attempt < MAX_RETRIES:
                     await asyncio.sleep(RETRY_BACKOFF_SEC * attempt)
                 else:
+                    for item in items:
+                        receipt = self._receipts.get(item.id)
+                        if receipt is not None and not receipt.done():
+                            receipt.set_exception(RuntimeError("Không thể lưu tin nhắn"))
                     logger.error(
                         "Persist GAVE UP n=%d ids=%s",
                         len(items),
@@ -228,6 +223,8 @@ class MessagePersistQueue:
         """
         from app.core.session import SessionLocal
         from app.models import ChatMessage
+        from sqlalchemy.dialects.postgresql import insert
+        from sqlalchemy import text
 
         rows: List[Dict[str, Any]] = [
             {
@@ -248,7 +245,9 @@ class MessagePersistQueue:
         ]
         db = SessionLocal()
         try:
-            db.bulk_insert_mappings(ChatMessage, rows)
+            db.execute(text("SET LOCAL statement_timeout = '5s'"))
+            db.execute(text("SET LOCAL lock_timeout = '2s'"))
+            db.execute(insert(ChatMessage).values(rows).on_conflict_do_nothing(index_elements=["id"]))
             db.commit()
         except Exception:
             db.rollback()
