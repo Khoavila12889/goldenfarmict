@@ -356,10 +356,20 @@ export default function Documents() {
       return
     }
 
-    // PDF → xem bằng các trang ảnh WebP đã convert trên server (nhanh, không cần OnlyOffice)
+    // PDF → craftMode: đọc bằng trình PDF của browser + nút mở trong PdfCraft;
+    // tắt craftMode: xem bằng các trang ảnh WebP đã convert trên server (nhanh, không cần OnlyOffice)
     const ext = entry.name.split('.').pop().toLowerCase()
     if (ext === 'pdf') {
-      const isGdrive = activeConfig?.type === 'gdrive'
+      if (craftMode) {
+        setCraftEntry({ ...entry, browsePath: currentPath })
+        setCraftFile({
+          name: entry.name,
+          url: buildFileDownloadUrl(activeConfig, entry, currentPath, userCode, userRole, true),
+          kind: 'pdf',
+          app: 'PdfCraft',
+        })
+        return
+      }      const isGdrive = activeConfig?.type === 'gdrive'
       const normalizedPath = currentPath === '/' ? entry.name : `${currentPath.replace(/\/$/, '')}/${entry.name}`
       setPdfPagesFile({
         name: entry.name,
@@ -386,6 +396,7 @@ export default function Documents() {
           name: entry.name,
           url: buildCraftPreviewUrl(activeConfig, entry, currentPath, userCode, userRole),
           kind: craftWordExts.has(ext) ? 'pdf' : 'html',
+          app: craftWordExts.has(ext) ? 'WordCraft' : 'GridCraft',
         })
         return
       }

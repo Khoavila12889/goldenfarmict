@@ -17,6 +17,12 @@ export default function CraftPreview({ file, isOpen, onClose, onSwitchOffice }) 
             </span>
           </div>
           <div className="fv-header-right">
+            {file.app && (
+              <a href="/craft-demo" target="_blank" rel="noreferrer" className="fv-btn"
+                title={`Tải file xuống trước, rồi dùng file picker trong ${file.app} để mở và chỉnh sửa tương tác`}>
+                Mở trong {file.app}
+              </a>
+            )}
             {onSwitchOffice && (
               <button className="fv-btn" onClick={onSwitchOffice} title="File lỗi? Mở lại bằng OnlyOffice">
                 Mở bằng OnlyOffice
