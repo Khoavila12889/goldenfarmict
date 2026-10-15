@@ -8,17 +8,22 @@ import React, { useState } from 'react'
 //     của công ty (luong.docx, luong.xlsx, lương tháng, file chat...).
 //  3. So sánh với OnlyOffice hiện tại rồi ghi kết quả vào checklist bên dưới.
 
+// Mặc định dùng cùng domain qua nginx (/craft/*) để không bị mixed-content
+// khi site chạy HTTPS (noibo.canhdongvang.vn). Chạy dev vite thì sửa thành
+// http://127.0.0.1:8771 (word) / :8772 (grid) / :8773 (pdf).
+const sameOrigin = (p) => `${window.location.origin}${p}`
+
 const APPS = {
   word: {
     name: 'WordCraft (.docx)',
-    defUrl: 'http://127.0.0.1:8771/?sample',
+    defUrl: sameOrigin('/craft/word/'),
     repo: 'https://github.com/storytold/wordcraft',
     serve: 'cd wordcraft/apps/wordcraft-web && trunk serve',
     files: ['frontend/src/template/luong.docx', 'backend/temp_pdf_gen/*/template.docx'],
   },
   excel: {
     name: 'GridCraft (.xlsx)',
-    defUrl: 'http://127.0.0.1:8772/?sample=sales',
+    defUrl: sameOrigin('/craft/grid/'),
     repo: 'https://github.com/storytold/gridcraft',
     serve: 'cd gridcraft/apps/gridcraft-web && trunk serve --port 8772',
     files: [
@@ -29,7 +34,7 @@ const APPS = {
   },
   pdf: {
     name: 'PdfCraft (.pdf)',
-    defUrl: 'http://127.0.0.1:8773',
+    defUrl: sameOrigin('/craft/pdf/'),
     repo: 'https://github.com/storytold/pdfcraft',
     serve: 'cd pdfcraft/apps/pdfcraft-web && trunk serve --port 8773',
     files: ['backend/uploads/documents/pages/_src/*.pdf (bản gốc trên SMB/Drive)'],

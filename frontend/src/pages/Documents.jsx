@@ -11,6 +11,7 @@ import '../styles/shared.css'
 import './Documents.css'
 import FileViewer from '../components/FileViewer'
 import OnlyOfficeViewer from '../components/OnlyOfficeViewer'
+import CraftPreview from '../components/CraftPreview'
 import DrawioViewer from '../components/DrawioViewer'
 import PdfPagesViewer from '../components/PdfPagesViewer'
 import ShareDocument from '../components/ShareDocument'
@@ -176,6 +177,12 @@ export default function Documents() {
   const [ooFile, setOoFile] = useState(null)
   const [ooOpen, setOoOpen] = useState(false)
   const [ooConfigId, setOoConfigId] = useState(null)
+  // Xem bằng Craft (WordCraft/GridCraft convert server-side) thay OnlyOffice — beta.
+  const [craftMode, setCraftMode] = useState(() => {
+    try { return localStorage.getItem('craft_viewer') === '1' } catch (_) { return false }
+  })
+  const [craftFile, setCraftFile] = useState(null)
+  const [craftEntry, setCraftEntry] = useState(null)
   // Draw.io viewer state
   const [drawioFile, setDrawioFile] = useState(null)
   const [drawioOpen, setDrawioOpen] = useState(false)
@@ -320,6 +327,19 @@ export default function Documents() {
   }
 
   const officeExts = new Set(['docx','xlsx','pptx','doc','xls','ppt','odt','ods','odp','csv','txt','rtf','pdf'])
+  // Craft convert được (beta): word -> PDF, sheet -> HTML. Còn lại giữ OnlyOffice.
+  const craftWordExts = new Set(['doc','docx','odt','rtf'])
+  const craftSheetExts = new Set(['xls','xlsx','csv'])
+
+  function buildCraftPreviewUrl(cfg, entry, currentPath, userCode, userRole) {
+    const normalizedPath = currentPath === '/'
+      ? entry.name
+      : `${currentPath.replace(/\/$/, '')}/${entry.name}`
+    let url = apiUrl(`/craft/preview?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}`)
+    if (cfg?.type === 'gdrive' && entry.id) url += `&file_id=${encodeURIComponent(entry.id)}`
+    url += `&user_code=${userCode}&user_role=${userRole}`
+    return encodeURI(url)
+  }
 
   function isOfficeFile(name) {
     return officeExts.has(name.split('.').pop().toLowerCase())
@@ -357,6 +377,18 @@ export default function Documents() {
     }
 
     if (isOfficeFile(entry.name)) {
+      const ext = entry.name.split('.').pop().toLowerCase()
+      if (craftMode && (craftWordExts.has(ext) || craftSheetExts.has(ext))) {
+        const userCode = sessionStorage.getItem('user_code') || ''
+        const userRole = sessionStorage.getItem('user_role') || 'user'
+        setCraftEntry({ ...entry, browsePath: currentPath })
+        setCraftFile({
+          name: entry.name,
+          url: buildCraftPreviewUrl(activeConfig, entry, currentPath, userCode, userRole),
+          kind: craftWordExts.has(ext) ? 'pdf' : 'html',
+        })
+        return
+      }
       setOoFile({ ...entry, browsePath: currentPath, storageType: activeConfig.type })
       setOoConfigId(activeConfig.id)
       setOoOpen(true)
@@ -909,6 +941,14 @@ export default function Documents() {
               <LayoutGrid size={15} />
             </button>
           </div>
+          <button className={`doc-view-btn${craftMode ? ' active' : ''}`}
+            onClick={() => {
+              const next = !craftMode
+              setCraftMode(next)
+              try { localStorage.setItem('craft_viewer', next ? '1' : '0') } catch (_) {}
+            }} title={craftMode ? 'Đang xem bằng Craft (beta) — bấm để về OnlyOffice' : 'Xem tài liệu bằng Craft (beta, không cần OnlyOffice)'}>
+            <FileCog size={15} />
+          </button>
           <button className="doc-btn doc-btn-ghost doc-btn-icon" onClick={() => {
             if (activeConfig) browseFolder(activeConfig.id, breadcrumbs.at(-1).id)
             else loadConfigs()
@@ -1456,6 +1496,15 @@ export default function Documents() {
       <FileViewer file={viewerFile} isOpen={viewerOpen} onClose={() => { setViewerOpen(false); setViewerFile(null) }} />
       <PdfPagesViewer file={pdfPagesFile} isOpen={!!pdfPagesFile} onClose={() => setPdfPagesFile(null)} />
       <OnlyOfficeViewer file={ooFile} configId={ooConfigId} isOpen={ooOpen} onClose={() => { setOoOpen(false); setOoFile(null); setOoConfigId(null) }} />
+      <CraftPreview file={craftFile} isOpen={!!craftFile} onClose={() => { setCraftFile(null); setCraftEntry(null) }}
+        onSwitchOffice={() => {
+          if (craftEntry) {
+            setOoFile({ ...craftEntry, storageType: activeConfig?.type })
+            setOoConfigId(activeConfig?.id)
+            setOoOpen(true)
+          }
+          setCraftFile(null); setCraftEntry(null)
+        }} />
       <DrawioViewer file={drawioFile} configId={drawioConfigId} isOpen={drawioOpen} onClose={() => { setDrawioOpen(false); setDrawioFile(null); setDrawioConfigId(null) }} />
       <ShareDocument file={shareFile} isOpen={shareOpen} onClose={() => { setShareOpen(false); setShareFile(null) }} />
       <ImageLightbox open={showLightbox} onClose={() => setShowLightbox(false)} slides={lightboxSlides} index={lightboxIndex} />
