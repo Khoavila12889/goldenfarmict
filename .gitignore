@@ -86,3 +86,10 @@ postgres/
 
 # Versioned chat performance migration (not a database dump)
 !backend/migrations/20261015_chat_history_indexes.sql
+# ArtCraft web dists (tai tu GitHub Releases, xem docs/CRAFT_DEMO_README.md)
+craft-web/wordcraft/*
+craft-web/gridcraft/*
+craft-web/pdfcraft/*
+!craft-web/wordcraft/.gitkeep
+!craft-web/gridcraft/.gitkeep
+!craft-web/pdfcraft/.gitkeep
