@@ -331,6 +331,36 @@ export default function Documents() {
   const craftWordExts = new Set(['doc','docx','odt','rtf'])
   const craftSheetExts = new Set(['xls','xlsx','csv'])
 
+  function openWithCraft(entry, currentPath) {
+    const ext = (entry.name || '').split('.').pop().toLowerCase()
+    if (craftWordExts.has(ext) || craftSheetExts.has(ext)) {
+      setCraftEntry({ ...entry, browsePath: currentPath })
+      setCraftFile({
+        name: entry.name,
+        url: buildCraftPreviewUrl(activeConfig, entry, currentPath, userCode, userRole),
+        kind: craftWordExts.has(ext) ? 'pdf' : 'html',
+        app: craftWordExts.has(ext) ? 'WordCraft' : 'GridCraft',
+      })
+      return true
+    }
+    if (ext === 'pdf') {
+      setCraftEntry({ ...entry, browsePath: currentPath })
+      setCraftFile({
+        name: entry.name,
+        url: buildFileDownloadUrl(activeConfig, entry, currentPath, userCode, userRole, true),
+        kind: 'pdf',
+        app: 'PdfCraft',
+      })
+      return true
+    }
+    return false
+  }
+
+  function isCraftOpenable(name) {
+    const ext = (name || '').split('.').pop().toLowerCase()
+    return craftWordExts.has(ext) || craftSheetExts.has(ext) || ext === 'pdf'
+  }
+
   function buildCraftPreviewUrl(cfg, entry, currentPath, userCode, userRole) {
     const normalizedPath = currentPath === '/'
       ? entry.name
@@ -360,16 +390,8 @@ export default function Documents() {
     // tắt craftMode: xem bằng các trang ảnh WebP đã convert trên server (nhanh, không cần OnlyOffice)
     const ext = entry.name.split('.').pop().toLowerCase()
     if (ext === 'pdf') {
-      if (craftMode) {
-        setCraftEntry({ ...entry, browsePath: currentPath })
-        setCraftFile({
-          name: entry.name,
-          url: buildFileDownloadUrl(activeConfig, entry, currentPath, userCode, userRole, true),
-          kind: 'pdf',
-          app: 'PdfCraft',
-        })
-        return
-      }      const isGdrive = activeConfig?.type === 'gdrive'
+      if (craftMode && openWithCraft(entry, currentPath)) return
+      const isGdrive = activeConfig?.type === 'gdrive'
       const normalizedPath = currentPath === '/' ? entry.name : `${currentPath.replace(/\/$/, '')}/${entry.name}`
       setPdfPagesFile({
         name: entry.name,
@@ -387,19 +409,7 @@ export default function Documents() {
     }
 
     if (isOfficeFile(entry.name)) {
-      const ext = entry.name.split('.').pop().toLowerCase()
-      if (craftMode && (craftWordExts.has(ext) || craftSheetExts.has(ext))) {
-        const userCode = sessionStorage.getItem('user_code') || ''
-        const userRole = sessionStorage.getItem('user_role') || 'user'
-        setCraftEntry({ ...entry, browsePath: currentPath })
-        setCraftFile({
-          name: entry.name,
-          url: buildCraftPreviewUrl(activeConfig, entry, currentPath, userCode, userRole),
-          kind: craftWordExts.has(ext) ? 'pdf' : 'html',
-          app: craftWordExts.has(ext) ? 'WordCraft' : 'GridCraft',
-        })
-        return
-      }
+      if (craftMode && openWithCraft(entry, currentPath)) return
       setOoFile({ ...entry, browsePath: currentPath, storageType: activeConfig.type })
       setOoConfigId(activeConfig.id)
       setOoOpen(true)
@@ -952,13 +962,13 @@ export default function Documents() {
               <LayoutGrid size={15} />
             </button>
           </div>
-          <button className={`doc-view-btn${craftMode ? ' active' : ''}`}
+          <button className={`doc-btn${craftMode ? ' doc-btn-primary' : ' doc-btn-ghost'}`}
             onClick={() => {
               const next = !craftMode
               setCraftMode(next)
               try { localStorage.setItem('craft_viewer', next ? '1' : '0') } catch (_) {}
             }} title={craftMode ? 'Đang xem bằng Craft (beta) — bấm để về OnlyOffice' : 'Xem tài liệu bằng Craft (beta, không cần OnlyOffice)'}>
-            <FileCog size={15} />
+            <FileCog size={15} /> <span>Craft</span>
           </button>
           <button className="doc-btn doc-btn-ghost doc-btn-icon" onClick={() => {
             if (activeConfig) browseFolder(activeConfig.id, breadcrumbs.at(-1).id)
@@ -1119,6 +1129,11 @@ export default function Documents() {
                         <Eye size={14} />
                       </button>
                     )}
+                    {!e.is_dir && isCraftOpenable(e.name) && (
+                      <button className="doc-card-preview" style={{ right: '6.4rem' }} onClick={(ev) => { ev.stopPropagation(); openWithCraft(e, currentPath) }} title="Mở bằng Craft (Word/Grid/Pdf, không cần OnlyOffice)">
+                        <FileCog size={14} />
+                      </button>
+                    )}
                     <button className="doc-card-share" onClick={(ev) => { ev.stopPropagation(); handleShareEntry(e) }} title={e.is_dir ? 'Chia sẻ thư mục' : 'Chia sẻ'}>
                       <Share2 size={14} />
                     </button>
@@ -1192,6 +1207,11 @@ export default function Documents() {
                         {!e.is_dir && canPreviewFile(e.name) && (
                           <button className="doc-row-action" title="Xem trước" onClick={(ev) => { ev.stopPropagation(); handlePreviewFile(e); }}>
                             <Eye size={14} />
+                          </button>
+                        )}
+                        {!e.is_dir && isCraftOpenable(e.name) && (
+                          <button className="doc-row-action" title="Mở bằng Craft (Word/Grid/Pdf, không cần OnlyOffice)" onClick={(ev) => { ev.stopPropagation(); openWithCraft(e, breadcrumbs.at(-1).id); }}>
+                            <FileCog size={14} />
                           </button>
                         )}
                         <button className="doc-row-action" title={e.is_dir ? 'Chia sẻ thư mục' : 'Chia sẻ'} onClick={(ev) => { ev.stopPropagation(); handleShareEntry(e); }}>
@@ -1382,6 +1402,14 @@ export default function Documents() {
           {!contextMenu.file.is_dir && (
             <div className="doc-context-menu-item" onClick={() => { handlePreviewFile(contextMenu.file); setContextMenu({ visible: false }) }}>
               <Eye size={15} /> Xem trước
+            </div>
+          )}
+          {!contextMenu.file.is_dir && isCraftOpenable(contextMenu.file.name) && (
+            <div className="doc-context-menu-item" onClick={() => {
+              openWithCraft(contextMenu.file, breadcrumbs.at(-1).id)
+              setContextMenu({ visible: false })
+            }}>
+              <FileCog size={15} /> Mở bằng Craft
             </div>
           )}
           <div className="doc-context-menu-item" onClick={() => { handleShareEntry(contextMenu.file); setContextMenu({ visible: false }) }}>

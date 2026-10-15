@@ -100,6 +100,7 @@ export default function CraftDemo() {
         key={tab + urls[tab]}
         title={app.name}
         src={urls[tab]}
+        allow="fullscreen; clipboard-read; clipboard-write"
         onLoad={() => setLoaded({ ...loaded, [tab]: true })}
         style={{ width: '100%', height: '70vh', border: '1px solid #ccc', borderRadius: 8, background: '#fff' }}
       />
