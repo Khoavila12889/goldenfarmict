@@ -11,6 +11,10 @@ Branch: `wordcraft-viewer-151026` (tách từ `15092026@1ca84db`). Chỉ làm tr
   Word cho việc thật.
 - GridCraft: `https://github.com/storytold/gridcraft` — tương tự cho Excel, 4.9k star.
   XLSX là native format, 513/523 hàm, CLI + WASM web. Đang **alpha**, ~50% cho việc thật.
+- PdfCraft: `https://github.com/storytold/pdfcraft` — đọc/sửa/sắp xếp/bảo vệ PDF bằng Rust,
+  13.8k star. Xem + tìm kiếm + combine/split/protect tốt; tự nhận còn yếu Office-to-PDF
+  và export Word mất layout. Thay được đúng chỗ đau hiện tại của project: preview PDF
+  đang phải convert sang ảnh WebP (xem được nhưng không search/copy text).
 - Cả hai đều có `*-cli convert` (docx/xlsx -> pdf/png/...) và MCP/JSON control channel.
 
 ## OnlyOffice đang dùng ở đâu (không được phá)

@@ -19,6 +19,7 @@ import Todos from './pages/Todos'
 import HelpPage from './pages/HelpPage'
 import MonitorPage from './pages/MonitorPage'
 import Chat from './pages/Chat'
+import CraftDemo from './pages/CraftDemo'
 import PublicSharePage from './pages/PublicSharePage'
 import ToolsDrawio from './pages/ToolsDrawio'
 import FactoryPrinting from './pages/FactoryPrinting'
@@ -88,6 +89,7 @@ export default function App() {
         <Route path="admin/backups" element={<StrictAdminRoute><AdminBackups /></StrictAdminRoute>} />
         <Route path="help" element={<HelpPage />} />
         <Route path="chat" element={<Chat />} />
+        <Route path="craft-demo" element={<CraftDemo />} />
         <Route path="tools/drawio" element={<AdminRoute requiredModule="drawio"><ToolsDrawio /></AdminRoute>} />
         <Route path="formulas/print" element={<AdminRoute requiredModule="factory-printing"><FactoryPrinting /></AdminRoute>} />
         <Route path="formulas/manage" element={<AdminRoute requiredModule="formula-management"><FormulaManagement /></AdminRoute>} />
