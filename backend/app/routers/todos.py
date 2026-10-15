@@ -430,7 +430,7 @@ def create_todo(
         if not can_create_in_scope(user, scope, requested):
             raise HTTPException(status_code=403, detail="Bạn không có quyền tạo công việc cho phòng ban này")
         target_dept = canonical_dept_name(requested)
-        is_dept_approved = 0 if requires_department_approval(user, scope) else 1
+        is_dept_approved = 0 if requires_department_approval(user, scope, target_dept) else 1
 
         assignee_code = (data.assignee_code or "").strip()
         assignee_name = (data.assignee_name or "").strip()
@@ -551,6 +551,10 @@ def update_todo(
     elif u_role != ADMIN and data.assignee_code and data.assignee_code != u_code:
         raise HTTPException(status_code=403, detail="Công việc cá nhân chỉ giao cho chính bạn")
 
+    approval_required = requires_department_approval(user, new_scope, target_dept)
+    if data.status == "review" and not approval_required:
+        raise HTTPException(status_code=400, detail="Phòng ban này không áp dụng trạng thái Chờ duyệt")
+
     if data.assignee_code and new_scope == DEPARTMENT:
         emp = _active_employee(data.assignee_code)
         if not emp:
@@ -558,8 +562,8 @@ def update_todo(
         if not same_dept(emp.get("department"), target_dept):
             raise HTTPException(status_code=403, detail="Chỉ có thể giao việc cho nhân viên trong phòng ban đã chọn")
 
-    # Nhân viên tạo/sửa việc phòng ban → luôn chờ duyệt; sếp/admin → đã duyệt; cá nhân → đã duyệt
-    is_dept_approved = 0 if requires_department_approval(user, new_scope) else 1
+    is_dept_approved = 0 if approval_required else 1
+    scope_or_department_changed = new_scope != todo['scope'] or (new_scope == DEPARTMENT and not same_dept(target_dept, todo['department']))
 
     update_fields = []
     params = {}
@@ -588,6 +592,8 @@ def update_todo(
     if data.status is not None:
         update_fields.append("status = :status")
         params['status'] = data.status
+    elif scope_or_department_changed and todo['status'] == 'review' and not approval_required:
+        update_fields.append("status = 'todo'")
     if data.priority is not None:
         update_fields.append("priority = :priority")
         params['priority'] = data.priority
@@ -598,7 +604,9 @@ def update_todo(
         update_fields.append("tags = :tags")
         params['tags'] = data.tags
 
-    if new_scope != todo['scope'] or data.scope is not None:
+    # Chỉ tính lại phê duyệt khi chuyển phạm vi hoặc chuyển phòng ban.
+    # Sửa nội dung công việc đã duyệt không được tự đưa về trạng thái chờ duyệt.
+    if scope_or_department_changed:
         update_fields.append("is_dept_approved = :is_dept_approved")
         params['is_dept_approved'] = is_dept_approved
 
@@ -636,6 +644,8 @@ def update_todo_status(
         raise HTTPException(status_code=400, detail="Trạng thái công việc không hợp lệ")
     if not can_change_status(user, dict(todo)):
         raise HTTPException(status_code=403, detail="Bạn không có quyền cập nhật trạng thái công việc này")
+    if data.status == "review" and not requires_department_approval(user, todo["scope"], todo["department"]):
+        raise HTTPException(status_code=400, detail="Phòng ban này không áp dụng trạng thái Chờ duyệt")
 
     execute(
         "UPDATE todos SET status = :status, updated_at = CURRENT_TIMESTAMP WHERE id = :todo_id",

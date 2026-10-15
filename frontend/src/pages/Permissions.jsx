@@ -17,6 +17,7 @@ const MODULES = [
   { key: 'workflows', label: 'Quy trình', group: 'admin', desc: 'Tạo quy trình phê duyệt' },
   { key: 'salary-admin', label: 'Quản lý lương', group: 'admin', desc: 'Import & xuất phiếu lương' },
   { key: 'todos', label: 'Công việc (Todos)', group: 'support', desc: 'Quản lý công việc cá nhân & phòng ban' },
+  { key: 'todos.requires_approval', label: 'Công việc — Cơ chế Chờ duyệt', group: 'support', desc: 'Chỉ áp dụng theo phòng ban đích; mặc định mọi phòng ban đều tắt.' },
   { key: 'tickets', label: 'Tickets', group: 'support', desc: 'Yêu cầu hỗ trợ IT' },
   { key: 'approvals', label: 'Phê duyệt', group: 'support', desc: 'Phê duyệt yêu cầu' },
   { key: 'bookings', label: 'Lịch (Booking)', group: 'support', desc: 'Đặt lịch xe & phòng họp' },
@@ -98,6 +99,7 @@ function ModulePermissionsTab({ apiBase, apiUrl, saveMsg, setSaveMsg }) {
   const [rolePermissions, setRolePermissions] = useState({})
   const [deptPermissions, setDeptPermissions] = useState({})
   const [userOverrides, setUserOverrides] = useState({})
+  const [dirtyDeptModules, setDirtyDeptModules] = useState([])
   const [permLoading, setPermLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
@@ -129,7 +131,7 @@ function ModulePermissionsTab({ apiBase, apiUrl, saveMsg, setSaveMsg }) {
   useEffect(() => { fetchUsers() }, [fetchUsers])
 
   function buildPermBody(perms) {
-    return MODULES.map(m => ({
+    return MODULES.filter(m => targetType === 'department' || m.key !== 'todos.requires_approval').map(m => ({
       module: m.key,
       can_view: !!(perms[m.key]?.can_view),
       can_edit: !!(perms[m.key]?.can_edit),
@@ -137,6 +139,7 @@ function ModulePermissionsTab({ apiBase, apiUrl, saveMsg, setSaveMsg }) {
   }
 
   async function selectRole(r) {
+    setDirtyDeptModules([])
     setTargetType('role')
     setSelectedRole(r)
     setSelectedDept(null)
@@ -152,6 +155,7 @@ function ModulePermissionsTab({ apiBase, apiUrl, saveMsg, setSaveMsg }) {
   }
 
   async function selectDept(dept) {
+    setDirtyDeptModules([])
     setTargetType('department')
     setSelectedDept(dept)
     setSelectedRole(null)
@@ -167,6 +171,7 @@ function ModulePermissionsTab({ apiBase, apiUrl, saveMsg, setSaveMsg }) {
   }
 
   async function selectUser(user) {
+    setDirtyDeptModules([])
     setTargetType('individual')
     setSelectedUser(user)
     setSelectedRole(null)
@@ -197,27 +202,23 @@ function ModulePermissionsTab({ apiBase, apiUrl, saveMsg, setSaveMsg }) {
   }
 
   function togglePerm(moduleKey, field) {
-    if (targetType === 'individual') {
-      setUserOverrides(prev => {
-        const existing = prev[moduleKey] || { can_view: false, can_edit: false }
-        const updated = { ...existing, [field]: !existing[field] }
-        if (field === 'can_edit' && updated.can_edit) updated.can_view = true
-        if (field === 'can_view' && !updated.can_view) updated.can_edit = false
-        return { ...prev, [moduleKey]: updated }
-      })
+    if (targetType === 'department') {
+      setDirtyDeptModules(prev => prev.includes(moduleKey) ? prev : [...prev, moduleKey])
+    }
+    if (moduleKey === 'todos.requires_approval') {
       setPermissions(prev => {
-        const u = userOverrides[moduleKey] || {}
-        const nu = { ...u, [field]: !u[field] }
-        if (field === 'can_edit' && nu.can_edit) nu.can_view = true
-        if (field === 'can_view' && !nu.can_view) nu.can_edit = false
-        return {
-          ...prev,
-          [moduleKey]: {
-            can_view: nu.can_view,
-            can_edit: nu.can_edit,
-          }
-        }
+        const enabled = !!(prev[moduleKey]?.can_view || prev[moduleKey]?.can_edit)
+        return { ...prev, [moduleKey]: { can_view: !enabled, can_edit: false } }
       })
+      return
+    }
+    if (targetType === 'individual') {
+      const current = permissions[moduleKey] || { can_view: false, can_edit: false }
+      const updated = { ...current, [field]: !current[field] }
+      if (field === 'can_edit' && updated.can_edit) updated.can_view = true
+      if (field === 'can_view' && !updated.can_view) updated.can_edit = false
+      setUserOverrides(prev => ({ ...prev, [moduleKey]: updated }))
+      setPermissions(prev => ({ ...prev, [moduleKey]: updated }))
     } else {
       setPermissions(prev => {
         const current = prev[moduleKey] || { can_view: false, can_edit: false }
@@ -230,10 +231,14 @@ function ModulePermissionsTab({ apiBase, apiUrl, saveMsg, setSaveMsg }) {
   }
 
   function selectAll(val) {
+    if (targetType === 'department') {
+      setDirtyDeptModules(MODULES.map(m => m.key))
+    }
     const updated = {}
     MODULES.forEach(m => {
+      if (targetType !== 'department' && m.key === 'todos.requires_approval') return
       const isA = ADMIN_MODULES.has(m.key)
-      updated[m.key] = { can_view: val, can_edit: isA ? false : val }
+      updated[m.key] = { can_view: val, can_edit: isA || m.key === 'todos.requires_approval' ? false : val }
     })
     setPermissions(updated)
     if (targetType === 'individual') {
@@ -250,7 +255,7 @@ function ModulePermissionsTab({ apiBase, apiUrl, saveMsg, setSaveMsg }) {
         body = buildPermBody(permissions)
       } else if (targetType === 'department') {
         url = `${apiBase}/permissions/department/${encodeURIComponent(selectedDept.name)}?${authQRole}`
-        body = buildPermBody(permissions)
+        body = buildPermBody(permissions).filter(p => dirtyDeptModules.includes(p.module))
       } else {
         url = `${apiBase}/permissions/${selectedUser.employee_code}${authQ}`
         body = Object.entries(userOverrides).map(([k, v]) => ({
@@ -265,6 +270,7 @@ function ModulePermissionsTab({ apiBase, apiUrl, saveMsg, setSaveMsg }) {
         body: JSON.stringify(body),
       })
       if (res.ok) {
+        if (targetType === 'department') setDirtyDeptModules([])
         setSaveMsg({ type: 'success', text: 'Đã lưu phân quyền hệ thống thành công' })
         if (targetType === 'individual') {
           const r = await fetch(`${apiBase}/permissions/${selectedUser.employee_code}${authQ}`)
@@ -521,7 +527,7 @@ function ModulePermissionsTab({ apiBase, apiUrl, saveMsg, setSaveMsg }) {
                 <BookOpen size={14} /> Nghiệp vụ
               </h4>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.4rem' }}>
-                {supportMods.map(m => (
+                {supportMods.filter(m => targetType === 'department' || m.key !== 'todos.requires_approval').map(m => (
                   <ModulePermCard key={m.key} mod={m} permissions={permissions}
                     togglePerm={togglePerm} targetType={targetType}
                     rolePerms={rolePermissions} deptPerms={deptPermissions}
@@ -546,7 +552,7 @@ function ModulePermissionsTab({ apiBase, apiUrl, saveMsg, setSaveMsg }) {
 
             <button className="bk-btn bk-btn-primary"
               style={{ marginTop: '0.75rem', width: '100%', height: '36px' }}
-              onClick={handleSave} disabled={saving}>
+              onClick={handleSave} disabled={saving || (targetType === 'department' && dirtyDeptModules.length === 0)}>
               {saving ? <><Loader size={16} className="spin" /> Đang lưu...</> : <><Save size={16} /> Lưu phân quyền</>}
             </button>
           </>
@@ -598,6 +604,14 @@ function ModulePermCard({ mod, permissions, togglePerm, targetType, rolePerms, d
           {mod.desc}
         </div>
       )}
+      {mod.key === 'todos.requires_approval' ? (
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', cursor: 'pointer', color: 'var(--bk-text-secondary)' }}>
+          <input type="checkbox" checked={!!(perm.can_view || perm.can_edit)}
+            onChange={() => togglePerm(mod.key, 'can_view')}
+            style={{ accentColor: 'var(--bk-primary)' }} />
+          Bật chờ duyệt
+        </label>
+      ) : (
       <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'center' }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.78rem', cursor: 'pointer', color: 'var(--bk-text-secondary)' }}>
           <input type="checkbox" checked={!!perm.can_view}
@@ -614,6 +628,7 @@ function ModulePermCard({ mod, permissions, togglePerm, targetType, rolePerms, d
           Sửa
         </label>
       </div>
+      )}
     </div>
   )
 }

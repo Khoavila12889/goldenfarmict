@@ -80,6 +80,12 @@
   border-color: #fca5a5;
 }
 
+.monitor-pill.unknown {
+  background: #f1f5f9;
+  color: #475569;
+  border-color: #cbd5e1;
+}
+
 .monitor-refresh {
   display: inline-flex;
   align-items: center;
@@ -99,6 +105,51 @@
   background: var(--bk-surface-hover, #f1f5f9);
 }
 
+.monitor-refresh:disabled {
+  opacity: .65;
+  cursor: not-allowed;
+}
+
+.monitor-spin { animation: monitor-spin .9s linear infinite; }
+
+@keyframes monitor-spin { to { transform: rotate(360deg); } }
+
+.monitor-data-state {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .55rem;
+  padding: .55rem .8rem;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  background: #f0fdf4;
+  color: #166534;
+  font-size: .78rem;
+}
+
+.monitor-data-state.stale {
+  border-color: #fca5a5;
+  background: #fff7f7;
+  color: #991b1b;
+}
+
+.monitor-data-state.pending {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.monitor-state-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+}
+
+.monitor-state-dot.error { background: #ef4444; }
+.monitor-state-dot.pending { background: #f59e0b; }
+.monitor-data-state > span:not(.monitor-state-dot) { color: #64748b; }
+
 .monitor-error {
   display: flex;
   align-items: center;
@@ -109,7 +160,10 @@
   color: #991b1b;
   border-radius: 8px;
   font-size: 0.85rem;
+  flex-wrap: wrap;
 }
+
+.monitor-error span { color: #7f1d1d; }
 
 /* ─── Terminal box ───────────────────────────────────────── */
 .monitor-terminal {
@@ -238,6 +292,31 @@
   font-weight: 400;
   color: var(--bk-text-secondary, #64748b);
   font-size: 0.72rem;
+}
+
+.monitor-online-count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: .3rem;
+  margin-left: auto;
+  padding: .15rem .55rem;
+  border: 1px solid #bbf7d0;
+  border-radius: 999px;
+  background: #f0fdf4;
+  color: #166534;
+  line-height: 1.4;
+}
+
+.monitor-online-count strong { font-size: .9rem; }
+.monitor-online-count > span { font-size: .68rem; font-weight: 600; text-transform: uppercase; }
+.monitor-online-count + .monitor-log-updated { margin-left: 0; }
+.monitor-online-header { flex-wrap: wrap; }
+
+.monitor-online-hint {
+  padding: .35rem 1rem;
+  border-bottom: 1px solid #f1f5f9;
+  color: var(--bk-text-secondary, #64748b);
+  font-size: .7rem;
 }
 
 .monitor-log-body {

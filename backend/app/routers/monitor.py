@@ -7,8 +7,9 @@ and recent activity feed. Used by the frontend MonitorPage.
 import time
 from datetime import datetime, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header, HTTPException
 
+from ..core.auth import verify_session
 from ..core.db import fetchall, fetchone
 
 router = APIRouter(prefix="/api/monitor", tags=["monitor"])
@@ -26,7 +27,12 @@ def _chat_manager():
 
 
 def _online_users() -> list:
-    """Danh sách nhân viên đang online (kèm thông tin từ bảng employees)."""
+    """Users có ít nhất một WebSocket chat đã xác thực và còn được manager giữ.
+
+    chat_ws gửi heartbeat mỗi 25 giây, loại kết nối nếu last_seen quá 60 giây;
+    sweeper chạy mỗi 15 giây nên một socket mất kết nối có thể còn trong danh
+    sách tối đa khoảng 75 giây.
+    """
     mgr = _chat_manager()
     if mgr is None:
         return []
@@ -34,8 +40,12 @@ def _online_users() -> list:
     if not codes:
         return []
     try:
+        params = {f"code_{index}": code for index, code in enumerate(codes)}
+        placeholders = ", ".join(f":code_{index}" for index in range(len(codes)))
         rows = fetchall(
-            "SELECT employee_code, full_name, department, position FROM employees WHERE status = 'active' OR status = ''"
+            "SELECT employee_code, full_name, department, position FROM employees "
+            f"WHERE employee_code IN ({placeholders}) AND (status = 'active' OR status = '')",
+            params,
         )
         info = {r["employee_code"]: r for r in rows}
         return [
@@ -59,34 +69,66 @@ def _db_healthy() -> bool:
         return False
 
 
+def _database_version() -> str | None:
+    try:
+        row = fetchone("SELECT version() AS version")
+        version = row.get("version") if row else None
+        return str(version).split(",", 1)[0] if version else None
+    except Exception:
+        return None
+
+
 @router.get("/stats")
-def monitor_stats():
+def monitor_stats(
+    x_user_code: str | None = Header(None, alias="X-User-Code"),
+    x_user_role: str | None = Header(None, alias="X-User-Role"),
+    x_user_dept: str | None = Header(None, alias="X-User-Dept"),
+    x_user_token: str | None = Header(None, alias="X-User-Token"),
+):
+    user = verify_session(x_user_code, x_user_role, x_user_dept, x_user_token)
+    if (user.get("user_role") or user.get("role")) != "admin":
+        raise HTTPException(status_code=403, detail="Chỉ quản trị viên được xem thống kê hệ thống")
+
     db_ok = _db_healthy()
 
-    def cnt(sql: str, params: dict | None = None) -> int:
-        try:
-            return fetchone(sql, params or {})["cnt"]
-        except Exception:
-            return 0
-
     if db_ok:
+        try:
+            counts = fetchone(
+                "SELECT "
+                "(SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE') AS active_tables, "
+                "(SELECT COUNT(*) FROM employees WHERE status='active') AS active_employees, "
+                "(SELECT COUNT(*) FROM employees) AS total_employees, "
+                "(SELECT COUNT(*) FROM tickets) AS tickets, "
+                "(SELECT COUNT(*) FROM tickets WHERE status='Cho xu ly') AS tickets_pending, "
+                "(SELECT COUNT(*) FROM todos) AS todos, "
+                "(SELECT COUNT(*) FROM todos WHERE status='in_progress') AS todos_in_progress, "
+                "(SELECT COUNT(*) FROM bookings WHERE status='active') AS bookings_active, "
+                "(SELECT COUNT(*) FROM approval_requests WHERE status IN ('pending','in_progress')) AS approvals_pending, "
+                "(SELECT COUNT(*) FROM equipment) AS equipment, "
+                "(SELECT COUNT(*) FROM licenses) AS licenses, "
+                "(SELECT COUNT(*) FROM storage_config WHERE is_active = TRUE) AS documents_configs"
+            ) or {}
+        except Exception:
+            # Keep the database connectivity state separate from missing/failed
+            # module tables; unknown metrics render as -- on the client.
+            counts = {}
         db = {
             "status": "Connected",
-            "version": "PostgreSQL 16",
-            "active_tables": cnt("SELECT COUNT(*) as cnt FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'"),
-            "active_employees": cnt("SELECT COUNT(*) as cnt FROM employees WHERE status='active'"),
-            "total_employees": cnt("SELECT COUNT(*) as cnt FROM employees"),
+            "version": _database_version(),
+            "active_tables": counts.get("active_tables"),
+            "active_employees": counts.get("active_employees"),
+            "total_employees": counts.get("total_employees"),
         }
         module_counts = {
-            "tickets": cnt("SELECT COUNT(*) as cnt FROM tickets"),
-            "tickets_pending": cnt("SELECT COUNT(*) as cnt FROM tickets WHERE status='Cho xu ly'"),
-            "todos": cnt("SELECT COUNT(*) as cnt FROM todos"),
-            "todos_in_progress": cnt("SELECT COUNT(*) as cnt FROM todos WHERE status='in_progress'"),
-            "bookings_active": cnt("SELECT COUNT(*) as cnt FROM bookings WHERE status='active'"),
-            "approvals_pending": cnt("SELECT COUNT(*) as cnt FROM approval_requests WHERE status IN ('pending','in_progress')"),
-            "equipment": cnt("SELECT COUNT(*) as cnt FROM equipment"),
-            "licenses": cnt("SELECT COUNT(*) as cnt FROM licenses"),
-            "documents_configs": cnt("SELECT COUNT(*) as cnt FROM storage_config WHERE is_active = TRUE"),
+            "tickets": counts.get("tickets"),
+            "tickets_pending": counts.get("tickets_pending"),
+            "todos": counts.get("todos"),
+            "todos_in_progress": counts.get("todos_in_progress"),
+            "bookings_active": counts.get("bookings_active"),
+            "approvals_pending": counts.get("approvals_pending"),
+            "equipment": counts.get("equipment"),
+            "licenses": counts.get("licenses"),
+            "documents_configs": counts.get("documents_configs"),
         }
         recent_activity = fetchall(
             "SELECT * FROM ("
@@ -98,12 +140,12 @@ def monitor_stats():
             ") t ORDER BY updated_at DESC LIMIT 20"
         )
     else:
-        db = {"status": "Disconnected", "version": "n/a", "active_tables": 0,
-              "active_employees": 0, "total_employees": 0}
+        db = {"status": "Disconnected", "version": None, "active_tables": None,
+              "active_employees": None, "total_employees": None}
         module_counts = {
-            "tickets": 0, "tickets_pending": 0, "todos": 0, "todos_in_progress": 0,
-            "bookings_active": 0, "approvals_pending": 0, "equipment": 0,
-            "licenses": 0, "documents_configs": 0,
+            "tickets": None, "tickets_pending": None, "todos": None, "todos_in_progress": None,
+            "bookings_active": None, "approvals_pending": None, "equipment": None,
+            "licenses": None, "documents_configs": None,
         }
         recent_activity = []
 

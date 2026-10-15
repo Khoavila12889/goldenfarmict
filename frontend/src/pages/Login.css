@@ -21,6 +21,8 @@ html, body {
   align-items: center;
   justify-content: flex-start;
   padding-top: 12vh;
+  /* Fallback màu xanh khi ảnh nền chưa tải hoặc không khả dụng */
+  background-color: #064e3b;
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;

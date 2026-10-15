@@ -1,0 +1,4 @@
+[agent]
+api_base = https://your-app-domain/api
+station_id = factory-main
+agent_key = CHANGE_ME

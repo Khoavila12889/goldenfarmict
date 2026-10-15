@@ -130,10 +130,10 @@ Frontend có ba lớp bảo vệ route: `ProtectedRoute` yêu cầu token, `Admi
 | Phê duyệt | `Approvals`, `WorkflowTemplates` | `approvals.py` | `workflow_templates`, `workflow_steps`, `approval_requests`, `approval_logs` | Draft → submit → từng approver theo role/cá nhân + phòng ban → approved/rejected/cancelled |
 | Todos | `Todos` | `todos.py`, `comments.py`, `attachments.py`, `upload_service.py` | `todos`, `todo_subtasks`, `comments`, `attachments`, `notifications` | Lọc theo scope/quyền → CRUD/status/approve → comment/file/URL → notification/SSE |
 | Tài liệu | `Documents`, viewer/share components | `documents.py`, `shares.py`, storage utils | `storage_config`, `storage_permissions`, `document_shares` | Resolve storage → kiểm tra quyền folder → browse/stream/upload → ONLYOFFICE/Draw.io hoặc share link |
-| Chat | `Chat` | `chat.py`, `chat_*`, `chat_archive_service.py` | `chat_rooms`, `chat_room_members`, `chat_messages`, file chat | WS xác thực/member check → broadcast nhanh → queue ghi DB theo batch; REST tải lịch sử/quản lý phòng/backup |
+| Chat | `Chat` | `chat.py`, `chat_*`, `chat_archive_service.py` | `chat_rooms`, `chat_room_members`, `chat_messages`, file chat | WS xác thực/member check → queue ghi DB theo batch → commit rồi broadcast; REST lịch sử cursor/quản lý phòng/backup |
 | Forum/Thông báo | `AnnouncementsBox`, viewer PDF | `forum.py`, `pdf_pages.py` | `forum_posts`, `forum_replies`, file forum | Bài đăng theo target → reply/attachment → SSE; PDF có thể render theo trang |
 | Phiếu lương | `SalarySlip`, `SalarySlipAdmin`, hooks | `salary_user.py`, `salary_slips.py`, PDF/Excel utils | `salaries`, `salary_slips`, `salary_upload_logs`, `employees`, `users` | Import Excel theo tháng → JSON/record → xem có password → xuất PDF/ZIP |
-| Công thức/In nhà máy | `FormulaManagement`, `FactoryPrinting` | `formulas.py`, formula hooks | `formula_recipes`, `formula_print_logs`, file Excel/PDF | Upload Excel → LibreOffice/PDF → search/stream print → ghi log và SSE |
+| Công thức/In nhà máy | `FormulaManagement`, `FactoryPrinting` | `formulas.py`, formula hooks, Windows print agent | `formula_recipes`, `formula_print_logs`, `formula_print_jobs`, file Excel/PDF và ảnh trang riêng tư | Nghiên cứu upload → backend chuyển PDF → nhà máy gửi lệnh in → agent Windows in qua spooler → ghi log và SSE |
 | Phần mềm | phần quản trị liên quan | `software.py` | `software_categories`, `software_items` | CRUD danh mục/mục phần mềm và hợp đồng |
 | Giám sát | `MonitorPage` | `monitor.py` | trạng thái runtime | Admin đọc tình trạng server/service |
 | Backup | `AdminBackups`, backup UI trong Chat | `module_backups.py`, `module_backup_service.py`, `chat_archive_service.py` | ZIP + bảng thuộc module | Scan → chọn → manifest/ZIP → tùy chọn cleanup → upload/restore idempotent |
@@ -151,7 +151,7 @@ Schema PostgreSQL hiện có 40 bảng vật lý; 39 bảng thuộc model/nghi�
 | Lương | `salaries`, `salary_slips`, `salary_upload_logs` |
 | Tài liệu | `storage_config`, `storage_permissions`, `document_shares` |
 | Chat/forum | `chat_rooms`, `chat_room_members`, `chat_messages`, `forum_posts`, `forum_replies` |
-| Công thức | `formula_recipes`, `formula_print_logs` |
+| Công thức | `formula_recipes`, `formula_print_logs`, `formula_print_jobs` |
 | Phân quyền | `user_permissions`, `role_permissions`, `department_permissions` |
 
 Database thực tế chỉ có 7 foreign key: bốn FK của chat và ba FK của công thức. Chat room/member/message dùng `CASCADE` hoặc `SET NULL`; formula log dùng cascade theo recipe. Các quan hệ còn lại như employee–equipment, todo–children, booking–resource, workflow–step/request/log và storage–permission/share được giữ bằng ID/code nhưng kiểm soát ở code ứng dụng.
@@ -175,7 +175,7 @@ Hệ quả kỹ thuật:
 ### Realtime và file/storage
 
 - SSE `/api/events` là bus trong process, phát các sự kiện ticket/booking/trip/todo/approval và heartbeat 20 giây. Nếu chạy nhiều backend worker, SSE hiện chưa có broker dùng chung.
-- Chat WebSocket hỗ trợ nhiều tab/user, heartbeat, sweep socket chết và giới hạn gửi đồng thời. Tin nhắn được broadcast trước, sau đó queue ghi PostgreSQL theo batch; đây là eventual consistency. Redis Pub/Sub chỉ bật khi có `CHAT_REDIS_URL`.
+- Chat WebSocket hỗ trợ nhiều tab/user, heartbeat, sweep socket chết và giới hạn gửi đồng thời. Tin nhắn chỉ được broadcast sau khi queue ghi PostgreSQL theo batch đã commit; lỗi ghi được trả về client. Redis Pub/Sub chỉ bật khi có `CHAT_REDIS_URL`.
 - Upload Todo/Chat/Forum nằm trong `backend/uploads`; backup ZIP nằm trong `backend/storage`; các thư mục này được bind mount để tồn tại qua recreate container.
 - Documents không lưu nội dung file trong PostgreSQL: database giữ cấu hình/quyền/share, còn byte file ở SMB, FTP hoặc Google Drive. ONLYOFFICE và Draw.io được reverse proxy cùng origin qua Nginx.
 
@@ -190,11 +190,17 @@ Hệ quả kỹ thuật:
 | P1 vận hành | Migration nằm trong startup và lỗi có xu hướng fail-soft | Dùng Alembic, version schema, backup trước migration và fail startup khi migration bắt buộc thất bại |
 | P1 bảo mật | `storage_config.password` và ZIP Nhân viên là dữ liệu nhạy cảm | Mã hóa secret at rest, tách key khỏi DB, hạn chế quyền và mã hóa backup ngoại vi |
 | P2 kiến trúc | Router trộn validation, SQL và nghiệp vụ; dùng song song ORM/raw SQL | Tách schema/service/repository, chuẩn hóa transaction và response/error contract |
-| P2 realtime | Chat broadcast trước khi persist; SSE chỉ trong một process | Thêm transactional outbox/dead-letter; dùng Redis/broker chung khi scale nhiều worker |
+| P2 realtime | Chat đã commit trước broadcast; còn thiếu outbox và retry client idempotent; SSE chỉ trong một process | Nghiệm thu staging, bổ sung recovery/outbox khi cần scale |
 | P2 hiệu năng | Frontend bundle lớn và nhiều page import tĩnh; một số danh sách chưa phân trang server | Lazy route/code splitting, pagination, debounce và đo query chậm trước khi tạo index |
 | P2 chất lượng | Test tích hợp còn thiên về thao tác thủ công | Thêm pytest/API tests, restore fixtures, frontend tests và CI migration/build |
 
 Ưu tiên triển khai hợp lý: chuẩn hóa xác thực backend → backup toàn hệ thống và migration framework → bổ sung constraint/index theo dữ liệu thật → test CI → background job cho tác vụ ZIP/PDF/Excel lớn.
+
+## Nâng cấp Chat hướng tới 500 người dùng — 15/10/2026
+
+Bản sửa có commit trước xác nhận gửi, queue giới hạn, lịch sử cursor, truy vấn danh sách phòng theo lô, chống tạo trùng phòng cá nhân, nhóm tối đa 500 thành viên và URL tệp có chữ ký. Đã bổ sung kiểm thử cô lập và công cụ nghiệm thu tải staging. **Chưa deploy hoặc chứng nhận 500 kết nối thực tế.**
+
+Xem [thiết kế, kiểm thử, giới hạn và quy trình triển khai Chat](docs/CHAT_PRODUCTION.md). Mục này thay thế mô tả luồng optimistic cũ của Chat; các mục toàn hệ thống còn lại giữ phạm vi riêng.
 
 ## Features
 
@@ -362,8 +368,11 @@ Hệ thống phê duyệt đa cấp linh hoạt, cho phép định nghĩa luồn
 - **📂 Chia sẻ thư mục (Share Folder)**: Khi chia sẻ một **thư mục**, khách mở link sẽ thấy giao diện duyệt thư mục (Grid/List) thay vì ONLYOFFICE — gồm **breadcrumb bị chặn ở thư mục gốc** (không thể đi ra ngoài phạm vi chia sẻ), tải từng file, hoặc **nén .zip toàn bộ thư mục** (chỉ khi thư mục nhỏ — giới hạn mặc định 200 file / 200MB). Khi bấm vào một file con, trình xem mở **toàn màn hình (full-screen overlay) giống hệt trình xem ONLYOFFICE của module nội bộ** — editor ONLYOFFICE / ảnh / PDF chiếm trọn viewport, thanh công cụ gồm nút **Quay lại thư mục**, **Tải xuống** và **Đóng** (hoặc phím **Esc**) để trở về danh sách. Mọi request phía backend đều **tái xác thực vị trí** (path-prefix cho SMB/FTP, duyệt `parents` cho Google Drive) nên khách không thể thoát khỏi thư mục được chia sẻ.
 - **🔐 Quyền chia sẻ**: mỗi link lưu danh sách quyền `view,download,edit` — `view` luôn bật (xem online), `download` bật/tắt nút Tải xuống và `.zip` (backend chặn HTTP 403), `edit` chỉ cho link nội bộ (ALL/DEPT) mở ONLYOFFICE ở chế độ sửa và **lưu ngược về kho**; link PUBLIC luôn **view-only**.
   ### ✅ Quản lý Công việc & Todos (User & Phòng ban)
-- **Kanban Board 4 cột**: Cần làm, Đang xử lý, Chờ duyệt, Đã hoàn thành với hiệu ứng Glassmorphism hiện đại.
+- **Kanban Board**: Cần làm, Đang xử lý, Đã hoàn thành, Đã hủy; cột **Chờ duyệt** chỉ hiện khi phòng ban của người xem áp dụng cơ chế chờ duyệt (với Admin không thuộc phòng ban nào: hiện nếu có phòng ban áp dụng). Công việc phòng ban có `is_dept_approved = 0` nằm trong cột này đến khi được duyệt. Danh sách có thể gom theo người nhận hoặc trạng thái.
 - **Phạm vi phân quyền (Scope)**: Switch giữa cá nhân (Personal Todos) và phòng ban (Department Shared Todos).
+- **Chờ duyệt theo phòng ban**: Vào **Phân quyền → Phân quyền Module**, chọn **Phòng ban**, bật công tắc **Công việc — Cơ chế Chờ duyệt** rồi lưu. Mặc định mọi phòng ban đều tắt; quyền theo vai trò hoặc cá nhân không bật được cơ chế này.
+- **Khi tạo công việc**: Việc cá nhân luôn có `is_dept_approved = 1`. Việc phòng ban có `is_dept_approved = 0` khi phòng ban đích yêu cầu chờ duyệt và cần Trưởng phòng/Admin phê duyệt; nếu tắt thì lưu `is_dept_approved = 1` ngay. Sửa nội dung công việc không tự đưa việc đã duyệt về trạng thái chờ; chuyển phạm vi hoặc phòng ban sẽ tính lại theo chính sách nơi đến.
+- **Hiển thị khi tắt chờ duyệt**: Mọi người thuộc phòng ban đã tắt (kể cả Trưởng phòng/Admin thuộc phòng ban đó) không thấy cột Kanban **Chờ duyệt**; công việc cũ có `status = review` vẫn hiện dưới **Cần làm** để không thất lạc. Không thể chuyển thủ công công việc của phòng ban này sang `review`. Thay đổi cấu hình chỉ quyết định việc tạo mới hoặc việc chuyển phạm vi/phòng ban, không tự phê duyệt hàng loạt công việc cũ.
 - **Phân công & Giao việc**: Phân công người chịu trách nhiệm, người tạo, hạn chót (Due Date), tags/nhãn và độ ưu tiên (Low, Medium, High, Urgent 🚨).
 - **Hạn hoàn thành (Due Date)**: Chọn ngày bằng **calendar picker** (`type="date"`, không nhập tay, không cần giờ). Không thể đặt hạn **trước ngày hiện tại** — hiện cảnh báo ⚠️ và chặn lưu.
 - **Subtask Checklist & Progress Bar**: Tạo các việc con (subtasks), đánh dấu hoàn thành trực quan với thanh phần trăm tiến độ (Progress %).
@@ -1016,6 +1025,23 @@ Các khóa chính đặc biệt:
 
 `users_backup` tồn tại trong database nhưng không có ORM model và không thuộc runtime hiện tại; không xóa nếu chưa backup và xác nhận mục đích lịch sử.
 
+## Quy trình công nghệ: In Công Thức
+
+### Luồng upload và phát lệnh in
+
+1. **Bộ phận nghiên cứu upload công thức** trong `FormulaManagement`. Backend kiểm tra session, quyền module, định dạng và mã công thức; thông tin công thức được lưu ở `formula_recipes`, còn file gốc ở storage riêng của backend. Không cấp URL tải file cho giao diện nhà máy.
+2. **Backend chuẩn hóa tài liệu.** PDF được dùng làm nguồn in; Excel được chuyển sang PDF qua LibreOffice. Khi có lệnh in, backend dùng PyMuPDF raster hóa PDF thành các trang PNG ở `FORMULA_PRINT_DPI` (mặc định 300, tối đa 400 DPI). Ảnh trang nằm trong cache riêng tư dưới storage backend, không được phục vụ như file tĩnh.
+3. **Nhân viên sản xuất tìm công thức và bấm In.** Trình duyệt chỉ gửi ID công thức và mã trạm (`factory-main` mặc định) để tạo `formula_print_jobs`, sau đó hỏi trạng thái lệnh. Trình duyệt không nhận PDF hoặc ảnh trang và không tạo nút tải/lưu.
+4. **Print agent trên PC nối với máy in** polling lệnh theo trạm. Agent xác thực bằng `FORMULA_PRINT_AGENT_KEY`, lấy từng ảnh qua endpoint chỉ dành cho agent, giữ ảnh trong bộ nhớ và gửi đến máy in Windows mặc định qua driver/spooler. Agent báo `completed` khi spooler nhận lệnh hoặc `failed` kèm lỗi; backend ghi `formula_print_logs` khi spooler nhận lệnh.
+5. **Theo dõi trạng thái.** Giao diện hiển thị đang chờ, đang in hoặc lỗi. Lệnh chờ hết hạn sau 120 giây nếu agent không nhận. Bảng `formula_print_jobs` được ORM tạo khi backend khởi động; thay đổi này không sửa/xóa dữ liệu bảng hiện có.
+
+### Bảo mật và giới hạn vận hành
+
+- Chỉ user có quyền `factory-printing` được gửi lệnh và xem trạng thái theo quy tắc phân quyền; agent dùng secret riêng ở backend và PC, không đưa secret vào frontend hoặc repository.
+- Endpoint ảnh đặt `no-store`; endpoint cũ `/{recipe_id}/print-stream` trả HTTP 410 để browser không còn lấy PDF theo luồng in cũ.
+- Agent không tạo file PDF/PNG cho user, nhưng Windows spooler có thể giữ dữ liệu tạm trong lúc xử lý. Trạng thái `completed` xác nhận driver/spooler đã nhận lệnh, không xác nhận giấy đã ra khay.
+- Backend cần có `FORMULA_PRINT_AGENT_KEY` và PC máy in cần chạy agent thì chức năng mới nhận lệnh. Hướng dẫn cài đặt: [Windows print agent](tools/formula-print-agent/README.md); hướng dẫn người dùng: [In Công Thức](docs/HDSD_InCongThuc.md).
+
 ### Indexes
 
 Các nhóm index đã xác minh trong schema đang chạy:
@@ -1628,6 +1654,8 @@ Effective Permission = Role_Perm || Department_Perm || Individual_Override_Perm
 4. Nếu department cũng không có quyền cho module đó, dùng role permissions (Tier 1)
 5. Nếu cả 3 tier đều không có → mặc định là không có quyền
 
+Riêng module `todos.requires_approval` là **chính sách của phòng ban đích**: backend chỉ đọc `department_permissions`; không có bản ghi hoặc cả `can_view`/`can_edit` đều bằng 0 thì cơ chế tắt. Quyền trong `role_permissions` và `user_permissions` không kích hoạt cơ chế này. API `GET /api/todos` trả `permissions.approval_by_department` cho gợi ý khi tạo việc và `permissions.review_by_department`/`permissions.requires_department_approval` cho cột Kanban. Backend quyết định `is_dept_approved` khi lưu; phòng ban tắt thì mọi vai trò tạo việc được duyệt thẳng.
+
 ### API Endpoints
 
 | Method | Endpoint | Mục đích |
@@ -1889,7 +1917,7 @@ và sinh redirect về đúng cổng của Vite → iframe editor vẫn same-ori
   - Sử dụng cấu trúc `Dict[str, Set[ConnectionMeta]]` tối ưu tra cứu đa tab (Multi-tab support).
   - Khắc phục `unhashable type` bằng cách set `eq=False` cho `@dataclass ConnectionMeta`.
   - Hỗ trợ broadcast song song với `asyncio.gather` để tránh block event loop.
-  - Test tải tại `ws_load_test.py` (chạy với `employee_code=admin` để bypass HTTP 403 khi gen 100+ clients).
+  - Nghiệm thu tải staging bằng `tools/chat_load_test.py` với 500 tài khoản test riêng; xem `docs/CHAT_PRODUCTION.md`.
   - Để scale-out multi-worker: Sử dụng Redis Pub/Sub kết hợp hàm hook `set_cluster_publish`.
 - **SSE filterRef**: Dùng `useRef` tránh reconnect khi filter thay đổi
 - **Booking status update**: Cập nhật mỗi 30s qua `useCurrentTime` hook (vạch đỏ + trạng thái)

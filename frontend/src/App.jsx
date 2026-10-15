@@ -34,7 +34,8 @@ function ProtectedRoute({ children }) {
 
 function AdminRoute({ children, requiredModule }) {
   const role = sessionStorage.getItem('user_role')
-  if (role === 'admin' || role === 'head') return children
+  if (role === 'admin') return children
+  if (!requiredModule) return <Navigate to="/" replace />
   let perms = {}
   try { perms = JSON.parse(sessionStorage.getItem('user_permissions') || '{}') } catch (_) {}
   if (requiredModule && perms[requiredModule]?.can_view) return children

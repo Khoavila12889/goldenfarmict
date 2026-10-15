@@ -3,15 +3,15 @@ Router cho Module In Công Thức Sản Xuất (Manufacturing Formula Printing)
 
 SECURITY ARCHITECTURE:
 - Văn phòng (admin/head/vp_editor): Upload Excel, quản lý, xem nội dung
-- Nhà máy (factory_worker/user): Chỉ tìm kiếm metadata và in trực tiếp
-- File Excel/PDF được lưu trong private storage, KHÔNG expose qua web
-- Chỉ có endpoint /print-stream trả PDF binary để in, không cho download
+- Nhà máy (factory_worker/user): Chỉ tìm metadata; PDF gốc ở private storage
+- Khi in, server rasterize thành ảnh PNG riêng, không gửi file tới browser
+- Agent nội bộ xác thực bằng key riêng rồi kéo ảnh và in tại PC nhà máy
 
 WORKFLOW:
 1. VP upload Excel (.xlsx) → Backend lưu vào private storage
 2. Backend tự động convert Excel → PDF bằng OnlyOffice Conversion API
 3. Nhà máy tìm kiếm công thức theo mã/tên (chỉ nhận metadata)
-4. Nhà máy bấm IN → Frontend nhận PDF stream → Gửi thẳng tới máy in
+4. Nhà máy bấm IN → Server tạo job → Agent trên PC nhà máy lấy ảnh và in
 5. Mọi lệnh in đều được ghi audit log
 """
 
@@ -20,22 +20,41 @@ import logging
 import requests
 import jwt
 import time
-from datetime import datetime
+import json
+import threading
+import secrets
+import shutil
+from datetime import datetime, timedelta
 from typing import Optional
 from pathlib import Path
 from urllib.parse import urljoin
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Request, Header
+from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from ..core.session import SessionLocal
 from ..core.auth import verify_session
 from ..core import events
-from ..models import FormulaRecipe, FormulaPrintLog, Employee
+from ..models import FormulaRecipe, FormulaPrintLog, FormulaPrintJob, Employee
 from ..core.db import fetchall, fetchone, execute, insert
 
 logger = logging.getLogger(__name__)
+_PRINT_IMAGE_LOCK = threading.Lock()
+_PRINT_IMAGE_DPI = max(200, min(int(os.environ.get('FORMULA_PRINT_DPI', '300')), 400))
+_PRINT_IMAGE_MAX_DIMENSION = 3508
+PRINT_AGENT_KEY = os.environ.get('FORMULA_PRINT_AGENT_KEY', '')
+
+
+def _clear_formula_print_cache(recipe_id: int, keep_key: str = ''):
+    cache_root = os.path.join(STORAGE_DIR, 'print_pages')
+    if not os.path.isdir(cache_root):
+        return
+    prefix = f'{recipe_id}-'
+    for entry in os.scandir(cache_root):
+        if entry.is_dir() and entry.name.startswith(prefix) and entry.name != keep_key:
+            shutil.rmtree(entry.path, ignore_errors=True)
 
 router = APIRouter(prefix="/api/formulas", tags=["Formulas"])
 
@@ -577,6 +596,7 @@ def delete_formula(
         # Xóa record (cascade sẽ xóa print logs)
         db.delete(recipe)
         db.commit()
+        _clear_formula_print_cache(recipe_id)
         
         logger.info(f"✓ Deleted formula recipe: {recipe.recipe_code} (ID: {recipe_id})")
         
@@ -608,6 +628,63 @@ def check_print_permission(user_role: str, user_code: str = None):
         status_code=403,
         detail="Bạn không có quyền in công thức. Liên hệ quản trị viên."
     )
+
+
+def _get_formula_print_pages(recipe: FormulaRecipe) -> tuple[str, list[str]]:
+    """Rasterize privately cached, print-quality PNG pages from the source PDF."""
+    pdf_path = recipe.pdf_file_path
+    if not pdf_path or not os.path.isfile(pdf_path):
+        raise HTTPException(status_code=404, detail="File công thức không tồn tại")
+
+    stat = os.stat(pdf_path)
+    cache_key = f"{recipe.id}-{stat.st_mtime_ns}-{stat.st_size}-{_PRINT_IMAGE_DPI}"
+    cache_dir = os.path.join(STORAGE_DIR, 'print_pages', cache_key)
+    manifest_path = os.path.join(cache_dir, 'manifest.json')
+
+    with _PRINT_IMAGE_LOCK:
+        try:
+            with open(manifest_path, 'r', encoding='utf-8') as manifest_file:
+                manifest = json.load(manifest_file)
+            if manifest.get('ready') and all(
+                os.path.isfile(os.path.join(cache_dir, name)) for name in manifest.get('pages', [])
+            ):
+                return cache_dir, manifest['pages']
+        except (OSError, ValueError, TypeError):
+            pass
+
+        os.makedirs(cache_dir, exist_ok=True)
+        pages = []
+        try:
+            import fitz
+
+            with fitz.open(pdf_path) as document:
+                if document.needs_pass:
+                    raise HTTPException(status_code=422, detail="PDF đang được bảo vệ bằng mật khẩu")
+                if not len(document):
+                    raise HTTPException(status_code=422, detail="PDF không có trang để in")
+                for index, page in enumerate(document):
+                    rect = page.rect
+                    scale = _PRINT_IMAGE_DPI / 72.0
+                    longest_side = max(rect.width, rect.height)
+                    if longest_side > 0:
+                        scale = min(scale, _PRINT_IMAGE_MAX_DIMENSION / longest_side)
+                    pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+                    filename = f"page-{index + 1:04d}.png"
+                    pixmap.save(os.path.join(cache_dir, filename))
+                    pages.append(filename)
+
+            tmp_manifest = f"{manifest_path}.tmp-{os.getpid()}-{threading.get_ident()}"
+            with open(tmp_manifest, 'w', encoding='utf-8') as manifest_file:
+                json.dump({'ready': True, 'dpi': _PRINT_IMAGE_DPI, 'pages': pages}, manifest_file)
+            os.replace(tmp_manifest, manifest_path)
+            _clear_formula_print_cache(recipe.id, cache_key)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.exception("Formula image render failed for recipe %s", recipe.id)
+            raise HTTPException(status_code=500, detail="Không thể chuẩn bị trang ảnh để in") from exc
+
+    return cache_dir, pages
 
 
 @router.get("/search")
@@ -671,77 +748,183 @@ def search_formulas(
     return {"data": result}
 
 
-@router.get("/{recipe_id}/print-stream")
-async def stream_pdf_for_print(
+def _require_print_agent(agent_key: str):
+    if not PRINT_AGENT_KEY:
+        raise HTTPException(status_code=503, detail="Print agent chưa được cấu hình trên máy chủ")
+    if not agent_key or not secrets.compare_digest(agent_key, PRINT_AGENT_KEY):
+        raise HTTPException(status_code=401, detail="Agent xác thực không hợp lệ")
+
+
+@router.post("/{recipe_id}/print-jobs", status_code=202)
+def create_formula_print_job(
     recipe_id: int,
     request: Request,
+    station_id: str = Query('factory-main', min_length=1, max_length=100),
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Stream PDF để in trực tiếp - DÀNH CHO NHỮNG CÓ QUYỀN factory-printing
-    
-    SECURITY FEATURES:
-    1. Trả về PDF dưới dạng binary stream (application/pdf)
-    2. Header Content-Disposition: inline (không trigger download dialog)
-    3. Header Cache-Control: no-store (không cache trên client)
-    4. Ghi audit log mỗi lần in
-    5. KHÔNG cho phép download, chỉ stream để in
-    
-    Frontend sẽ dùng printJS hoặc iframe để gửi stream này tới máy in
-    mà không hiển thị preview window
-    """
-    check_print_permission(current_user["user_role"], current_user["user_code"])
+    """Tạo lệnh in; browser chỉ gửi recipe ID, không nhận file công thức."""
+    check_print_permission(current_user['user_role'], current_user['user_code'])
+    if not PRINT_AGENT_KEY:
+        raise HTTPException(status_code=503, detail="Print agent chưa được cấu hình trên máy chủ")
     recipe = db.query(FormulaRecipe).filter(
         FormulaRecipe.id == recipe_id,
         FormulaRecipe.is_active == True
     ).first()
-    
     if not recipe:
         raise HTTPException(status_code=404, detail="Không tìm thấy công thức")
-    
-    pdf_path = recipe.pdf_file_path
-    
-    if not os.path.exists(pdf_path):
-        logger.error(f"PDF file not found: {pdf_path}")
-        raise HTTPException(status_code=404, detail="File PDF không tồn tại")
-    
-    # Ghi audit log
-    try:
-        log_entry = FormulaPrintLog(
-            recipe_id=recipe_id,
-            printed_by=current_user["user_code"],
-            printed_at=datetime.utcnow(),
-            ip_address=request.client.host if request.client else ""
-        )
-        db.add(log_entry)
+    job = FormulaPrintJob(
+        recipe_id=recipe.id,
+        requested_by=current_user['user_code'],
+        station_id=station_id.strip(),
+        request_ip=request.client.host if request.client else '',
+        status='queued',
+        expires_at=datetime.utcnow() + timedelta(seconds=120),
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return {'job_id': job.id, 'status': job.status, 'station_id': job.station_id}
+
+
+@router.get("/print-jobs/{job_id}")
+def get_formula_print_job_status(
+    job_id: int,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    check_print_permission(current_user['user_role'], current_user['user_code'])
+    job = db.query(FormulaPrintJob).filter(FormulaPrintJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Không tìm thấy lệnh in")
+    if current_user['user_role'] not in ('admin', 'head') and job.requested_by != current_user['user_code']:
+        raise HTTPException(status_code=403, detail="Không có quyền xem lệnh in này")
+    if job.status == 'queued' and job.expires_at and job.expires_at <= datetime.utcnow():
+        job.status = 'failed'
+        job.error = 'Máy in chưa nhận lệnh trong thời gian chờ. Kiểm tra print agent.'
+        job.finished_at = datetime.utcnow()
         db.commit()
-        
-        logger.info(
-            f"✓ Print formula: {recipe.recipe_code} by {current_user['user_code']} "
-            f"from {request.client.host if request.client else 'unknown'}"
-        )
-    except Exception as e:
-        logger.error(f"Error logging print action: {str(e)}")
-        # Không fail request nếu log lỗi
-    
-    # Stream PDF file
-    def iterfile():
-        with open(pdf_path, mode="rb") as file_like:
-            yield from file_like
-    
-    # Headers bảo mật chặn download UI
-    headers = {
-        "Content-Disposition": 'inline; filename="print_job.pdf"',
-        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-        "X-Content-Type-Options": "nosniff",
-        "Pragma": "no-cache",
+    return {
+        'job_id': job.id,
+        'status': job.status,
+        'error': job.error or '',
+        'created_at': job.created_at.isoformat() if job.created_at else '',
+        'finished_at': job.finished_at.isoformat() if job.finished_at else '',
     }
-    
-    return StreamingResponse(
-        iterfile(),
-        media_type="application/pdf",
-        headers=headers
+
+
+@router.post('/agent/print-jobs/claim')
+def claim_formula_print_job(
+    station_id: str = Query('factory-main', min_length=1, max_length=100),
+    agent_key: str = Header('', alias='X-Formula-Print-Agent-Key'),
+    db: Session = Depends(get_db)
+):
+    _require_print_agent(agent_key)
+    job = db.query(FormulaPrintJob).filter(
+        FormulaPrintJob.station_id == station_id,
+        FormulaPrintJob.status == 'queued',
+        or_(FormulaPrintJob.expires_at.is_(None), FormulaPrintJob.expires_at > datetime.utcnow()),
+    ).order_by(FormulaPrintJob.created_at.asc()).with_for_update(skip_locked=True).first()
+    if not job:
+        return Response(status_code=204)
+    recipe = db.query(FormulaRecipe).filter(
+        FormulaRecipe.id == job.recipe_id,
+        FormulaRecipe.is_active == True
+    ).first()
+    if not recipe:
+        job.status = 'failed'
+        job.error = 'Công thức đã bị vô hiệu hóa trước khi in'
+        job.finished_at = datetime.utcnow()
+        db.commit()
+        return {'job_id': job.id, 'status': job.status, 'error': job.error}
+    _, pages = _get_formula_print_pages(recipe)
+    job.status = 'printing'
+    job.claimed_at = datetime.utcnow()
+    db.commit()
+    return {
+        'job_id': job.id,
+        'recipe_id': recipe.id,
+        'recipe_code': recipe.recipe_code,
+        'recipe_name': recipe.recipe_name,
+        'page_count': len(pages),
+    }
+
+
+@router.get('/agent/print-jobs/{job_id}/pages/{page_number}')
+def get_agent_print_page(
+    job_id: int,
+    page_number: int,
+    agent_key: str = Header('', alias='X-Formula-Print-Agent-Key'),
+    db: Session = Depends(get_db)
+):
+    _require_print_agent(agent_key)
+    job = db.query(FormulaPrintJob).filter(
+        FormulaPrintJob.id == job_id,
+        FormulaPrintJob.status == 'printing'
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Lệnh in không còn hoạt động")
+    recipe = db.query(FormulaRecipe).filter(FormulaRecipe.id == job.recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Không tìm thấy công thức")
+    cache_dir, pages = _get_formula_print_pages(recipe)
+    if page_number < 1 or page_number > len(pages):
+        raise HTTPException(status_code=404, detail="Không tìm thấy trang in")
+    with open(os.path.join(cache_dir, pages[page_number - 1]), 'rb') as image_file:
+        image_bytes = image_file.read()
+    return Response(
+        content=image_bytes,
+        media_type='image/png',
+        headers={
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma': 'no-cache',
+            'X-Content-Type-Options': 'nosniff',
+        }
+    )
+
+
+@router.post('/agent/print-jobs/{job_id}/finish')
+def finish_formula_print_job(
+    job_id: int,
+    request: Request,
+    status: str = Query(...),
+    error: str = Query('', max_length=500),
+    agent_key: str = Header('', alias='X-Formula-Print-Agent-Key'),
+    db: Session = Depends(get_db)
+):
+    _require_print_agent(agent_key)
+    if status not in ('completed', 'failed'):
+        raise HTTPException(status_code=400, detail='Trạng thái hoàn tất không hợp lệ')
+    job = db.query(FormulaPrintJob).filter(
+        FormulaPrintJob.id == job_id,
+        FormulaPrintJob.status == 'printing'
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Lệnh in không còn hoạt động")
+    job.status = status
+    job.error = error.strip()[:500] if status == 'failed' else None
+    job.finished_at = datetime.utcnow()
+    if status == 'completed':
+        db.add(FormulaPrintLog(
+            recipe_id=job.recipe_id,
+            printed_by=job.requested_by,
+            printed_at=job.finished_at,
+            ip_address=job.request_ip or (request.client.host if request.client else ''),
+        ))
+    db.commit()
+    return {'job_id': job.id, 'status': job.status}
+
+
+@router.get("/{recipe_id}/print-stream")
+def stream_pdf_for_print_legacy(
+    recipe_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    """Tắt endpoint cũ để nhà máy không còn nhận PDF gốc qua trình duyệt."""
+    check_print_permission(current_user["user_role"], current_user["user_code"])
+    raise HTTPException(
+        status_code=410,
+        detail="Luồng PDF đã được tắt. Hãy dùng chức năng in công thức mới.",
     )
 
 

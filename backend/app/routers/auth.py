@@ -328,6 +328,7 @@ ALL_MODULES = [
     {"key": "equipment", "label": "Thiết bị", "group": "admin"},
     {"key": "licenses", "label": "License Keys", "group": "admin"},
     {"key": "todos", "label": "Công việc (Todos)", "group": "support"},
+    {"key": "todos.requires_approval", "label": "Công việc — Cơ chế Chờ duyệt", "group": "support"},
     {"key": "tickets", "label": "Tickets", "group": "support"},
     {"key": "approvals", "label": "Phê duyệt", "group": "support"},
     {"key": "workflows", "label": "Quy trình", "group": "admin"},

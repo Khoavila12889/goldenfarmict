@@ -43,13 +43,15 @@ def list_equipment(
 ):
     sql = """
         SELECT eq.*, emp.full_name, emp.department, emp.employee_code as emp_code,
-               lic.license_key, lic.product_name as license_product, lic.expiry_date as license_expiry,
-               lic.activated as license_activated,
+               lic.license_key, lic.product_name as license_product,
+               lic.expiry_date as license_expiry, lic.activated as license_activated,
                (SELECT h.handover_date FROM equipment_history h WHERE h.equipment_id=eq.id ORDER BY h.id DESC LIMIT 1) as handover_date,
                (SELECT h.return_date FROM equipment_history h WHERE h.equipment_id=eq.id ORDER BY h.id DESC LIMIT 1) as return_date
         FROM equipment eq
         LEFT JOIN employees emp ON emp.id=eq.employee_id
-        LEFT JOIN licenses lic ON lic.equipment_id=eq.id
+        LEFT JOIN licenses lic ON lic.id=(
+            SELECT MAX(latest.id) FROM licenses latest WHERE latest.equipment_id=eq.id
+        )
         WHERE 1=1
     """
     params = {}
@@ -122,18 +124,22 @@ def import_equipment(body: dict):
                         text("SELECT id, employee_code FROM employees WHERE LOWER(full_name) = LOWER(:c) LIMIT 1"),
                         {"c": emp_full},
                     ).first()
-                    if emp:
-                        employee_id = emp[0]
-                        emp_code = emp[1]
-                        emp_name = emp_full
+                    if not emp:
+                        stats["errors"].append(f"Dòng {line_no}: không tìm thấy nhân viên {emp_full}")
+                        continue
+                    employee_id = emp[0]
+                    emp_code = emp[1]
+                    emp_name = emp_full
                 if emp_code:
                     emp = sess.execute(
                         text("SELECT id, full_name FROM employees WHERE employee_code = :c"),
                         {"c": emp_code},
                     ).first()
-                    if emp:
-                        employee_id = emp[0]
-                        emp_name = emp[1]
+                    if not emp:
+                        stats["errors"].append(f"Dòng {line_no}: không tìm thấy mã nhân viên {emp_code}")
+                        continue
+                    employee_id = emp[0]
+                    emp_name = emp[1]
 
                 fields = {col: _norm(item.get(col)) for col in _EQUIPMENT_COLS}
                 fields["employee_id"] = employee_id
@@ -143,11 +149,25 @@ def import_equipment(body: dict):
                 lic_activated = _norm(item.get("license_activated"))
 
                 existing = sess.execute(
-                    text("SELECT id FROM equipment WHERE asset_code = :c"),
+                    text("SELECT id, employee_id FROM equipment WHERE asset_code = :c"),
                     {"c": asset_code},
                 ).first()
 
                 if existing:
+                    old_employee_id = existing[1]
+                    if old_employee_id != employee_id and old_employee_id:
+                        old_employee = sess.execute(
+                            text("SELECT employee_code FROM employees WHERE id=:id"),
+                            {"id": old_employee_id},
+                        ).first()
+                        if old_employee:
+                            sess.execute(
+                                text(
+                                    "UPDATE equipment_history SET return_date=CURRENT_DATE::text "
+                                    "WHERE equipment_id=:eid AND employee_code=:code AND return_date=''"
+                                ),
+                                {"eid": existing[0], "code": old_employee[0]},
+                            )
                     set_clause = ", ".join(f"{col}=:{col}" for col in _EQUIPMENT_COLS)
                     sess.execute(
                         text(
@@ -158,6 +178,19 @@ def import_equipment(body: dict):
                     )
                     stats["updated"] += 1
                     new_id = existing[0]
+                    if old_employee_id != employee_id:
+                        sess.execute(
+                            text("UPDATE licenses SET employee_id=:employee_id WHERE equipment_id=:eid"),
+                            {"employee_id": employee_id, "eid": new_id},
+                        )
+                    if old_employee_id != employee_id and employee_id:
+                        sess.execute(
+                            text(
+                                "INSERT INTO equipment_history (equipment_id, employee_code, employee_name, handover_date) "
+                                "VALUES (:eid, :code, :name, CURRENT_DATE::text)"
+                            ),
+                            {"eid": new_id, "code": emp_code, "name": emp_name},
+                        )
                 else:
                     cols = _EQUIPMENT_COLS + ["employee_id"]
                     insert_cols = ", ".join(cols)
@@ -230,18 +263,30 @@ def update_equipment(equipment_id: int, body: dict):
 @router.put("/{equipment_id}/transfer")
 def transfer_equipment(equipment_id: int, body: dict):
     new_employee_id = body.get("employee_id")
-    new_employee_code = body.get("employee_code", "")
-    new_employee_name = body.get("employee_name", "")
     if not new_employee_id:
-        return {"error": "Missing employee_id"}
+        raise HTTPException(400, "Missing employee_id")
     eq = fetchone("SELECT employee_id FROM equipment WHERE id=:eid", {"eid": equipment_id})
     if not eq:
-        return {"error": "Equipment not found"}
+        raise HTTPException(404, "Equipment not found")
+    employee = fetchone(
+        "SELECT id, employee_code, full_name FROM employees WHERE id=:id",
+        {"id": new_employee_id},
+    )
+    if not employee:
+        raise HTTPException(400, "Nhân viên không tồn tại")
+    if eq["employee_id"] == employee["id"]:
+        return {"success": True, "unchanged": True}
     if eq["employee_id"]:
         _close_history(equipment_id, eq["employee_id"])
-    execute("UPDATE equipment SET employee_id=:eid2, issued_date=CURRENT_DATE::text WHERE id=:eid",
-            {"eid2": new_employee_id, "eid": equipment_id})
-    _add_history(equipment_id, new_employee_code, new_employee_name)
+    execute(
+        "UPDATE equipment SET employee_id=:employee_id, issued_date=CURRENT_DATE::text, "
+        "updated_at=CURRENT_TIMESTAMP::text WHERE id=:eid",
+        {"employee_id": employee["id"], "eid": equipment_id},
+    )
+    _add_history(equipment_id, employee["employee_code"], employee["full_name"])
+    execute("UPDATE licenses SET employee_id=:employee_id WHERE equipment_id=:eid", {
+        "employee_id": employee["id"], "eid": equipment_id,
+    })
     publish_sync("equipment_updated", {"id": equipment_id, "action": "transfer"})
     return {"success": True}
 
@@ -250,10 +295,11 @@ def transfer_equipment(equipment_id: int, body: dict):
 def revoke_equipment(equipment_id: int):
     eq = fetchone("SELECT employee_id FROM equipment WHERE id=:eid", {"eid": equipment_id})
     if not eq:
-        return {"error": "Equipment not found"}
+        raise HTTPException(404, "Equipment not found")
     if eq["employee_id"]:
         _close_history(equipment_id, eq["employee_id"])
     execute("UPDATE equipment SET employee_id=NULL, issued_date='', updated_at=CURRENT_TIMESTAMP::text WHERE id=:eid", {"eid": equipment_id})
+    execute("UPDATE licenses SET employee_id=NULL WHERE equipment_id=:eid", {"eid": equipment_id})
     publish_sync("equipment_updated", {"id": equipment_id, "action": "revoke"})
     return {"success": True}
 
@@ -261,16 +307,30 @@ def revoke_equipment(equipment_id: int):
 @router.put("/{equipment_id}/allocate")
 def allocate_equipment(equipment_id: int, body: dict):
     employee_id = body.get("employee_id")
-    employee_code = body.get("employee_code", "")
-    employee_name = body.get("employee_name", "")
     if not employee_id:
-        return {"error": "Missing employee_id"}
+        raise HTTPException(400, "Missing employee_id")
     eq = fetchone("SELECT employee_id FROM equipment WHERE id=:eid", {"eid": equipment_id})
     if not eq:
-        return {"error": "Equipment not found"}
-    execute("UPDATE equipment SET employee_id=:eid2, issued_date=CURRENT_DATE::text, updated_at=CURRENT_TIMESTAMP::text WHERE id=:eid",
-            {"eid2": employee_id, "eid": equipment_id})
-    _add_history(equipment_id, employee_code, employee_name)
+        raise HTTPException(404, "Equipment not found")
+    employee = fetchone(
+        "SELECT id, employee_code, full_name FROM employees WHERE id=:id",
+        {"id": employee_id},
+    )
+    if not employee:
+        raise HTTPException(400, "Nhân viên không tồn tại")
+    if eq["employee_id"] == employee["id"]:
+        return {"success": True, "unchanged": True}
+    if eq["employee_id"]:
+        _close_history(equipment_id, eq["employee_id"])
+    execute(
+        "UPDATE equipment SET employee_id=:employee_id, issued_date=CURRENT_DATE::text, "
+        "updated_at=CURRENT_TIMESTAMP::text WHERE id=:eid",
+        {"employee_id": employee["id"], "eid": equipment_id},
+    )
+    _add_history(equipment_id, employee["employee_code"], employee["full_name"])
+    execute("UPDATE licenses SET employee_id=:employee_id WHERE equipment_id=:eid", {
+        "employee_id": employee["id"], "eid": equipment_id,
+    })
     publish_sync("equipment_updated", {"id": equipment_id, "action": "allocate"})
     return {"success": True}
 

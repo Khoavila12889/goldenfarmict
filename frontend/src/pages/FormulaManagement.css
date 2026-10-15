@@ -372,3 +372,25 @@
   .recipe-table th, .recipe-table td { padding: 0.5rem; }
   .form-row { grid-template-columns: 1fr; }
 }
+
+.upload-intro { margin: 0; color: var(--fm-gray); font-size: .875rem; line-height: 1.5; }
+.file-drop-zone { min-height: 150px; padding: 1.25rem; border: 1px dashed #94a3b8; border-radius: 8px; background: #f8fafc; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .45rem; color: var(--fm-primary); text-align: center; transition: background .15s ease, border-color .15s ease; }
+.file-drop-zone strong { color: var(--fm-text-dark); overflow-wrap: anywhere; }
+.file-drop-zone span { color: var(--fm-gray); font-size: .8rem; }
+.file-drop-zone.is-dragging, .file-drop-zone.has-file { background: #eff6ff; border-color: var(--fm-primary); }
+.upload-error { display: flex; align-items: center; gap: .5rem; color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; padding: .65rem .75rem; border-radius: 6px; font-size: .875rem; }
+.recipe-table { overflow-x: auto; }
+.recipe-table table { min-width: 850px; }
+.modal-close:disabled { opacity: .45; cursor: not-allowed; }
+
+@media (max-width: 520px) {
+  .formula-management { padding: .75rem; }
+  .fm-header { padding: 1rem; }
+  .fm-header-actions > button { flex: 1; justify-content: center; }
+  .stats-overview { grid-template-columns: 1fr; gap: .5rem; }
+  .stat-card { padding: .75rem; }
+  .modal-overlay { padding: .5rem; align-items: flex-end; }
+  .modal-content { max-height: 92vh; border-radius: 12px 12px 6px 6px; }
+  .modal-header, .modal-body { padding: 1rem; }
+  .form-actions { position: sticky; bottom: 0; background: white; padding-top: .75rem; }
+}

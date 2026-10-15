@@ -41,7 +41,7 @@ if not DATABASE_URL.startswith("postgresql"):
 
 # PostgreSQL connection settings
 engine = create_engine(
-    DATABASE_URL,
+    DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1),
     pool_pre_ping=True,      # Validate connections before use
     pool_recycle=3600,       # Recycle connections every hour
     pool_size=10,            # Maximum connections in pool

@@ -418,7 +418,6 @@ export default function FormulaManagement() {
             loadStats()
             setSuccess('Đã upload công thức thành công!')
           }}
-          onError={(msg) => setError(msg)}
           getUserParams={getUserParams}
         />
       )}
@@ -437,22 +436,42 @@ export default function FormulaManagement() {
 }
 
 /* ─── Upload Modal ──────────────────────────────────────────── */
-function UploadModal({ onClose, onSuccess, onError, getUserParams }) {
+function UploadModal({ onClose, onSuccess, getUserParams }) {
   const [formData, setFormData] = useState({ recipe_code: '', recipe_name: '', category: '', version: 'v1.0' })
   const [file, setFile] = useState(null)
   const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
+  const [dragging, setDragging] = useState(false)
   const fileInputRef = useRef(null)
+
+  const chooseFile = (selectedFile) => {
+    if (!selectedFile) return
+    const extension = selectedFile.name.split('.').pop()?.toLowerCase()
+    if (!selectedFile.size || !['xlsx', 'xls', 'pdf'].includes(extension)) {
+      setFile(null)
+      fileInputRef.current && (fileInputRef.current.value = '')
+      if (!selectedFile.size) {
+        setUploadError('File không có dữ liệu. Vui lòng chọn file khác.')
+        return
+      }
+      setUploadError('Chỉ hỗ trợ file Excel (.xlsx, .xls) hoặc PDF (.pdf)')
+      return
+    }
+    setUploadError('')
+    setFile(selectedFile)
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!file) { onError('Vui lòng chọn file Excel hoặc PDF'); return }
-    if (!formData.recipe_code || !formData.recipe_name) { onError('Vui lòng nhập đầy đủ thông tin'); return }
+    if (!file) { setUploadError('Vui lòng chọn file Excel hoặc PDF'); return }
+    if (!formData.recipe_code.trim() || !formData.recipe_name.trim()) { setUploadError('Vui lòng nhập mã và tên công thức'); return }
+    setUploadError('')
     setUploading(true)
     try {
       const params = getUserParams()
       const data = new FormData()
-      data.append('recipe_code', formData.recipe_code)
-      data.append('recipe_name', formData.recipe_name)
+      data.append('recipe_code', formData.recipe_code.trim())
+      data.append('recipe_name', formData.recipe_name.trim())
       data.append('category', formData.category)
       data.append('version', formData.version)
       data.append('file', file)
@@ -465,52 +484,58 @@ function UploadModal({ onClose, onSuccess, onError, getUserParams }) {
       }
       onSuccess()
     } catch (err) {
-      onError(err.message)
+      setUploadError(err.message)
     } finally {
       setUploading(false)
     }
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={() => !uploading && onClose()}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2><Upload size={24} /> Upload Công Thức Mới</h2>
-          <button className="modal-close" onClick={onClose}><X size={20} /></button>
+          <button className="modal-close" onClick={onClose} disabled={uploading}><X size={20} /></button>
         </div>
         <form onSubmit={handleSubmit} className="upload-form">
+          <p className="upload-intro">Nhập thông tin nhận diện, chọn file công thức. Excel sẽ được chuyển sang PDF để nhà máy in.</p>
           <div className="form-group">
             <label>Mã công thức *</label>
             <input type="text" placeholder="VD: CT-NPK-01" value={formData.recipe_code}
-              onChange={(e) => setFormData({ ...formData, recipe_code: e.target.value })} required />
+              onChange={(e) => setFormData({ ...formData, recipe_code: e.target.value })} required disabled={uploading} />
           </div>
           <div className="form-group">
             <label>Tên công thức *</label>
             <input type="text" placeholder="VD: Phân bón NPK 16-16-8" value={formData.recipe_name}
-              onChange={(e) => setFormData({ ...formData, recipe_name: e.target.value })} required />
+              onChange={(e) => setFormData({ ...formData, recipe_name: e.target.value })} required disabled={uploading} />
           </div>
           <div className="form-row">
             <div className="form-group">
               <label>Dòng sản phẩm</label>
               <input type="text" placeholder="VD: Phân bón" value={formData.category}
-                onChange={(e) => setFormData({ ...formData, category: e.target.value })} />
+                onChange={(e) => setFormData({ ...formData, category: e.target.value })} disabled={uploading} />
             </div>
             <div className="form-group">
               <label>Phiên bản</label>
               <input type="text" placeholder="v1.0" value={formData.version}
-                onChange={(e) => setFormData({ ...formData, version: e.target.value })} />
+                onChange={(e) => setFormData({ ...formData, version: e.target.value })} disabled={uploading} />
             </div>
           </div>
           <div className="form-group">
             <label>File công thức (.xlsx, .xls hoặc .pdf) *</label>
-            <div className="file-input-wrapper">
+            <div className={`file-drop-zone ${dragging ? 'is-dragging' : ''} ${file ? 'has-file' : ''}`}
+              onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => { e.preventDefault(); setDragging(false); chooseFile(e.dataTransfer.files?.[0]) }}>
               <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.pdf"
-                onChange={(e) => { const s = e.target.files[0]; setFile(s); setTimeout(() => { if (fileInputRef.current) fileInputRef.current.value = '' }, 0) }}
+                onChange={(e) => { chooseFile(e.target.files?.[0]); e.target.value = '' }}
                 style={{ display: 'none' }} />
-              <button type="button" className="btn-file-select" onClick={() => fileInputRef.current?.click()}>
-                <FileSpreadsheet size={18} /> Chọn file Excel hoặc PDF
+              <FileSpreadsheet size={26} />
+              <strong>{file ? file.name : 'Kéo thả file vào đây'}</strong>
+              <span>{file ? `${(file.size / 1024).toFixed(0)} KB · ${file.name.toLowerCase().endsWith('.pdf') ? 'PDF' : 'Excel'}` : 'hoặc chọn từ thiết bị · XLSX, XLS, PDF'}</span>
+              <button type="button" className="btn-file-select" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+                {file ? 'Đổi file' : 'Chọn file'}
               </button>
-              {file && <span className="file-name">{file.name} ({(file.size / 1024).toFixed(0)} KB)</span>}
             </div>
             <p className="file-hint">
               {file
@@ -518,9 +543,10 @@ function UploadModal({ onClose, onSuccess, onError, getUserParams }) {
                 : 'Hỗ trợ upload file Excel (.xlsx, .xls) hoặc PDF (.pdf)'}
             </p>
           </div>
+          {uploadError && <div className="upload-error" role="alert"><AlertCircle size={17} />{uploadError}</div>}
           <div className="form-actions">
             <button type="button" className="btn-secondary" onClick={onClose} disabled={uploading}>Hủy</button>
-            <button type="submit" className="btn-primary" disabled={uploading}>
+            <button type="submit" className="btn-primary" disabled={uploading || !file}>
               {uploading ? <><Loader2 className="spinning" size={18} /> Đang upload...</> : <><Upload size={18} /> Upload</>}
             </button>
           </div>

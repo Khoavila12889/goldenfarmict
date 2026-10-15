@@ -126,12 +126,16 @@ export default function Equipment() {
   const columns = useMemo(() => ALL_COLUMNS.filter(c => visibleCols.has(c.key)), [visibleCols])
 
   const searchTimerRef = useRef(null)
+  const empSearchTimerRef = useRef(null)
+  const empSearchRequestRef = useRef(0)
   const actionRef = useRef(null)
   const fileInputRef = useRef(null)
 
   useEffect(() => {
     return () => {
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+      if (empSearchTimerRef.current) clearTimeout(empSearchTimerRef.current)
+      empSearchRequestRef.current += 1
     }
   }, [])
 
@@ -381,6 +385,8 @@ export default function Equipment() {
     setMsg('')
     setEmpSearch('')
     setEmpResults([])
+    empSearchRequestRef.current += 1
+    if (empSearchTimerRef.current) clearTimeout(empSearchTimerRef.current)
     try {
       const isAllocated = !!(equipment.find(e => e.id === eqId) || selectedEq)?.employee_id
       if (isAllocated) {
@@ -395,8 +401,9 @@ export default function Equipment() {
         setMsg(`Đã cấp phát cho ${target.full_name}.`)
       }
       load()
-      const updated = equipment.find(e => e.id === eqId)
-      if (updated) { setSelectedEq(updated); setEmpResults([]) }
+      const updated = { ...(equipment.find(e => e.id === eqId) || selectedEq), employee_id: target.id, full_name: target.full_name, department: target.department, emp_code: target.employee_code }
+      setEquipment(prev => prev.map(item => item.id === eqId ? { ...item, ...updated } : item))
+      setSelectedEq(updated)
       setAllocOpen(false)
     } catch {
       setMsg('Lỗi cấp phát thiết bị.')
@@ -404,14 +411,23 @@ export default function Equipment() {
     setTimeout(() => setMsg(''), 3000)
   }
 
-  async function searchEmp(q) {
+  function searchEmp(q) {
     setEmpSearch(q)
-    if (q.trim()) {
-      const r = await getEmployees(q.trim())
-      setEmpResults(r.data?.data || [])
-    } else {
+    if (empSearchTimerRef.current) clearTimeout(empSearchTimerRef.current)
+    const query = q.trim()
+    const requestId = ++empSearchRequestRef.current
+    if (query.length < 2) {
       setEmpResults([])
+      return
     }
+    empSearchTimerRef.current = setTimeout(async () => {
+      try {
+        const r = await getEmployees(query)
+        if (requestId === empSearchRequestRef.current) setEmpResults(r.data?.data || [])
+      } catch {
+        if (requestId === empSearchRequestRef.current) setEmpResults([])
+      }
+    }, 250)
   }
 
   async function loadHistory(eqId) {
@@ -1038,7 +1054,7 @@ export default function Equipment() {
                       ))}
                     </div>
                   )}
-                  {empSearch.trim() && empResults.length === 0 && (
+                  {empSearch.trim().length >= 2 && empResults.length === 0 && (
                     <div style={{ color: '#94a3b8', fontSize: '0.78rem' }}>Không tìm thấy nhân viên.</div>
                   )}
                 </div>

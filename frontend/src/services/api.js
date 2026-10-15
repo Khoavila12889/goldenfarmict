@@ -123,6 +123,19 @@ export function getDashboardStats() {
   return api.get('/dashboard/stats', { params: { user_code: userCode, user_role: userRole } })
 }
 
+export function getMonitorStats(config = {}) {
+  return api.get('/monitor/stats', {
+    ...config,
+    headers: {
+      'X-User-Code': sessionStorage.getItem('user_code') || '',
+      'X-User-Role': sessionStorage.getItem('user_role') || '',
+      'X-User-Dept': sessionStorage.getItem('user_department') || '',
+      'X-User-Token': sessionStorage.getItem('token') || '',
+      ...config.headers,
+    },
+  })
+}
+
 export function getEmployees(keyword = '', department = '', status = '') {
   return api.get('/employees', { params: { keyword, department, status } })
 }
@@ -608,6 +621,12 @@ function todoAuthHeaders() {
     'X-User-Dept': sessionStorage.getItem('user_department') || '',
     'X-User-Token': sessionStorage.getItem('token') || ''
   }
+}
+
+export function getTodoOnlyOfficeConfig({ type = 'report', scope = 'all', attachmentId } = {}) {
+  const params = { type, scope }
+  if (attachmentId) params.attachment_id = attachmentId
+  return api.get('/todos/onlyoffice/config', { params, headers: todoAuthHeaders() })
 }
 
 export function getTodoComments(todoId) {

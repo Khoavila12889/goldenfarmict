@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react'
 import {
   CheckSquare, Plus, Search, Filter, Calendar, User, Tag,
   Clock, AlertCircle, CheckCircle2, MoreVertical, Trash2, Edit2,
@@ -12,8 +12,10 @@ import {
   getTodoComments, addTodoComment, getTodoAttachments,
   uploadTodoAttachment, addTodoUrl, deleteTodoAttachment,
   exportTodosReport, downloadTodoAttachment, eventStreamUrl,
+  getTodoOnlyOfficeConfig,
 } from '../services/api'
 import { formatDate } from '../utils/date'
+import OnlyOfficeViewer from '../components/OnlyOfficeViewer'
 import './Todos.css'
 
 function normAtt(a) {
@@ -37,6 +39,8 @@ export default function Todos() {
     can_create_department: false,
     can_choose_department: false,
     allowed_departments: [],
+    approval_by_department: {},
+    review_by_department: {},
     requires_department_approval: false,
     default_scope: 'personal',
   })
@@ -46,9 +50,18 @@ export default function Todos() {
   // Filters
   const [scopeFilter, setScopeFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [overdueOnly, setOverdueOnly] = useState(false)
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [assigneeFilter, setAssigneeFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const [viewMode, setViewMode] = useState('kanban')
+  const [tableGroupBy, setTableGroupBy] = useState('assignee')
+  const [collapsedColumns, setCollapsedColumns] = useState(new Set())
+  const [collapsedGroups, setCollapsedGroups] = useState(new Set())
+  const [overviewUser, setOverviewUser] = useState(null)
+  const [ooOpen, setOoOpen] = useState(false)
+  const [ooRequest, setOoRequest] = useState(null)
+  const [ooFile, setOoFile] = useState(null)
   
   // Modal states
   const [showModal, setShowModal] = useState(false)
@@ -83,6 +96,8 @@ export default function Todos() {
 
   const userDept = sessionStorage.getItem('user_department') || ''
   const userCode = sessionStorage.getItem('user_code') || ''
+  const userRole = sessionStorage.getItem('user_role') || 'user'
+  const canViewDepartmentOverview = userRole === 'head' || userRole === 'admin'
   
   const userName = sessionStorage.getItem('user_name') || userCode
   const allowedDepartmentNames = todoCapabilities.allowed_departments
@@ -496,6 +511,44 @@ export default function Todos() {
     }
   }
 
+  const openOfficeAttachment = (att) => {
+    const ext = String(att.ext || att.name?.split('.').pop() || '').toLowerCase()
+    if (!['xlsx', 'docx'].includes(ext) || att.type === 'url') return false
+    setOoRequest({ type: 'attachment', attachmentId: att.id })
+    setOoFile({ name: att.name || `todo-${viewingTodo?.id}.${ext}` })
+    setOoOpen(true)
+    return true
+  }
+
+  const openOfficeReport = () => {
+    setOoRequest({ type: 'report', scope: scopeFilter })
+    setOoFile({ name: `Bao-cao-cong-viec-${new Date().toISOString().slice(0, 10)}.xlsx` })
+    setOoOpen(true)
+  }
+
+  const getOfficeConfig = React.useCallback(() => {
+    if (!ooRequest) return Promise.reject(new Error('Chưa chọn tài liệu'))
+    return getTodoOnlyOfficeConfig(ooRequest)
+  }, [ooRequest])
+
+  const downloadOfficeFile = async () => {
+    try {
+      const response = ooRequest?.type === 'attachment'
+        ? await downloadTodoAttachment(ooRequest.attachmentId)
+        : await exportTodosReport(ooRequest?.scope || scopeFilter)
+      const blobUrl = URL.createObjectURL(response.data)
+      const anchor = document.createElement('a')
+      anchor.href = blobUrl
+      anchor.download = ooFile?.name || 'todo-report.xlsx'
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Không thể tải tài liệu')
+    }
+  }
+
   const handleDownloadAttachment = async (e, att) => {
     if (att.type === 'url') return
     e.preventDefault()
@@ -514,13 +567,30 @@ export default function Todos() {
     }
   }
 
-  // Loại bỏ cột 'review' khỏi Kanban Board
-  const columns = [
-    { id: 'todo', label: 'Cần làm', icon: Clock, color: '#64748b' },
-    { id: 'in_progress', label: 'Đang thực hiện', icon: RefreshCw, color: '#3b82f6' },
-    { id: 'completed', label: 'Đã hoàn thành', icon: CheckCircle2, color: '#10b981' },
-    { id: 'cancelled', label: 'Đã hủy', icon: X, color: '#ef4444' }
-  ]
+  const approvalRequiredFor = (department) => {
+    const entry = Object.entries(todoCapabilities.approval_by_department || {})
+      .find(([name]) => name.trim().toLowerCase() === String(department || '').trim().toLowerCase())
+    return entry ? entry[1] : false
+  }
+  const formRequiresApproval = formScope === 'department' && approvalRequiredFor(formDept)
+  const showReviewColumn = scopeFilter !== 'personal' && !!todoCapabilities.requires_department_approval
+  const columns = useMemo(() => {
+    const baseCols = [
+      { id: 'todo', label: 'Cần làm', icon: Clock, color: '#64748b' },
+      { id: 'in_progress', label: 'Đang thực hiện', icon: RefreshCw, color: '#3b82f6' },
+      { id: 'review', label: 'Chờ duyệt', icon: AlertCircle, color: '#d97706' },
+      { id: 'completed', label: 'Đã hoàn thành', icon: CheckCircle2, color: '#10b981' },
+      { id: 'cancelled', label: 'Đã hủy', icon: X, color: '#ef4444' }
+    ]
+    return showReviewColumn
+      ? baseCols : baseCols.filter(col => col.id !== 'review')
+  }, [showReviewColumn])
+  const columnIdForTodo = (todo) => {
+    if (todo.status === 'review' || isPendingApproval(todo)) {
+      return showReviewColumn ? 'review' : 'todo'
+    }
+    return todo.status
+  }
 
   const isOverdue = (dateStr, status) => {
     if (!dateStr || status === 'completed' || status === 'cancelled') return false
@@ -530,6 +600,33 @@ export default function Todos() {
 
   const canManageFormSubtasks = !editingTodo || editingTodo.permissions?.can_manage_subtasks
   const canToggleFormSubtasks = !editingTodo || editingTodo.permissions?.can_edit
+  const visibleTodos = todos.filter(todo =>
+    (assigneeFilter === 'all' || String(todo.assignee_code) === String(assigneeFilter)) &&
+    (!overviewUser || String(todo.assignee_code) === String(overviewUser.employee_code)) &&
+    (!overdueOnly || isOverdue(todo.due_date, todo.status))
+  )
+  const departmentEmployees = employees.filter(emp => scopeFilter !== 'department' || userRole === 'admin' ||
+    String(emp.department || '').trim().toLowerCase() === String(userDept).trim().toLowerCase())
+  const userTaskStats = (employee) => {
+    const assigned = todos.filter(todo => String(todo.assignee_code) === String(employee.employee_code))
+    const completed = assigned.filter(todo => todo.status === 'completed').length
+    return {
+      total: assigned.length,
+      inProgress: assigned.filter(todo => todo.status === 'in_progress').length,
+      completed,
+      overdue: assigned.filter(todo => isOverdue(todo.due_date, todo.status)).length,
+      progress: assigned.length ? Math.round(completed / assigned.length * 100) : 0,
+    }
+  }
+  const groupedTodos = visibleTodos.reduce((groups, todo) => {
+    const key = tableGroupBy === 'status'
+      ? (columns.find(column => column.id === columnIdForTodo(todo))?.label || todo.status || 'Khác')
+      : (todo.assignee_name || todo.creator_name || 'Chưa giao')
+    if (!groups[key]) groups[key] = []
+    groups[key].push(todo)
+    return groups
+  }, {})
+  const todoStatusLabel = (todo) => ({ todo: 'Cần làm', in_progress: 'Đang xử lý', review: 'Chờ duyệt', completed: 'Hoàn thành', cancelled: 'Đã hủy' }[columnIdForTodo(todo)] || todo.status)
 
   return (
     <div className="todos-container">
@@ -551,41 +648,41 @@ export default function Todos() {
 
       {/* KPI Stats Cards - Đã bỏ thẻ Chờ kiểm tra */}
       <div className="todos-stats-grid">
-        <div className={`todos-stat-card ${statusFilter === 'all' ? 'active' : ''}`} onClick={() => setStatusFilter('all')}>
+        <button type="button" className={`todos-stat-card ${statusFilter === 'all' && !overdueOnly ? 'active' : ''}`} onClick={() => { setStatusFilter('all'); setOverdueOnly(false) }}>
           <div className="todos-stat-icon total"><ListTodo size={20} /></div>
           <div className="todos-stat-info">
             <div className="val">{stats.total}</div>
             <div className="lbl">Tổng công việc</div>
           </div>
-        </div>
-        <div className={`todos-stat-card ${statusFilter === 'todo' ? 'active' : ''}`} onClick={() => setStatusFilter('todo')}>
+        </button>
+        <button type="button" className={`todos-stat-card ${statusFilter === 'todo' && !overdueOnly ? 'active' : ''}`} onClick={() => { setStatusFilter('todo'); setOverdueOnly(false) }}>
           <div className="todos-stat-icon todo"><Clock size={20} /></div>
           <div className="todos-stat-info">
             <div className="val">{stats.todo}</div>
             <div className="lbl">Cần làm</div>
           </div>
-        </div>
-        <div className={`todos-stat-card ${statusFilter === 'in_progress' ? 'active' : ''}`} onClick={() => setStatusFilter('in_progress')}>
+        </button>
+        <button type="button" className={`todos-stat-card ${statusFilter === 'in_progress' && !overdueOnly ? 'active' : ''}`} onClick={() => { setStatusFilter('in_progress'); setOverdueOnly(false) }}>
           <div className="todos-stat-icon in_progress"><RefreshCw size={20} /></div>
           <div className="todos-stat-info">
             <div className="val">{stats.in_progress}</div>
             <div className="lbl">Đang xử lý</div>
           </div>
-        </div>
-        <div className={`todos-stat-card ${statusFilter === 'completed' ? 'active' : ''}`} onClick={() => setStatusFilter('completed')}>
+        </button>
+        <button type="button" className={`todos-stat-card ${statusFilter === 'completed' && !overdueOnly ? 'active' : ''}`} onClick={() => { setStatusFilter('completed'); setOverdueOnly(false) }}>
           <div className="todos-stat-icon completed"><CheckCircle2 size={20} /></div>
           <div className="todos-stat-info">
             <div className="val">{stats.completed}</div>
             <div className="lbl">Đã hoàn thành</div>
           </div>
-        </div>
-        <div className="todos-stat-card" onClick={() => { setStatusFilter('all'); }}>
+        </button>
+        <button type="button" className={`todos-stat-card ${overdueOnly ? 'active' : ''}`} onClick={() => { setStatusFilter('all'); setOverdueOnly(true) }}>
           <div className="todos-stat-icon overdue"><AlertCircle size={20} /></div>
           <div className="todos-stat-info">
             <div className="val" style={{ color: stats.overdue > 0 ? '#f87171' : 'inherit' }}>{stats.overdue}</div>
             <div className="lbl">Quá hạn</div>
           </div>
-        </div>
+        </button>
       </div>
 
       {/* Toolbar Controls */}
@@ -624,19 +721,68 @@ export default function Todos() {
             <option value="urgent">Khẩn cấp</option>
           </select>
         </div>
+        <div className="todo-view-toggle" role="group" aria-label="Chế độ xem">
+          <button className={`scope-btn ${viewMode === 'kanban' ? 'active' : ''}`} onClick={() => setViewMode('kanban')}>Kanban</button>
+          <button className={`scope-btn ${viewMode === 'table' ? 'active' : ''}`} onClick={() => setViewMode('table')}>Danh sách</button>
+          {canViewDepartmentOverview && scopeFilter === 'department' && (
+            <button className={`scope-btn ${viewMode === 'overview' ? 'active' : ''}`} onClick={() => { setOverviewUser(null); setAssigneeFilter('all'); setViewMode('overview') }}>Tổng quan</button>
+          )}
+        </div>
         <button className="scope-btn" onClick={fetchData} title="Tải lại dữ liệu">
           <RefreshCw size={14} /> Tải lại
         </button>
         <button className="scope-btn" onClick={handleExport} title="Xuất báo cáo Excel (thống kê + chi tiết)">
           <FileSpreadsheet size={14} /> Xuất Excel
         </button>
+        {canViewDepartmentOverview && scopeFilter === 'department' && (
+          <button className="scope-btn" onClick={openOfficeReport} title="Xem báo cáo trong OnlyOffice">
+            <FileText size={14} /> Xem báo cáo OnlyOffice
+          </button>
+        )}
       </div>
 
-      {/* Kanban Board Container */}
+      {overviewUser && (
+        <div className="todo-user-filter-banner">Đang xem công việc của <strong>{overviewUser.full_name}</strong>
+          <button className="scope-btn" onClick={() => { setOverviewUser(null); setAssigneeFilter('all'); setViewMode('overview') }}>Bỏ lọc User</button>
+          <button className="scope-btn" onClick={() => setViewMode('table')}>Danh sách</button>
+        </div>
+      )}
+
+      {viewMode === 'overview' && canViewDepartmentOverview && scopeFilter === 'department' ? (
+        <section className="todo-overview-section">
+          <div className="todo-overview-heading"><div><h2>Tổng quan phòng ban</h2><p>Theo dõi tiến độ và mở nhanh danh sách công việc theo từng nhân viên.</p></div><span>{departmentEmployees.length} nhân viên · {todos.length} công việc</span></div>
+          <div className="todo-overview-grid">
+            {departmentEmployees.map(employee => {
+              const summary = userTaskStats(employee)
+              return <button key={employee.employee_code} type="button" className="todo-user-card" onClick={() => { setOverviewUser(employee); setAssigneeFilter(employee.employee_code); setViewMode('table') }}>
+                <div className="todo-user-card-head"><span className="todo-user-avatar">{(employee.full_name || '?').trim().charAt(0).toUpperCase()}</span><span className="todo-user-ident"><strong>{employee.full_name}</strong><small>{employee.position || 'Nhân viên'} · {employee.department || userDept}</small></span><span className="todo-user-total">{summary.total}</span></div>
+                <div className="todo-user-metrics"><span><i className="metric-dot doing" />Đang làm <b>{summary.inProgress}</b></span><span><i className="metric-dot done" />Hoàn thành <b>{summary.completed}</b></span><span><i className="metric-dot overdue" />Quá hạn <b>{summary.overdue}</b></span></div>
+                <div className="todo-user-progress-label"><span>Tiến độ tổng thể</span><b>{summary.progress}%</b></div><div className="todo-user-progress"><span style={{ width: `${summary.progress}%` }} /></div>
+                <span className="todo-user-card-action">Xem danh sách công việc →</span>
+              </button>
+            })}
+            {departmentEmployees.length === 0 && <div className="empty-state">Không có nhân viên trong phạm vi phòng ban.</div>}
+          </div>
+        </section>
+      ) : viewMode === 'table' ? (
+        <section className="todo-table-panel">
+          <div className="todo-table-toolbar"><strong>{visibleTodos.length} công việc</strong><label>Gom nhóm theo <select value={tableGroupBy} onChange={e => setTableGroupBy(e.target.value)}><option value="assignee">User</option><option value="status">Trạng thái</option></select></label></div>
+          {Object.entries(groupedTodos).map(([groupName, groupTodos]) => {
+            const collapsed = collapsedGroups.has(groupName)
+            return <div className="todo-table-group" key={groupName}>
+              <button className="todo-table-group-head" onClick={() => setCollapsedGroups(prev => { const next = new Set(prev); next.has(groupName) ? next.delete(groupName) : next.add(groupName); return next })}><ChevronRight size={15} style={{ transform: collapsed ? 'none' : 'rotate(90deg)' }} /><span>{groupName}</span><b>{groupTodos.length}</b></button>
+              {!collapsed && <div className="todo-table-scroll"><table className="todo-table"><thead><tr><th>Tiêu đề</th><th>Người nhận</th><th>Trạng thái</th><th>Ưu tiên</th><th>Hạn chót</th></tr></thead><tbody>
+                {groupTodos.map(todo => <tr key={todo.id} onClick={() => openTodoDetail(todo)}><td><strong>{todo.title}</strong>{todo.description && <small>{todo.description}</small>}</td><td>{todo.assignee_name || todo.creator_name || 'Chưa giao'}</td><td><span className={`todo-table-status status-${columnIdForTodo(todo)}`}>{todoStatusLabel(todo)}</span></td><td><span className={`badge-priority priority-${todo.priority}`}>{todo.priority}</span></td><td className={isOverdue(todo.due_date, todo.status) ? 'todo-overdue-text' : ''}>{todo.due_date ? formatDate(todo.due_date) : '—'}</td></tr>)}
+              </tbody></table></div>}
+            </div>
+          })}
+          {visibleTodos.length === 0 && <div className="empty-state">Không có công việc phù hợp bộ lọc.</div>}
+        </section>
+      ) : (
       <div className="kanban-board">
         {columns.map(col => {
-          let colTodos = todos.filter(t => {
-            if (t.status !== col.id) return false;
+          let colTodos = visibleTodos.filter(t => {
+            if (columnIdForTodo(t) !== col.id) return false;
             if (assigneeFilter !== 'all' && String(t.assignee_code) !== String(assigneeFilter)) return false;
             return true;
           });
@@ -652,19 +798,19 @@ export default function Todos() {
           const ColIcon = col.icon
 
           return (
-            <div key={col.id} className={`kanban-column column-${col.id}`}>
+            <div key={col.id} className={`kanban-column column-${col.id}${collapsedColumns.has(col.id) ? ' is-collapsed' : ''}`}>
               <div className="column-header">
                 <div className="column-title">
                   <ColIcon size={16} style={{ color: col.color }} />
                   <span>{col.label}</span>
                 </div>
-                <span className="column-count">{colTodos.length}</span>
+                <div className="column-header-actions"><span className="column-count">{colTodos.length}</span><button type="button" className="todo-collapse-btn" aria-label={collapsedColumns.has(col.id) ? 'Mở cột' : 'Thu gọn cột'} onClick={() => setCollapsedColumns(prev => { const next = new Set(prev); next.has(col.id) ? next.delete(col.id) : next.add(col.id); return next })}><ChevronRight size={15} style={{ transform: collapsedColumns.has(col.id) ? 'none' : 'rotate(90deg)' }} /></button></div>
               </div>
-              
-              <div className="column-cards">
+              {!collapsedColumns.has(col.id) && <div className="column-cards">
                 {colTodos.map(todo => {
                   const overdue = isOverdue(todo.due_date, todo.status)
                   const assigneeName = todo.assignee_name || todo.creator_name || 'Chưa giao';
+                  const canSetReviewStatus = todo.scope === 'department' && approvalRequiredFor(todo.department)
 
                   return (
                     <div
@@ -743,6 +889,7 @@ export default function Todos() {
                             >
                               <option value="todo">Cần làm</option>
                               <option value="in_progress">Đang xử lý</option>
+                              {(canSetReviewStatus || todo.status === 'review') && <option value="review" disabled={!canSetReviewStatus}>Chờ duyệt</option>}
                               <option value="completed">Hoàn thành</option>
                               <option value="cancelled">Hủy</option>
                             </select>
@@ -764,11 +911,12 @@ export default function Todos() {
                 {colTodos.length === 0 && (
                   <div className="empty-state">Chưa có công việc</div>
                 )}
-              </div>
+              </div>}
             </div>
           )
         })}
       </div>
+      )}
 
       {viewingTodo && (
         <div className="todo-modal-overlay" onClick={() => setViewingTodo(null)}>
@@ -916,7 +1064,7 @@ export default function Todos() {
                            ['jpg','jpeg','png','webp'].includes(att.ext) ? <ImageIcon size={18}/> : 
                            ['xlsx','xls'].includes(att.ext) ? <FileSpreadsheet size={18}/> : <FileText size={18}/>}
                         </div>
-                        <a href={att.type === 'url' ? att.url : '#'} onClick={(e) => handleDownloadAttachment(e, att)} target={att.type === 'url' ? '_blank' : undefined} rel="noreferrer" className="att-name" title={att.name}>{att.name}</a>
+                        <a href={att.type === 'url' ? att.url : '#'} onClick={(e) => { if (openOfficeAttachment(att)) { e.preventDefault(); return } handleDownloadAttachment(e, att) }} target={att.type === 'url' ? '_blank' : undefined} rel="noreferrer" className="att-name" title={att.name}>{att.name}</a>
                         {att.type === 'url' && <ExternalLink size={14} style={{ color: '#94a3b8' }}/>}
                         {att.permissions?.can_delete && (
                           <button className="att-delete-btn" onClick={() => handleDeleteAttachment(att)} title="Xóa đính kèm">
@@ -1015,9 +1163,9 @@ export default function Todos() {
                       onChange={(e) => handleScopeChange(e.target.value)}
                     >
                       {todoCapabilities.can_create_personal && <option value="personal">Cá nhân</option>}
-                      {todoCapabilities.can_create_department && <option value="department">Phòng ban {todoCapabilities.requires_department_approval ? '(Chờ duyệt)' : '(Giao việc)'}</option>}
+                      {todoCapabilities.can_create_department && <option value="department">Phòng ban {formRequiresApproval ? '(Chờ duyệt)' : '(Giao việc)'}</option>}
                     </select>
-                    {todoCapabilities.requires_department_approval && formScope === 'department' && (
+                    {formRequiresApproval && (
                       <small className="todos-form-hint">Công việc phòng ban bạn tạo sẽ được trưởng phòng phê duyệt trước khi hiển thị cho phòng ban</small>
                     )}
                     {todoCapabilities.requires_department_approval && formScope === 'personal' && (
@@ -1204,7 +1352,9 @@ export default function Todos() {
           </div>
         </div>
       )}
-      
+      <OnlyOfficeViewer file={ooFile} isOpen={ooOpen} getConfig={getOfficeConfig}
+        onClose={() => { setOoOpen(false); setOoRequest(null); setOoFile(null) }}
+        onDownload={downloadOfficeFile} />
     </div>
   )
 }

@@ -44,10 +44,21 @@ def license_stats():
 
 @router.post("")
 def create_license(body: dict):
+    equipment_id = body.get("equipment_id") or None
+    employee_id = body.get("employee_id") or None
+    if employee_id and not fetchone("SELECT id FROM employees WHERE id=:id", {"id": employee_id}):
+        raise HTTPException(400, "Nhân viên không tồn tại")
+    if equipment_id:
+        eq = fetchone("SELECT id, employee_id FROM equipment WHERE id=:id", {"id": equipment_id})
+        if not eq:
+            raise HTTPException(400, "Thiết bị không tồn tại")
+        if employee_id and eq["employee_id"] != employee_id:
+            raise HTTPException(400, "Thiết bị phải đang được cấp cho người dùng đã chọn")
     new_id = insert(
-        "INSERT INTO licenses (equipment_id, license_key, product_name, activated, expiry_date, notes) VALUES (:equipment_id, :license_key, :product_name, :activated, :expiry_date, :notes) RETURNING id",
+        "INSERT INTO licenses (equipment_id, employee_id, license_key, product_name, activated, expiry_date, notes) VALUES (:equipment_id, :employee_id, :license_key, :product_name, :activated, :expiry_date, :notes) RETURNING id",
         {
-            "equipment_id": body.get("equipment_id"),
+            "equipment_id": equipment_id,
+            "employee_id": employee_id,
             "license_key": body.get("license_key", ""),
             "product_name": body.get("product_name", ""),
             "activated": body.get("activated", ""),
@@ -63,13 +74,15 @@ def update_license(license_id: int, body: dict):
     emp_id = body.get("employee_id") or None
     eq_id = body.get("equipment_id") or None
 
-    # Quan hệ chính xác: thiết bị gắn vào key phải thuộc user được gán key
+    # Khi một license gắn đồng thời với user và thiết bị, user phải là người đang giữ thiết bị.
+    if emp_id and not fetchone("SELECT id FROM employees WHERE id=:id", {"id": emp_id}):
+        raise HTTPException(400, "Nhân viên không tồn tại")
     if eq_id:
         eq = fetchone("SELECT id, employee_id FROM equipment WHERE id=:id", {"id": eq_id})
         if not eq:
             raise HTTPException(400, "Thiết bị không tồn tại")
-        if emp_id and eq["employee_id"] and eq["employee_id"] != emp_id:
-            raise HTTPException(400, "Thiết bị không thuộc người dùng đã chọn. Hãy chọn thiết bị đang cấp cho người dùng này.")
+        if emp_id and eq["employee_id"] != emp_id:
+            raise HTTPException(400, "Thiết bị phải đang được cấp cho người dùng đã chọn")
 
     fields = [
         "license_key=:license_key", "product_name=:product_name", "activated=:activated",
@@ -106,11 +119,14 @@ def bulk_import(body: dict):
     employee_id = body.get("employee_id")
     product_name = body.get("product_name", "")
 
-    # Quan hệ chính xác: thiết bị gắn key phải thuộc user được gán key
-    if equipment_id and employee_id:
+    if employee_id and not fetchone("SELECT id FROM employees WHERE id=:id", {"id": employee_id}):
+        raise HTTPException(400, "Nhân viên không tồn tại")
+    if equipment_id:
         eq = fetchone("SELECT employee_id FROM equipment WHERE id=:id", {"id": equipment_id})
-        if eq and eq["employee_id"] and eq["employee_id"] != employee_id:
-            raise HTTPException(400, "Thiết bị không thuộc người dùng đã chọn. Hãy chọn thiết bị đang cấp cho người dùng này.")
+        if not eq:
+            raise HTTPException(400, "Thiết bị không tồn tại")
+        if employee_id and eq["employee_id"] != employee_id:
+            raise HTTPException(400, "Thiết bị phải đang được cấp cho người dùng đã chọn")
 
     added = 0
     for k in keys:
@@ -146,32 +162,80 @@ def import_licenses(body: dict):
             notes = _norm(item.get("notes"))
 
             equipment_id = item.get("equipment_id")
+            emp_code = _norm(item.get("employee_code"))
+            emp_name = _norm(item.get("employee_name"))
+            employee_id = None
+            if emp_code or emp_name:
+                if not emp_code and emp_name:
+                    employees = fetchall(
+                        "SELECT id, employee_code FROM employees WHERE LOWER(full_name)=LOWER(:name) ORDER BY id LIMIT 2",
+                        {"name": emp_name},
+                    )
+                    if len(employees) != 1:
+                        stats["skipped"] += 1
+                        reason = "không tìm thấy" if not employees else "không duy nhất"
+                        stats["errors"].append(f"Dòng {line_no}: tên nhân viên {emp_name} {reason}; dùng mã nhân viên")
+                        continue
+                    employee_id, emp_code = employees[0]["id"], employees[0]["employee_code"]
+                else:
+                    emp = fetchone(
+                        "SELECT id, employee_code FROM employees WHERE employee_code=:code",
+                        {"code": emp_code},
+                    )
+                    if not emp:
+                        stats["skipped"] += 1
+                        stats["errors"].append(f"Dòng {line_no}: không tìm thấy mã nhân viên {emp_code}")
+                        continue
+                    employee_id = emp["id"]
+
             if equipment_id is None or equipment_id == "":
                 eq_ref = _norm(item.get("asset_code")) or _norm(item.get("serial_number"))
                 if eq_ref:
-                    eq = fetchone(
-                        "SELECT id FROM equipment WHERE asset_code=:c OR serial_number=:c LIMIT 1",
-                        {"c": eq_ref},
+                    matches = fetchall(
+                        "SELECT id, employee_id FROM equipment WHERE asset_code=:ref OR serial_number=:ref ORDER BY id LIMIT 2",
+                        {"ref": eq_ref},
                     )
-                    equipment_id = eq["id"] if eq else None
-                if not equipment_id:
-                    emp_code = _norm(item.get("employee_code"))
-                    emp_name = _norm(item.get("employee_name"))
-                    if not emp_code and emp_name:
-                        emp = fetchone(
-                            "SELECT employee_code FROM employees WHERE LOWER(full_name)=LOWER(:c) LIMIT 1",
-                            {"c": emp_name},
-                        )
-                        emp_code = emp["employee_code"] if emp else ""
-                    if emp_code:
-                        eq = fetchone(
-                            "SELECT id FROM equipment WHERE employee_id = "
-                            "(SELECT id FROM employees WHERE employee_code=:c LIMIT 1) LIMIT 1",
-                            {"c": emp_code},
-                        )
-                        equipment_id = eq["id"] if eq else None
+                    if not matches:
+                        equipment_id = None
+                    elif len(matches) > 1:
+                        stats["skipped"] += 1
+                        stats["errors"].append(f"Dòng {line_no}: mã thiết bị/SN {eq_ref} không duy nhất")
+                        continue
+                    elif employee_id and matches[0]["employee_id"] != employee_id:
+                        stats["skipped"] += 1
+                        stats["errors"].append(f"Dòng {line_no}: thiết bị {eq_ref} không thuộc nhân viên đã chọn")
+                        continue
+                    else:
+                        equipment_id = matches[0]["id"]
+                elif employee_id:
+                    matches = fetchall(
+                        "SELECT id FROM equipment WHERE employee_id=:id ORDER BY id LIMIT 2",
+                        {"id": employee_id},
+                    )
+                    if len(matches) == 1:
+                        equipment_id = matches[0]["id"]
+                    elif len(matches) > 1:
+                        stats["skipped"] += 1
+                        stats["errors"].append(f"Dòng {line_no}: nhân viên {emp_code} có nhiều thiết bị, cần chỉ rõ mã hoặc ID thiết bị")
+                        continue
             else:
-                equipment_id = int(equipment_id)
+                try:
+                    equipment_id = int(equipment_id)
+                except (TypeError, ValueError):
+                    stats["skipped"] += 1
+                    stats["errors"].append(f"Dòng {line_no}: ID thiết bị không hợp lệ")
+                    continue
+
+            if equipment_id:
+                eq = fetchone("SELECT employee_id FROM equipment WHERE id=:id", {"id": equipment_id})
+                if not eq:
+                    stats["skipped"] += 1
+                    stats["errors"].append(f"Dòng {line_no}: không tìm thấy ID thiết bị {equipment_id}")
+                    continue
+                if employee_id and eq["employee_id"] != employee_id:
+                    stats["skipped"] += 1
+                    stats["errors"].append(f"Dòng {line_no}: thiết bị không thuộc nhân viên đã chọn")
+                    continue
 
             if not equipment_id:
                 stats["skipped"] += 1

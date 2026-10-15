@@ -607,3 +607,19 @@ class FormulaPrintLog(Base):
     printed_by = Column(String(50), ForeignKey('users.employee_code'), nullable=True, index=True)
     printed_at = Column(DateTime, default=datetime.utcnow)
     ip_address = Column(String(50), default='')
+
+
+class FormulaPrintJob(Base):
+    """Lệnh in được xử lý bởi print agent trên PC nhà máy."""
+    __tablename__ = 'formula_print_jobs'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    recipe_id = Column(Integer, ForeignKey('formula_recipes.id', ondelete='CASCADE'), nullable=False, index=True)
+    requested_by = Column(String(50), ForeignKey('users.employee_code'), nullable=True, index=True)
+    station_id = Column(String(100), nullable=False, index=True)
+    request_ip = Column(String(50), nullable=True, default='')
+    status = Column(String(20), nullable=False, default='queued', index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=True, index=True)
+    claimed_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    error = Column(Text, nullable=True)

@@ -55,6 +55,8 @@ services:
       - SESSION_SECRET=${SESSION_SECRET:-${ONLYOFFICE_SECRET}}
       - ONLYOFFICE_ENABLED=${ONLYOFFICE_ENABLED}
       - DRAWIO_PUBLIC_URL=${DRAWIO_PUBLIC_URL}
+      - FORMULA_PRINT_AGENT_KEY=${FORMULA_PRINT_AGENT_KEY:-}
+      - FORMULA_PRINT_DPI=${FORMULA_PRINT_DPI:-300}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]

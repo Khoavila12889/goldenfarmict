@@ -83,3 +83,6 @@ update.sh
 update.sh
 update.sh
 postgres/
+
+# Versioned chat performance migration (not a database dump)
+!backend/migrations/20261015_chat_history_indexes.sql

@@ -12,7 +12,7 @@ function cleanEditorConfig(raw) {
   return config
 }
 
-export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getConfig }) {
+export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getConfig, onDownload }) {
   const [editorConfig, setEditorConfig] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -234,10 +234,11 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
       <div className="oov-container" onClick={e => e.stopPropagation()}>
 
         {/* Nút Đóng lơ lửng góc phải đè lên giao diện ONLYOFFICE */}
-        <button onClick={onClose} className="oov-close-btn-floating" title="Đóng (Esc)" type="button">
-          <X size={12} />
-          <span>Đóng</span>
-        </button>
+        <div className="oov-floating-actions">
+          {onDownload && <button onClick={onDownload} className="oov-close-btn-floating" title="Tải tài liệu về" type="button"><span>Tải về</span></button>}
+          {editorInited && <button onClick={() => { try { editorRef.current?.executeMethod('Print') } catch (_) {} }} className="oov-close-btn-floating" title="In tài liệu" type="button"><span>In</span></button>}
+          <button onClick={onClose} className="oov-close-btn-floating" title="Đóng (Esc)" type="button"><X size={12} /><span>Đóng</span></button>
+        </div>
 
         <div className="oov-body">
           {showLoading && (

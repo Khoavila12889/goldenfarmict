@@ -3,6 +3,7 @@
 from typing import Any
 
 from fastapi import HTTPException
+from app.core.db import fetchall, fetchone
 
 ADMIN = "admin"
 HEAD = "head"
@@ -48,20 +49,59 @@ def can_create_in_scope(user: dict, scope: str, department: Any = None) -> bool:
     return can_manage_department(user, department)
 
 
-def requires_department_approval(user: dict, scope: str) -> bool:
-    return scope == DEPARTMENT and user.get("user_role") == USER
+def requires_department_approval(user: dict, scope: str, department: Any = None) -> bool:
+    """Only an explicit setting for the target department enables approval."""
+    if scope != DEPARTMENT:
+        return False
+    dept = str(department or user.get("department") or "").strip()
+    if dept:
+        row = fetchone(
+            "SELECT can_view, can_edit FROM department_permissions "
+            "WHERE LOWER(TRIM(department)) = LOWER(TRIM(:dept)) AND module = :module",
+            {"dept": dept, "module": "todos.requires_approval"},
+        )
+        if row is not None:
+            return bool(row["can_view"] or row["can_edit"])
+    return False
 
 
 def capabilities_for(user: dict) -> dict:
-    allowed = departments_for(user)
+    permitted_departments = departments_for(user)
+    allowed = permitted_departments
     role = user.get("user_role")
+    if allowed is None:
+        allowed = [r["department"] for r in fetchall(
+            "SELECT name AS department FROM departments "
+            "UNION SELECT department FROM employees WHERE department IS NOT NULL AND TRIM(department) != '' "
+            "UNION SELECT department FROM todos WHERE scope = 'department' AND department IS NOT NULL AND TRIM(department) != ''"
+        )]
+    module = {"module": "todos.requires_approval"}
+    department_rows = fetchall(
+        "SELECT department, can_view, can_edit FROM department_permissions WHERE module = :module", module
+    )
+    department_settings = {
+        str(row["department"]).strip().casefold(): bool(row["can_view"] or row["can_edit"])
+        for row in department_rows
+    }
+    approval_by_department = {
+        dept: department_settings.get(str(dept).strip().casefold(), False)
+        for dept in allowed
+    }
+    review_by_department = approval_by_department.copy()
+    viewer_dept = str(user.get("department") or "").strip().casefold()
+    viewer_review_setting = next(
+        (enabled for dept, enabled in review_by_department.items() if str(dept).strip().casefold() == viewer_dept),
+        None,
+    ) if viewer_dept else None
     return {
         "can_create": True,
         "can_create_personal": can_create_in_scope(user, PERSONAL),
         "can_create_department": role == ADMIN or bool(allowed),
-        "can_choose_department": role in (ADMIN, HEAD) and bool(allowed is None or allowed),
-        "allowed_departments": allowed,
-        "requires_department_approval": role == USER,
+        "can_choose_department": role == ADMIN or (role == HEAD and bool(allowed)),
+        "allowed_departments": permitted_departments,
+        "approval_by_department": approval_by_department,
+        "review_by_department": review_by_department,
+        "requires_department_approval": viewer_review_setting if viewer_review_setting is not None else any(review_by_department.values()),
         "default_scope": DEPARTMENT if role == HEAD else PERSONAL,
     }
 

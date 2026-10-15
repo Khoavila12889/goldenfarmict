@@ -33,6 +33,7 @@ _DB_TARGETS = [
     ("app.core.db",              list(_DB_MOCKS)),
     ("app.routers.comments",     list(_DB_MOCKS)),
     ("app.routers.attachments",  list(_DB_MOCKS)),
+    ("app.routers.monitor",      ["fetchall", "fetchone"]),
     ("app.services.mention_parser", ["fetchone", "execute"]),
 ]
 

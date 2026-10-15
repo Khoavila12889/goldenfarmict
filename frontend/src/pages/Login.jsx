@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, ArrowRight, ArrowLeft, Check, Mail, Lock, KeyRound, Server } from 'lucide-react'
 import { login, forgotPassword, verifyReset, setServerUrl, getServerOrigin, apiErrorMessage, isNativeApp } from '../services/api'
 import logoSrc from '../assets/logo.png'
-import bgSrc from '../assets/backgroud .webp'
 import './Login.css'
+
+const bgSrc = '/assets/backgroud.webp'
 
 // Chạy trên App Mobile đã build qua Capacitor/Cordova?
 const isNative = isNativeApp()
@@ -120,7 +121,7 @@ export default function Login() {
       <div className="login-card">
         {!showForgot ? (
           <>
-            <h2 className="login-title">Đăng nhập vào Cánh Đồng Vàng</h2>
+            <h2 className="login-title">Đăng nhập</h2>
 
             {error && (
               <div className="login-error">{error}</div>

@@ -1,7 +1,7 @@
 /**
  * FactoryPrinting.jsx - Trang In Công Thức Sản Xuất cho Nhà Máy
  *
- * - Click IN → fetch PDF blob → in trực tiếp bằng print-js (không preview)
+ * - Click IN → tạo print job; agent tại PC nhà máy nhận ảnh raster và in
  * - SSE Real-time
  */
 
@@ -10,7 +10,6 @@ import {
   Search, Printer, CheckCircle, AlertCircle, Loader2,
   FileText, Package, Bell, X
 } from 'lucide-react'
-import printJS from 'print-js'
 import { apiUrl } from '../services/api'
 import useFormulaSSE from '../hooks/useFormulaSSE'
 import './FactoryPrinting.css'
@@ -26,7 +25,6 @@ export default function FactoryPrinting() {
   const [printingId, setPrintingId] = useState(null)
 
   const searchInputRef = useRef(null)
-  const blobUrlRef = useRef(null)
 
   const userRole = sessionStorage.getItem('user_role') || ''
   const isAdmin = userRole === 'admin' || userRole === 'head'
@@ -41,21 +39,13 @@ export default function FactoryPrinting() {
     const userCode = sessionStorage.getItem('user_code') || ''
     const userRole = sessionStorage.getItem('user_role') || ''
     const userDept = sessionStorage.getItem('user_department') || ''
-    return { user_code: userCode, user_role: userRole, user_dept: userDept }
+    const token = sessionStorage.getItem('token') || ''
+    return { user_code: userCode, user_role: userRole, user_dept: userDept, token }
   }, [])
 
   const getAuthHeaders = useCallback(() => {
     const token = sessionStorage.getItem('token') || ''
     return { Authorization: `Bearer ${token}` }
-  }, [])
-
-  // Cleanup blob URL on unmount
-  useEffect(() => {
-    return () => {
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current)
-      }
-    }
   }, [])
 
   // ─── Fetch recipes ─────────────────────────────────────────
@@ -140,7 +130,12 @@ export default function FactoryPrinting() {
     searchInputRef.current?.focus()
   }
 
-  // In trực tiếp: fetch PDF blob → print-js (không preview)
+  const handleQuickSearch = (value) => {
+    setKeyword(value)
+    fetchRecipes(value)
+  }
+
+  // Browser chỉ tạo lệnh; print agent trên PC nhà máy lấy ảnh và gửi tới máy in.
   const handleDirectPrint = async (recipe) => {
     setPrintingId(recipe.id)
     setError('')
@@ -150,68 +145,44 @@ export default function FactoryPrinting() {
       const userParams = getUserParams()
       const queryString = new URLSearchParams(userParams).toString()
 
-      const response = await fetch(
-        apiUrl(`/formulas/${recipe.id}/print-stream?${queryString}`),
-        { method: 'GET', headers: getAuthHeaders() }
+      const stationId = localStorage.getItem('formula_print_station_id') || 'factory-main'
+      const jobResponse = await fetch(
+        apiUrl(`/formulas/${recipe.id}/print-jobs?${queryString}&station_id=${encodeURIComponent(stationId)}`),
+        { method: 'POST', headers: getAuthHeaders() }
       )
 
-      if (!response.ok) {
-        let errorMsg = `Lỗi server (${response.status})`
-        try {
-          const errJson = await response.json()
-          errorMsg = errJson.detail || errorMsg
-        } catch (_) {}
+      if (!jobResponse.ok) {
+        let errorMsg = `Lỗi server (${jobResponse.status})`
+        try { const errJson = await jobResponse.json(); errorMsg = errJson.detail || errorMsg } catch (_) {}
         throw new Error(errorMsg)
       }
-
-      const contentType = response.headers.get('content-type') || ''
-      if (contentType.includes('application/json')) {
-        const errJson = await response.json()
-        throw new Error(errJson.detail || 'Không tìm thấy file PDF')
-      }
-
-      const blob = await response.blob()
-      if (blob.size === 0) throw new Error('File PDF rỗng')
-
-      // Cleanup blob URL cũ
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current)
-      }
-
-      const blobUrl = URL.createObjectURL(blob)
-      blobUrlRef.current = blobUrl
-
-      printJS({
-        printable: blobUrl,
-        type: 'pdf',
-        showModal: false,
-        onLoadingEnd: () => {
-          setTimeout(() => {
-            if (blobUrlRef.current === blobUrl) {
-              URL.revokeObjectURL(blobUrl)
-              blobUrlRef.current = null
-            }
-          }, 500)
-        },
-        onPrintDialogClose: () => {
-          setPrintingId(null)
-          setSuccess(`Đã gửi lệnh in "${recipe.recipe_name}"`)
+      const job = await jobResponse.json()
+      setSuccess('Đang chờ máy in nhận lệnh...')
+      const deadline = Date.now() + 120000
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 1500))
+        const statusResponse = await fetch(
+          apiUrl(`/formulas/print-jobs/${job.job_id}?${queryString}`),
+          { headers: getAuthHeaders() }
+        )
+        if (!statusResponse.ok) throw new Error('Không kiểm tra được trạng thái lệnh in')
+        const jobStatus = await statusResponse.json()
+        if (jobStatus.status === 'completed') {
+          setSuccess(`Đã gửi lệnh in "${recipe.recipe_name}" tới máy in`)
           setTimeout(() => setSuccess(''), 5000)
-        },
-        onError: (err) => {
-          console.error('Print error:', err)
-          if (blobUrlRef.current === blobUrl) {
-            URL.revokeObjectURL(blobUrl)
-            blobUrlRef.current = null
-          }
-          setPrintingId(null)
-          setError('Lỗi khi in: ' + (err?.message || 'Không xác định'))
+          return
         }
-      })
+        if (jobStatus.status === 'failed') throw new Error(jobStatus.error || 'Máy in không xử lý được lệnh')
+        setSuccess(jobStatus.status === 'printing' ? 'Máy in đang xử lý công thức...' : 'Đang chờ máy in nhận lệnh...')
+      }
+      throw new Error('Máy in chưa nhận lệnh. Kiểm tra print agent trên PC nhà máy trước khi thử lại.')
     } catch (err) {
       console.error('Direct print error:', err)
       setPrintingId(null)
-      setError('Lỗi: ' + (err?.message || 'Không thể tải file PDF'))
+      setSuccess('')
+      setError('Lỗi: ' + (err?.message || 'Không thể gửi lệnh tới máy in'))
+    } finally {
+      setPrintingId(null)
     }
   }
 
@@ -256,6 +227,7 @@ export default function FactoryPrinting() {
           <Printer size={24} className="title-icon" />
           Công thức sản xuất
         </h1>
+        <p className="fp-subtitle">Tìm công thức đang áp dụng và bấm In để gửi tới máy in mặc định.</p>
       </div>
 
       <div className="search-section">
@@ -284,6 +256,13 @@ export default function FactoryPrinting() {
             )}
           </button>
         </form>
+
+        <div className="search-hints">
+          <span>Gợi ý:</span>
+          <button type="button" onClick={() => handleQuickSearch('')} disabled={loading}>Công thức mới hôm nay</button>
+          <span>·</span>
+          <span>Tìm nhanh theo mã hoặc tên công thức</span>
+        </div>
 
         {error && (
           <div className="alert alert-error">
@@ -340,7 +319,7 @@ export default function FactoryPrinting() {
                   <button
                     className={`btn-print ${isPrinting ? 'printing' : ''}`}
                     onClick={() => handleDirectPrint(item)}
-                    disabled={isPrinting}
+                    disabled={printingId !== null}
                   >
                     {isPrinting ? (
                       <><Loader2 className="spinning" size={20} /> Đang in...</>
@@ -362,6 +341,7 @@ export default function FactoryPrinting() {
           </div>
           <h3>Không có công thức</h3>
           <p>{keyword ? `Không tìm thấy kết quả nào cho từ khóa "${keyword}"` : "Chưa có công thức nào được tạo trong ngày hôm nay"}</p>
+          {keyword && <button className="empty-reset" type="button" onClick={handleClearSearch}>Xóa tìm kiếm</button>}
         </div>
       )}
     </div>
