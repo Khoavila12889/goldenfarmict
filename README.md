@@ -1921,3 +1921,25 @@ và sinh redirect về đúng cổng của Vite → iframe editor vẫn same-ori
   - Để scale-out multi-worker: Sử dụng Redis Pub/Sub kết hợp hàm hook `set_cluster_publish`.
 - **SSE filterRef**: Dùng `useRef` tránh reconnect khi filter thay đổi
 - **Booking status update**: Cập nhật mỗi 30s qua `useCurrentTime` hook (vạch đỏ + trạng thái)
+# Module đơn hàng Sales
+
+Trang `/orders` dành cho nhân viên tra cứu đơn TO2, lọc đơn hôm nay/chưa duyệt,
+tìm theo số chứng từ, mã hoặc tên khách và mở drawer chi tiết. Trang tự cập nhật
+mỗi 30 giây; đơn xuất hiện sau lần tải đầu được đánh dấu `MỚI` và đưa lên đầu.
+
+Luồng dữ liệu chỉ đọc:
+
+```text
+React /orders → FastAPI /api/orders → Sales Bot API :3107 → ERP PostgreSQL
+```
+
+Cấu hình trong `.env` của Goldenfarmict:
+
+```env
+SALES_BOT_API_URL=http://host.docker.internal:3107
+SALES_BOT_API_KEY=<giống N8N_ORDER_KEY của /home/sales-bot-api/.env>
+```
+
+Không đưa key vào frontend. Backend xác minh session Goldenfarm trước khi proxy
+yêu cầu và Sales Bot API vẫn chỉ thực hiện truy vấn đọc.
+

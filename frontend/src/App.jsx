@@ -25,6 +25,7 @@ import ToolsDrawio from './pages/ToolsDrawio'
 import FactoryPrinting from './pages/FactoryPrinting'
 import FormulaManagement from './pages/FormulaManagement'
 import AdminBackups from './pages/AdminBackups'
+import Orders from './pages/Orders'
 import Layout from './components/Layout'
 
 function ProtectedRoute({ children }) {
@@ -74,6 +75,7 @@ export default function App() {
         <Route path="todos" element={<Todos />} />
         <Route path="employees" element={<AdminRoute requiredModule="employees"><Employees /></AdminRoute>} />
         <Route path="tickets" element={<Tickets />} />
+        <Route path="orders" element={<AdminRoute requiredModule="orders"><Orders /></AdminRoute>} />
         <Route path="bookings" element={<BookingPage />} />
         <Route path="nghiphep" element={<NghiPhep />} />
         <Route path="licenses" element={<AdminRoute requiredModule="licenses"><Licenses /></AdminRoute>} />

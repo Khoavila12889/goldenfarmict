@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Monitor, Key, Ticket, CheckCircle, 
   Settings, Calendar, Receipt, Folder, Shield, Menu, X, User, 
   Lock, Eye, EyeOff, CheckSquare, HelpCircle, Activity, MessageSquare,
-  CalendarOff, PenTool, Printer, FileSpreadsheet, Archive
+  CalendarOff, PenTool, Printer, FileSpreadsheet, Archive, ShoppingCart
 } from 'lucide-react'
 import { changePassword, getProfile, apiUrl } from '../services/api'
 import { driver } from 'driver.js'
@@ -34,6 +34,7 @@ const iconMap = {
   formulaPrint: Printer,
   formulaManage: FileSpreadsheet,
   backups: Archive,
+  orders: ShoppingCart,
 }
 
 const allNavItems = [
@@ -44,6 +45,7 @@ const allNavItems = [
   { path: '/equipment', label: 'Thiết bị', icon: 'equipment', roles: ['head', 'admin'] },
   { path: '/licenses', label: 'License Keys', icon: 'licenses', roles: ['head', 'admin'] },
   { path: '/tickets', label: 'Tickets', icon: 'tickets', roles: ['user', 'head', 'admin'] },
+  { path: '/orders', label: 'Đơn hàng', icon: 'orders', roles: ['admin'] },
   { path: '/approvals', label: 'Phê duyệt', icon: 'approvals', roles: ['user', 'head', 'admin'] },
   { path: '/workflows', label: 'Quy trình', icon: 'workflows', roles: ['head', 'admin'] },
   { path: '/bookings', label: 'Lịch(Booking)', icon: 'bookings', roles: ['user', 'head', 'admin'] },
@@ -68,6 +70,7 @@ const MODULE_MAP = {
   '/equipment': 'equipment',
   '/licenses': 'licenses',
   '/tickets': 'tickets',
+  '/orders': 'orders',
   '/approvals': 'approvals',
   '/workflows': 'workflows',
   '/bookings': 'bookings',

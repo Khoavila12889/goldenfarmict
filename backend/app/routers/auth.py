@@ -31,6 +31,7 @@ class LoginResponse(BaseModel):
 # Mặc định bật cho admin và trưởng phòng; cấp thêm cho user đặc biệt qua trang Phân quyền.
 DEFAULT_ROLE_MODULE_PERMS = {
     "admin": {
+        "orders": {"can_view": True, "can_edit": False},
         "announcements": {"can_view": True, "can_edit": True},
         "password-reset": {"can_view": True, "can_edit": True},
         "nghiphep": {"can_view": True, "can_edit": False},
@@ -330,6 +331,7 @@ ALL_MODULES = [
     {"key": "todos", "label": "Công việc (Todos)", "group": "support"},
     {"key": "todos.requires_approval", "label": "Công việc — Cơ chế Chờ duyệt", "group": "support"},
     {"key": "tickets", "label": "Tickets", "group": "support"},
+    {"key": "orders", "label": "Trung tâm đơn hàng", "group": "support"},
     {"key": "approvals", "label": "Phê duyệt", "group": "support"},
     {"key": "workflows", "label": "Quy trình", "group": "admin"},
     {"key": "bookings", "label": "Lịch", "group": "support"},

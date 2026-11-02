@@ -12,7 +12,7 @@ function cleanEditorConfig(raw) {
   return config
 }
 
-export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getConfig, onDownload }) {
+export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getConfig, onDownload, onSwitchCraft }) {
   const [editorConfig, setEditorConfig] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -26,6 +26,8 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
   const initAttemptedRef = useRef(false)
   const initTimerRef = useRef(null)
   const initedRef = useRef(false)
+  const configRequestRef = useRef(0)
+  const configTimerRef = useRef(null)
 
   const userCode = sessionStorage.getItem('user_code') || ''
   const userRole = sessionStorage.getItem('user_role') || 'user'
@@ -56,6 +58,14 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
   }, [getConfig, file, configId, userCode, userRole])
 
   const loadConfig = useCallback(() => {
+    const requestId = ++configRequestRef.current
+    clearTimeout(configTimerRef.current)
+    configTimerRef.current = setTimeout(() => {
+      if (requestId !== configRequestRef.current) return
+      ++configRequestRef.current
+      setLoading(false)
+      setError('Tải cấu hình OnlyOffice quá lâu. Vui lòng thử lại.')
+    }, INIT_TIMEOUT_MS)
     setLoading(true)
     setError(null)
     setEditorConfig(null)
@@ -66,10 +76,14 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
 
     buildConfigRequest()
       .then(r => {
+        if (requestId !== configRequestRef.current) return
+        clearTimeout(configTimerRef.current)
         setEditorConfig(r.data)
         setLoading(false)
       })
       .catch(err => {
+        if (requestId !== configRequestRef.current) return
+        clearTimeout(configTimerRef.current)
         const msg = err.response?.data?.detail || err.message || 'Không thể khởi tạo ONLYOFFICE'
         setError(typeof msg === 'string' ? msg : JSON.stringify(msg))
         setLoading(false)
@@ -87,6 +101,10 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
       return
     }
     loadConfig()
+    return () => {
+      ++configRequestRef.current
+      clearTimeout(configTimerRef.current)
+    }
   }, [isOpen, file, configId, getConfig, destroyEditor, loadConfig])
 
   // ── Load DocsAPI script ────────────────────────────────────────
@@ -103,28 +121,36 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
       return
     }
 
-    let script = document.getElementById('oo-docsapi-script')
-    if (!script) {
-      script = document.createElement('script')
-      script.id = 'oo-docsapi-script'
-      script.src = apiUrl
-      script.async = true
-      document.body.appendChild(script)
+    // Replace a failed/stale script on every attempt. Register handlers before
+    // appending so a cached response cannot race the load listener.
+    document.getElementById('oo-docsapi-script')?.remove()
+    const script = document.createElement('script')
+    script.id = 'oo-docsapi-script'
+    script.src = apiUrl
+    script.async = true
+    const fail = (message) => {
+      clearTimeout(timer)
+      script.remove()
+      setError(message)
     }
-
     const onLoad = () => {
-      if (window.DocsAPI && window.DocsAPI.DocEditor) setScriptReady(true)
-      else setError(`ONLYOFFICE API đã tải nhưng DocsAPI.DocEditor không khả dụng.\nURL: ${apiUrl}`)
+      if (window.DocsAPI?.DocEditor) {
+        clearTimeout(timer)
+        setScriptReady(true)
+      } else {
+        fail('OnlyOffice đã tải nhưng chưa sẵn sàng. Vui lòng thử lại.')
+      }
     }
-    const onError = () => setError(
-      `Không thể tải ONLYOFFICE API. Vui lòng kiểm tra kết nối mạng và thử lại.\nURL: ${apiUrl}`
-    )
-
+    const onError = () => fail('Không thể tải OnlyOffice. Kiểm tra kết nối mạng và bấm Thử lại.')
+    const timer = setTimeout(() => fail('Tải OnlyOffice quá lâu. Vui lòng thử lại.'), INIT_TIMEOUT_MS)
     script.addEventListener('load', onLoad)
     script.addEventListener('error', onError)
+    document.body.appendChild(script)
     return () => {
+      clearTimeout(timer)
       script.removeEventListener('load', onLoad)
       script.removeEventListener('error', onError)
+      if (!window.DocsAPI?.DocEditor) script.remove()
     }
   }, [editorConfig, isOpen])
 
@@ -165,8 +191,8 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
         events: {
           ...(config.events || {}),
           onAppReady: () => {
-            clearTimers()
-            initedRef.current = true
+            // Show the editor shell, but keep the document-load deadline until
+            // the actual file is ready (a healthy shell can still fail to load).
             setEditorInited(true)
           },
           onDocumentReady: () => {
@@ -235,6 +261,7 @@ export default function OnlyOfficeViewer({ file, configId, isOpen, onClose, getC
 
         {/* Nút Đóng lơ lửng góc phải đè lên giao diện ONLYOFFICE */}
         <div className="oov-floating-actions">
+          {onSwitchCraft && <button onClick={onSwitchCraft} className="oov-close-btn-floating" type="button"><span>Mở bằng Craft (beta)</span></button>}
           {onDownload && <button onClick={onDownload} className="oov-close-btn-floating" title="Tải tài liệu về" type="button"><span>Tải về</span></button>}
           {editorInited && <button onClick={() => { try { editorRef.current?.executeMethod('Print') } catch (_) {} }} className="oov-close-btn-floating" title="In tài liệu" type="button"><span>In</span></button>}
           <button onClick={onClose} className="oov-close-btn-floating" title="Đóng (Esc)" type="button"><X size={12} /><span>Đóng</span></button>

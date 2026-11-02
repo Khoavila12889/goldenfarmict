@@ -99,9 +99,9 @@ function buildFileDownloadUrl(cfg, entry, currentPath, userCode, userRole, inlin
     : `${currentPath.replace(/\/$/, '')}/${entry.name}`
   let url = apiUrl(`/documents/download?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}`)
   if (isGdrive && entry.id) url += `&file_id=${encodeURIComponent(entry.id)}`
-  url += `&user_code=${userCode}&user_role=${userRole}`
+  url += `&user_code=${encodeURIComponent(userCode)}&user_role=${encodeURIComponent(userRole)}`
   if (inline) url += '&inline=true'
-  return encodeURI(url)
+  return url
 }
 
 function SkeletonRows({ count = 5 }) {
@@ -320,7 +320,7 @@ export default function Documents() {
       'pdf', 'txt', 'log', 'md', 'json', 'xml', 'csv',
       'html', 'css', 'js', 'jsx', 'ts', 'tsx', 'py', 'java', 'c', 'cpp', 'h', 'cs', 'php', 'rb', 'go', 'rs', 'sql',
       'mp4', 'webm', 'ogg', 'mp3', 'wav', 'm4a',
-      'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+      'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf',
       'drawio',
     ]
     return previewable.includes(ext)
@@ -331,29 +331,37 @@ export default function Documents() {
   const craftWordExts = new Set(['doc','docx','odt','rtf'])
   const craftSheetExts = new Set(['xls','xlsx','csv'])
 
-  function openWithCraft(entry, currentPath) {
+  function openWithCraft(entry, currentPath, cfg = activeConfig) {
+    if (!cfg) return false
     const ext = (entry.name || '').split('.').pop().toLowerCase()
     if (craftWordExts.has(ext) || craftSheetExts.has(ext)) {
-      setCraftEntry({ ...entry, browsePath: currentPath })
+      setCraftEntry({ ...entry, browsePath: currentPath, configId: cfg.id, storageType: cfg.type })
       setCraftFile({
         name: entry.name,
-        url: buildCraftPreviewUrl(activeConfig, entry, currentPath, userCode, userRole),
+        url: buildCraftPreviewUrl(cfg, entry, currentPath, userCode, userRole),
         kind: craftWordExts.has(ext) ? 'pdf' : 'html',
         app: craftWordExts.has(ext) ? 'WordCraft' : 'GridCraft',
+        downloadUrl: buildFileDownloadUrl(cfg, entry, currentPath, userCode, userRole),
       })
       return true
     }
     if (ext === 'pdf') {
-      setCraftEntry({ ...entry, browsePath: currentPath })
+      setCraftEntry({ ...entry, browsePath: currentPath, configId: cfg.id, storageType: cfg.type })
       setCraftFile({
         name: entry.name,
-        url: buildFileDownloadUrl(activeConfig, entry, currentPath, userCode, userRole, true),
+        url: buildFileDownloadUrl(cfg, entry, currentPath, userCode, userRole, true),
         kind: 'pdf',
-        app: 'PdfCraft',
+        app: 'PDF',
+        downloadUrl: buildFileDownloadUrl(cfg, entry, currentPath, userCode, userRole),
       })
       return true
     }
     return false
+  }
+
+  function selectPreviewEngine(useCraft) {
+    setCraftMode(useCraft)
+    try { localStorage.setItem('craft_viewer', useCraft ? '1' : '0') } catch (_) {}
   }
 
   function isCraftOpenable(name) {
@@ -367,8 +375,8 @@ export default function Documents() {
       : `${currentPath.replace(/\/$/, '')}/${entry.name}`
     let url = apiUrl(`/craft/preview?config_id=${cfg.id}&file_path=${encodeURIComponent(normalizedPath)}`)
     if (cfg?.type === 'gdrive' && entry.id) url += `&file_id=${encodeURIComponent(entry.id)}`
-    url += `&user_code=${userCode}&user_role=${userRole}`
-    return encodeURI(url)
+    url += `&user_code=${encodeURIComponent(userCode)}&user_role=${encodeURIComponent(userRole)}`
+    return url
   }
 
   function isOfficeFile(name) {
@@ -386,7 +394,7 @@ export default function Documents() {
       return
     }
 
-    // PDF → craftMode: đọc bằng trình PDF của browser + nút mở trong PdfCraft;
+    // PDF → craftMode: đọc bằng trình PDF của browser;
     // tắt craftMode: xem bằng các trang ảnh WebP đã convert trên server (nhanh, không cần OnlyOffice)
     const ext = entry.name.split('.').pop().toLowerCase()
     if (ext === 'pdf') {
@@ -962,14 +970,17 @@ export default function Documents() {
               <LayoutGrid size={15} />
             </button>
           </div>
-          <button className={`doc-btn${craftMode ? ' doc-btn-primary' : ' doc-btn-ghost'}`}
-            onClick={() => {
-              const next = !craftMode
-              setCraftMode(next)
-              try { localStorage.setItem('craft_viewer', next ? '1' : '0') } catch (_) {}
-            }} title={craftMode ? 'Đang xem bằng Craft (beta) — bấm để về OnlyOffice' : 'Xem tài liệu bằng Craft (beta, không cần OnlyOffice)'}>
-            <FileCog size={15} /> <span>Craft</span>
-          </button>
+          <div className="doc-view-toggle" role="group" aria-label="Trình xem tài liệu mặc định">
+            <button type="button" className={`doc-btn${!craftMode ? ' doc-btn-primary' : ' doc-btn-ghost'}`}
+              aria-pressed={!craftMode} onClick={() => selectPreviewEngine(false)}>
+              OnlyOffice
+            </button>
+            <button type="button" className={`doc-btn${craftMode ? ' doc-btn-primary' : ' doc-btn-ghost'}`}
+              aria-pressed={craftMode} onClick={() => selectPreviewEngine(true)}
+              title="Word và Excel dùng Craft; định dạng chưa hỗ trợ tiếp tục dùng OnlyOffice">
+              <FileCog size={15} /> Craft (beta)
+            </button>
+          </div>
           <button className="doc-btn doc-btn-ghost doc-btn-icon" onClick={() => {
             if (activeConfig) browseFolder(activeConfig.id, breadcrumbs.at(-1).id)
             else loadConfigs()
@@ -1534,12 +1545,18 @@ export default function Documents() {
 
       <FileViewer file={viewerFile} isOpen={viewerOpen} onClose={() => { setViewerOpen(false); setViewerFile(null) }} />
       <PdfPagesViewer file={pdfPagesFile} isOpen={!!pdfPagesFile} onClose={() => setPdfPagesFile(null)} />
-      <OnlyOfficeViewer file={ooFile} configId={ooConfigId} isOpen={ooOpen} onClose={() => { setOoOpen(false); setOoFile(null); setOoConfigId(null) }} />
+      <OnlyOfficeViewer file={ooFile} configId={ooConfigId} isOpen={ooOpen}
+        onSwitchCraft={ooFile && isCraftOpenable(ooFile.name) ? () => {
+          if (openWithCraft(ooFile, ooFile.browsePath || '/', { id: ooConfigId, type: ooFile.storageType })) {
+            setOoOpen(false); setOoFile(null); setOoConfigId(null)
+          }
+        } : undefined}
+        onClose={() => { setOoOpen(false); setOoFile(null); setOoConfigId(null) }} />
       <CraftPreview file={craftFile} isOpen={!!craftFile} onClose={() => { setCraftFile(null); setCraftEntry(null) }}
         onSwitchOffice={() => {
           if (craftEntry) {
-            setOoFile({ ...craftEntry, storageType: activeConfig?.type })
-            setOoConfigId(activeConfig?.id)
+            setOoFile(craftEntry)
+            setOoConfigId(craftEntry.configId)
             setOoOpen(true)
           }
           setCraftFile(null); setCraftEntry(null)

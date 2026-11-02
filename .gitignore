@@ -93,3 +93,8 @@ craft-web/pdfcraft/*
 !craft-web/wordcraft/.gitkeep
 !craft-web/gridcraft/.gitkeep
 !craft-web/pdfcraft/.gitkeep
+
+# Local data files and generated backup/config artifacts
+*.xlsx
+docker-compose.yml.bak.*
+.claude/

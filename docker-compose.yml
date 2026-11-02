@@ -57,6 +57,12 @@ services:
       - DRAWIO_PUBLIC_URL=${DRAWIO_PUBLIC_URL}
       - FORMULA_PRINT_AGENT_KEY=${FORMULA_PRINT_AGENT_KEY:-}
       - FORMULA_PRINT_DPI=${FORMULA_PRINT_DPI:-300}
+      - CRAFT_CONCURRENCY=${CRAFT_CONCURRENCY:-3}
+      - CRAFT_QUEUE_TIMEOUT_SEC=${CRAFT_QUEUE_TIMEOUT_SEC:-120}
+      - SALES_BOT_API_URL=${SALES_BOT_API_URL:-http://host.docker.internal:3107}
+      - SALES_BOT_API_KEY=${SALES_BOT_API_KEY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
@@ -138,6 +144,7 @@ services:
       - "8771:80"
     volumes:
       - ./craft-web/wordcraft:/usr/share/nginx/html:ro
+      - ./craft-web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     restart: unless-stopped
     networks:
       - goldenfarm-network
@@ -150,6 +157,7 @@ services:
       - "8772:80"
     volumes:
       - ./craft-web/gridcraft:/usr/share/nginx/html:ro
+      - ./craft-web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     restart: unless-stopped
     networks:
       - goldenfarm-network
@@ -162,6 +170,44 @@ services:
       - "8773:80"
     volumes:
       - ./craft-web/pdfcraft:/usr/share/nginx/html:ro
+      - ./craft-web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+    networks:
+      - goldenfarm-network
+
+  # 7. Grist Core (bảng tính cộng tác) — song song OnlyOffice/Craft để test A/B.
+  # Không phụ thuộc backend/frontend/db, không sửa logic hiện có.
+  grist:
+    image: gristlabs/grist:latest
+    container_name: goldenfarm-grist
+    restart: unless-stopped
+    ports:
+      - "${GRIST_PORT:-8484}:8484"
+    environment:
+      - APP_HOME_URL=${GRIST_PUBLIC_URL:-http://localhost:8484}
+      - PORT=8484
+      - GRIST_SANDBOX_FLAVOR=${GRIST_SANDBOX_FLAVOR:-unsandboxed}
+      - GRIST_ANON_PLAYGROUND=false
+      - GRIST_SESSION_SECRET=${SESSION_SECRET:-${ONLYOFFICE_SECRET}}
+    volumes:
+      - grist-data:/persist
+    networks:
+      - goldenfarm-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8484/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Univer SDK workspace — chỉ bật khi phát triển/thử nghiệm.
+  # docker compose --profile univer up -d --build --no-deps univer-web
+  univer-web:
+    build:
+      context: ./univer-web
+    profiles: ["univer"]
+    ports:
+      - "${UNIVER_BIND_ADDRESS:-127.0.0.1}:${UNIVER_PORT:-8774}:80"
     restart: unless-stopped
     networks:
       - goldenfarm-network
@@ -176,4 +222,6 @@ volumes:
   onlyoffice-data:
     driver: local
   onlyoffice-logs:
+    driver: local
+  grist-data:
     driver: local

@@ -441,3 +441,32 @@
     height: 16px;
   }
 }
+
+/* Keep preview actions visible and separate above the embedded editor. */
+.oov-floating-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 10000;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: 100%;
+}
+.oov-floating-actions .oov-close-btn-floating {
+  position: static;
+  width: auto;
+  height: 32px;
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+.oov-floating-actions .oov-close-btn-floating span {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  white-space: nowrap;
+}

@@ -123,6 +123,23 @@ export function getDashboardStats() {
   return api.get('/dashboard/stats', { params: { user_code: userCode, user_role: userRole } })
 }
 
+function orderAuthHeaders() {
+  return {
+    'X-User-Code': sessionStorage.getItem('user_code') || '',
+    'X-User-Role': sessionStorage.getItem('user_role') || '',
+    'X-User-Dept': sessionStorage.getItem('user_department') || '',
+    'X-User-Token': sessionStorage.getItem('token') || '',
+  }
+}
+
+export function getOrders(params = {}) {
+  return api.get('/orders', { params, headers: orderAuthHeaders() })
+}
+
+export function getOrderDetail(orderNumber) {
+  return api.get(`/orders/${encodeURIComponent(orderNumber)}`, { headers: orderAuthHeaders() })
+}
+
 export function getMonitorStats(config = {}) {
   return api.get('/monitor/stats', {
     ...config,

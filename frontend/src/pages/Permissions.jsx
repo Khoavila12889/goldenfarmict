@@ -19,6 +19,7 @@ const MODULES = [
   { key: 'todos', label: 'Công việc (Todos)', group: 'support', desc: 'Quản lý công việc cá nhân & phòng ban' },
   { key: 'todos.requires_approval', label: 'Công việc — Cơ chế Chờ duyệt', group: 'support', desc: 'Chỉ áp dụng theo phòng ban đích; mặc định mọi phòng ban đều tắt.' },
   { key: 'tickets', label: 'Tickets', group: 'support', desc: 'Yêu cầu hỗ trợ IT' },
+  { key: 'orders', label: 'Trung tâm đơn hàng', group: 'support', desc: 'Cho phép xem danh sách và chi tiết đơn hàng từ hệ thống bán hàng' },
   { key: 'approvals', label: 'Phê duyệt', group: 'support', desc: 'Phê duyệt yêu cầu' },
   { key: 'bookings', label: 'Lịch (Booking)', group: 'support', desc: 'Đặt lịch xe & phòng họp' },
   { key: 'nghiphep', label: 'Nghỉ phép', group: 'support', desc: 'Đăng ký & theo dõi đơn nghỉ phép / việc' },
