@@ -81,3 +81,8 @@ web moi nhat tu GitHub releases cua storytold, backup ban dang chay vao
 tra HTTP 200 o cac cong 8771/8772/8773; app nao loi se tu khoi phuc backup.
 Log o `/var/log/artcraft-update.log`, tag dang cai o `/var/lib/artcraft/`.
 Chay tay khi can: `systemctl start artcraft-update.service`.
+Tu 12:14 cung ngay, script gom ca bo convert CLI dung trong module Tai lieu
+(wordcraft-cli/gridcraft-cli trong backend): khi co release moi, script tu
+cap nhat pin phien ban trong backend/Dockerfile, build lai backend, tu test
+convert mot file docx va xlsx mau, xoa cache convert cu va commit Dockerfile
+len git; neu build hoac test loi thi tu rollback ve pin cu va build lai.
