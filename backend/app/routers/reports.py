@@ -57,6 +57,7 @@ STATUS_VI = {
     "Cho xu ly": "Chờ xử lý", "Dang xu ly": "Đang xử lý", "Da xu ly": "Đã xử lý", "Da huy": "Đã hủy",
 }
 EMP_STATUS_VI = {"active": "Đang làm việc", "resigned": "Đã nghỉ việc"}
+TODO_STATUSES = {"todo", "in_progress", "review", "completed", "cancelled"}
 TRIP_STATUS_VI = {"active": "Đang công tác", "finished": "Đã hoàn thành"}
 
 
@@ -108,8 +109,11 @@ def _delta(cur, prev):
     return round((cur - prev) * 100.0 / prev, 1)
 
 
-def K(label, value, unit="", delta=None):
-    return {"label": label, "value": value, "unit": unit, "delta": delta}
+def K(label, value, unit="", delta=None, group=None):
+    k = {"label": label, "value": value, "unit": unit, "delta": delta}
+    if group:
+        k["group"] = group
+    return k
 
 
 def T(title, columns, rows):
@@ -485,7 +489,7 @@ def rep_congviec(d_from, d_to, pf, pt, scope):
     overdue = _cnt(f"SELECT COUNT(*) AS c FROM todos WHERE {_d('due_date')} < CURRENT_DATE AND status NOT IN ('completed','cancelled'){frag}", sp)
     charts = [
         {"kind": "donut", "title": "Công việc theo trạng thái", "items": [
-            {"name": _st(r["status"]), "value": _int(r["c"])}
+            {"name": _st(r["status"]), "value": _int(r["c"]), "group": "status:" + r["status"]}
             for r in fetchall(f"SELECT status, COUNT(*) AS c FROM todos WHERE 1=1{frag} GROUP BY status ORDER BY c DESC", sp)
         ]},
     ]
@@ -512,10 +516,10 @@ def rep_congviec(d_from, d_to, pf, pt, scope):
                 [[r["title"], r["department"], r["assignee_name"], r["d"], _int(r["days"])] for r in od_rows])
     actions["ids"] = [r["id"] for r in od_rows]
     return _env("congviec", d_from, d_to,
-                [K("Việc mới trong kỳ", new, "việc", _delta(new, new_p)),
-                 K("Đang thực hiện", doing, "việc"),
-                 K("Hoàn thành trong kỳ", done, "việc"),
-                 K("Quá hạn hiện tại", overdue, "việc")],
+                [K("Việc mới trong kỳ", new, "việc", _delta(new, new_p), group="new"),
+                 K("Đang thực hiện", doing, "việc", group="doing"),
+                 K("Hoàn thành trong kỳ", done, "việc", group="done_period"),
+                 K("Quá hạn hiện tại", overdue, "việc", group="overdue")],
                 scope=scope, charts=charts, actions=actions, details=details)
 
 
@@ -694,6 +698,62 @@ def reports_index(employee_code: str = "", token: str = "", role: str = ""):
              "scopable": k not in FULL_ONLY and k != "donhang"} for k, t in REPORTS]
     return {"data": data, "scope": None if caller["full"] else caller["dept"],
             "full": caller["full"], "departments": _dept_list() if caller["full"] else []}
+
+
+@router.get("/todos-list")
+def todos_list(employee_code: str = "", token: str = "", role: str = "",
+               group: str = "", date_from: date = Query(None, alias="from"),
+               date_to: date = Query(None, alias="to"), dept: str = ""):
+    """Danh sách công việc sau một con số tổng hợp (KPI/donut) của báo cáo Công việc.
+
+    Cùng quy tắc phạm vi như report_detail: trưởng/phó phòng luôn bị khóa ở
+    phòng của mình; người xem toàn công ty lọc thêm bằng tham số dept."""
+    caller = _caller(employee_code, token, role)
+    if not caller["full"] and not caller["dept"]:
+        raise HTTPException(status_code=403, detail="Tài khoản chưa gắn phòng ban nên chưa xem được báo cáo phòng ban")
+    d_from, d_to, pf, pt = _period(date_from, date_to)
+    if caller["full"]:
+        scope = None
+        if dept:
+            match = {d.lower(): d for d in _dept_list()}
+            scope = match.get(dept.strip().lower())
+            if scope is None:
+                raise HTTPException(status_code=400, detail="Phòng ban không tồn tại")
+    else:
+        scope = caller["dept"]
+    frag, sp = _sf("department", scope)
+    titles = {"new": "Việc mới trong kỳ", "doing": "Đang thực hiện",
+              "done_period": "Hoàn thành trong kỳ", "overdue": "Việc quá hạn — cần xử lý"}
+    if group in titles:
+        title = titles[group]
+        if group == "new":
+            where, wp, order = _in_period("created_at"), {"f": d_from, "t": d_to}, f"{_d('created_at')} DESC"
+        elif group == "doing":
+            where, wp, order = "status='in_progress'", {}, f"{_d('due_date')} ASC"
+        elif group == "done_period":
+            where, wp, order = _in_period("completed_at"), {"f": d_from, "t": d_to}, f"{_d('completed_at')} DESC"
+        else:
+            where, wp, order = (f"{_d('due_date')} < CURRENT_DATE AND status NOT IN ('completed','cancelled')",
+                                {}, f"{_d('due_date')} ASC")
+    elif group.startswith("status:") and group[7:] in TODO_STATUSES:
+        title = "Trạng thái: " + _st(group[7:])
+        where, wp, order = "status=:st", {"st": group[7:]}, f"{_d('due_date')} ASC"
+    else:
+        raise HTTPException(status_code=400, detail="Nhóm không hợp lệ")
+    params = {**wp, **sp}
+    total = _cnt(f"SELECT COUNT(*) AS c FROM todos WHERE {where}{frag}", params)
+    rows = fetchall(f"""SELECT id, title, assignee_name, department, status, priority,
+            to_char({_d('due_date')},'DD/MM/YYYY') AS due,
+            (CURRENT_DATE - {_d('due_date')}) AS odays,
+            to_char({_d('created_at')},'DD/MM/YYYY') AS created
+        FROM todos WHERE {where}{frag} ORDER BY {order} LIMIT 300""", params)
+    return {"data": {"group": group, "title": title, "scope": scope, "total": total, "rows": [
+        {"id": r["id"], "title": r["title"], "assignee": r["assignee_name"],
+         "department": r["department"], "status": _st(r["status"]), "priority": r["priority"],
+         "due": r["due"], "created": r["created"],
+         "overdue_days": (_int(r["odays"]) if r["odays"] is not None and _int(r["odays"]) > 0
+                          and r["status"] not in ("completed", "cancelled") else None)}
+        for r in rows]}}
 
 
 @router.get("/{key}")

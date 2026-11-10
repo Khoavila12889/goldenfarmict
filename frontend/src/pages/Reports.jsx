@@ -87,7 +87,7 @@ function LineItems({ items }) {
   )
 }
 
-function DonutItems({ items }) {
+function DonutItems({ items, onPick }) {
   const total = items.reduce((s, i) => s + i.value, 0) || 1
   const R = 62, C = 2 * Math.PI * R
   let off = 0
@@ -109,7 +109,8 @@ function DonutItems({ items }) {
       </svg>
       <div className="rp-legend">
         {segs.map((s, i) => (
-          <div key={i} className="rp-legend-row">
+          <div key={i} className={`rp-legend-row${s.group && onPick ? ' clk' : ''}`}
+            onClick={s.group && onPick ? () => onPick(s.group, s.name) : undefined}>
             <span className="rp-dot" style={{ background: s.color }} />
             <span className="rp-legend-name">{s.name}</span>
             <span className="rp-legend-val">{fmtNum(s.value)} · {s.pct}%</span>
@@ -121,12 +122,12 @@ function DonutItems({ items }) {
   )
 }
 
-function ChartView({ chart }) {
+function ChartView({ chart, onPick }) {
   if (!chart) return null
   return (
     <div className="rp-card">
       <div className="rp-card-title">{chart.title}</div>
-      {chart.kind === 'donut' ? <DonutItems items={chart.items || []} />
+      {chart.kind === 'donut' ? <DonutItems items={chart.items || []} onPick={onPick} />
         : chart.kind === 'line' ? <LineItems items={chart.items || []} />
         : <BarItems items={chart.items || []} />}
     </div>
@@ -180,6 +181,15 @@ export default function Reports() {
   const [depts, setDepts] = useState([])
   const [isFull, setIsFull] = useState(false)
   const [todo, setTodo] = useState(null)
+
+  const [list, setList] = useState(null)
+
+  const openList = (group, title) => {
+    setList({ loading: true, title })
+    apiGet('/reports/todos-list', { group, from, to, ...(dept ? { dept } : {}) })
+      .then(d => setList(d.data))
+      .catch(e => setList({ error: e.message, title }))
+  }
 
   const openTodo = (id) => {
     setTodo({ loading: true })
@@ -256,9 +266,11 @@ export default function Reports() {
           {data.kpis.length > 0 && (
             <div className="rp-kpis">
               {data.kpis.map((k, i) => (
-                <div key={i} className="rp-kpi">
+                <div key={i} className={`rp-kpi${k.group ? ' clk' : ''}`}
+                  onClick={k.group ? () => openList(k.group, k.label) : undefined}>
                   <div className="rp-kpi-lb">{k.label}</div>
                   <div className="rp-kpi-v">{fmtKpi(k)}{k.unit && k.unit !== 'đ' ? <small> {k.unit}</small> : null}</div>
+                  {k.group && <div className="rp-kpi-hint">Bấm để xem danh sách ›</div>}
                   {k.delta !== null && k.delta !== undefined && (
                     <span className={`rp-delta ${k.delta >= 0 ? 'up' : 'down'}`}>
                       {k.delta >= 0 ? '▲' : '▼'} {Math.abs(k.delta).toLocaleString('vi-VN')}% so với kỳ trước
@@ -271,7 +283,7 @@ export default function Reports() {
 
           {charts.length > 0 && (
             <div className="rp-grid">
-              {charts.map((c, i) => <ChartView key={i} chart={c} />)}
+              {charts.map((c, i) => <ChartView key={i} chart={c} onPick={openList} />)}
             </div>
           )}
 
@@ -284,6 +296,40 @@ export default function Reports() {
             </div>
           )}
         </>
+      )}
+
+      {list && (
+        <div className="rp-modal-back" onClick={() => setList(null)}>
+          <div className="rp-modal rp-modal-lg" onClick={e => e.stopPropagation()}>
+            {list.loading ? <p className="rp-modal-load">Đang tải danh sách…</p>
+              : list.error ? <p className="rp-err">Không mở được danh sách. {list.error}</p>
+              : (
+                <>
+                  <div className="rp-modal-head">
+                    <h3>{list.title} — {list.total} việc{list.scope ? ` · phòng ${list.scope}` : ''}</h3>
+                    <button className="rp-modal-x" onClick={() => setList(null)}>✕</button>
+                  </div>
+                  <div className="tbl-wrap rp-list-wrap">
+                    <table className="tbl">
+                      <thead><tr><th>Tiêu đề</th><th>Người thực hiện</th><th>Hạn</th><th>Trạng thái</th></tr></thead>
+                      <tbody>
+                        {list.rows.map(r => (
+                          <tr key={r.id} className="rp-row-clk" onClick={() => openTodo(r.id)}>
+                            <td>{r.title}</td>
+                            <td>{r.assignee || '—'}</td>
+                            <td>{r.due || '—'}{r.overdue_days ? <span className="rp-od"> · quá {r.overdue_days} ngày</span> : null}</td>
+                            <td>{r.status}</td>
+                          </tr>
+                        ))}
+                        {list.rows.length === 0 && <tr><td colSpan={4} className="rp-empty">Không có công việc nào</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="rp-list-note">Bấm vào từng dòng để xem nội dung chi tiết của công việc.</p>
+                </>
+              )}
+          </div>
+        </div>
       )}
 
       {todo && (

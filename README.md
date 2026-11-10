@@ -1977,3 +1977,7 @@ viện biểu đồ), style riêng ở `frontend/src/pages/Reports.css`.
   `backups/2026-11-10/` trong thư mục project. Cột `departments.head_id` là dữ
   liệu cũ không còn khớp nhân viên hiện tại — đừng dựa vào đó để suy ra trưởng
   phòng; nguồn đúng là `users.role`.
+- **Drill-down ở báo cáo Công việc**: bấm vào thẻ KPI (việc mới / đang thực hiện /
+  hoàn thành trong kỳ / quá hạn) hoặc dòng chú thích của biểu đồ trạng thái sẽ mở
+  popup danh sách đúng các công việc làm nên con số đó (`GET /api/reports/todos-list`,
+  cùng quy tắc phạm vi phòng ban); bấm tiếp vào một dòng để xem chi tiết công việc.
