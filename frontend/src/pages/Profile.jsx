@@ -125,7 +125,7 @@ export default function Profile() {
             </button>
             <div className="pf-info-row">
               <span className="pf-label">Vai trò</span>
-              <span className="pf-value">{userRole === 'admin' ? 'Quản trị viên' : userRole === 'head' ? 'Trưởng phòng' : 'Nhân viên'}</span>
+              <span className="pf-value">{userRole === 'admin' ? 'Quản trị viên' : userRole === 'head' ? 'Trưởng phòng' : userRole === 'deputy' ? 'Phó phòng' : 'Nhân viên'}</span>
             </div>
             {profile?.department && (
               <div className="pf-info-row">

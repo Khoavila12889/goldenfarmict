@@ -1,9 +1,12 @@
 from fastapi import APIRouter, HTTPException
+import logging
 from sqlalchemy import text
 from ..core.db import fetchall, fetchone, execute, insert
 from ..core.session import DATABASE_URL, SessionLocal
 from ..core.auth import hash_password, verify_token
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 _STR_AGG = "string_agg" if DATABASE_URL.startswith("postgresql") else "group_concat"
 
@@ -45,23 +48,50 @@ def _check_employee_perm(employee_code: str, token: str, role: str, required_mod
 
 
 def _ensure_user(sess, emp_code: str, email: str = "", phone: str = "") -> bool:
-    existing = sess.execute(
-        text("SELECT id FROM users WHERE employee_code = :code"),
-        {"code": emp_code}
-    ).first()
-    if existing:
-        return False
     now = _NOW()
-    sess.execute(text("""
+    result = sess.execute(text("""
         INSERT INTO users (employee_code, password_hash, role, is_first_login, created_at, updated_at)
         VALUES (:code, :pw, :role, TRUE, :now, :now)
+        ON CONFLICT (employee_code) DO NOTHING
+        RETURNING id
     """), {
         "code": emp_code,
         "pw": hash_password(emp_code),
         "role": "user",
         "now": now,
     })
-    return True
+    return result.first() is not None
+
+
+_SYNC_LOCK_SQL = """
+    UPDATE users
+    SET is_locked = EXISTS (
+        SELECT 1 FROM employees e
+        WHERE e.employee_code = :code AND e.status = 'resigned'
+    )
+    WHERE employee_code = :code
+"""
+
+
+def _sync_user_lock(sess, emp_code: str) -> None:
+    sess.execute(text(_SYNC_LOCK_SQL), {"code": emp_code})
+
+
+def _sync_user_lock_by_code(emp_code: str) -> None:
+    execute(_SYNC_LOCK_SQL, {"code": emp_code})
+
+
+def _sync_users_id_sequence(sess) -> None:
+    """Sửa sequence bị lệch sau restore/import dữ liệu có id tường minh."""
+    if not DATABASE_URL.startswith("postgresql"):
+        return
+    sess.execute(text("""
+        SELECT setval(
+            pg_get_serial_sequence('users', 'id'),
+            COALESCE((SELECT MAX(id) FROM users), 1),
+            EXISTS (SELECT 1 FROM users)
+        )
+    """))
 
 
 @router.get("")
@@ -141,6 +171,7 @@ def create_employee(body: dict, admin_code: str = None, token: str = None, role:
             row = result.mappings().first()
             new_id = row["id"]
             user_created = _ensure_user(sess, emp_code, body.get("email", ""), body.get("phone", ""))
+            _sync_user_lock(sess, emp_code)
             sess.commit()
             return {"success": True, "id": new_id, "user_created": user_created}
         except Exception:
@@ -181,46 +212,62 @@ def import_employees(body: dict, admin_code: str = None, token: str = None, role
     deduped_items = list(seen_codes.values())
 
     with SessionLocal() as sess:
+        # Sequence có thể thấp hơn MAX(id) sau khi restore DB, dẫn tới users_pkey.
+        _sync_users_id_sequence(sess)
         for line_no, emp in deduped_items:
             try:
-                code = emp.get("employee_code", "").strip()
-                full_name = emp.get("full_name", "").strip()
-                department = emp.get("department", "").strip()
-                position = emp.get("position", "").strip() or "Nhân viên"
-                status = emp.get("status", "").strip() or "active"
-                phone = emp.get("phone", "").strip()
-                email = emp.get("email", "").strip()
-                handover_date = emp.get("handover_date", "").strip()
-                start_date = emp.get("start_date", "").strip()
-                notes = emp.get("notes", "").strip()
+                # SAVEPOINT tách từng dòng: một dòng lỗi không làm hỏng
+                # transaction và biến các dòng sau thành InFailedSqlTransaction.
+                with sess.begin_nested():
+                    code = emp.get("employee_code", "").strip()
+                    full_name = emp.get("full_name", "").strip()
+                    department = emp.get("department", "").strip()
+                    position = emp.get("position", "").strip() or "Nhân viên"
+                    status = emp.get("status", "").strip() or "active"
+                    phone = emp.get("phone", "").strip()
+                    email = emp.get("email", "").strip()
+                    handover_date = emp.get("handover_date", "").strip()
+                    start_date = emp.get("start_date", "").strip()
+                    notes = emp.get("notes", "").strip()
 
-                # Upsert bằng ON CONFLICT
-                result = sess.execute(text("""
-                    INSERT INTO employees (employee_code, full_name, department, position, handover_date, start_date, phone, email, notes, status, created_at, updated_at)
-                    VALUES (:code, :name, :dept, :pos, :handover, :start_date, :phone, :email, :notes, :status, :now, :now)
-                    ON CONFLICT (employee_code) DO UPDATE SET
-                        full_name=:name, department=:dept, position=:pos,
-                        handover_date=:handover, start_date=:start_date, phone=:phone, email=:email,
-                        notes=:notes, status=:status, updated_at=:now
-                    RETURNING xmax = 0 AS inserted
-                """), {
-                    "code": code, "name": full_name, "dept": department, "pos": position,
-                    "handover": handover_date, "start_date": start_date, "phone": phone, "email": email,
-                    "notes": notes, "status": status, "now": now,
-                })
-                is_new = result.scalar()
+                    # Upsert bằng ON CONFLICT
+                    result = sess.execute(text("""
+                        INSERT INTO employees (employee_code, full_name, department, position, handover_date, start_date, phone, email, notes, status, created_at, updated_at)
+                        VALUES (:code, :name, :dept, :pos, :handover, :start_date, :phone, :email, :notes, :status, :now, :now)
+                        ON CONFLICT (employee_code) DO UPDATE SET
+                            full_name=:name, department=:dept, position=:pos,
+                            handover_date=:handover, start_date=:start_date, phone=:phone, email=:email,
+                            notes=:notes, status=:status, updated_at=:now
+                        RETURNING xmax = 0 AS inserted
+                    """), {
+                        "code": code, "name": full_name, "dept": department, "pos": position,
+                        "handover": handover_date, "start_date": start_date, "phone": phone, "email": email,
+                        "notes": notes, "status": status, "now": now,
+                    })
+                    is_new = result.scalar()
+
+                    user_created = _ensure_user(sess, code, email, phone)
+                    _sync_user_lock(sess, code)
+
                 if is_new:
                     stats["created"] += 1
                 else:
                     stats["updated"] += 1
-
-                if _ensure_user(sess, code, email, phone):
+                if user_created:
                     stats["users_created"] += 1
 
             except Exception as e:
-                stats["errors"].append(f"Dòng {line_no + 1}: {emp.get('employee_code', 'N/A')} — {str(e)}")
+                code = emp.get("employee_code", "N/A")
+                logger.exception("Import nhân viên thất bại: dòng=%s code=%s", line_no + 1, code)
+                stats["errors"].append(f"Dòng {line_no + 1}: {code} — {str(e)}")
 
         sess.commit()
+
+    logger.info(
+        "Import nhân viên hoàn tất: total=%s created=%s updated=%s users_created=%s errors=%s",
+        stats["total"], stats["created"], stats["updated"],
+        stats["users_created"], len(stats["errors"]),
+    )
 
     return stats
 
@@ -241,26 +288,74 @@ def update_employee(employee_id: int, body: dict, admin_code: str = None, token:
         f"UPDATE employees SET {', '.join(fields)}, updated_at = CURRENT_TIMESTAMP::text WHERE id = :id",
         params
     )
+    if "status" in body:
+        row = fetchone("SELECT employee_code FROM employees WHERE id = :id", {"id": employee_id})
+        if row:
+            _sync_user_lock_by_code(row["employee_code"])
     return {"success": True}
+
+
+def _delete_employee_rows(sess, employee_id: int, emp_code: str, delete_user: bool = True) -> None:
+    sess.execute(text("UPDATE tickets SET employee_id = NULL, full_name = '', department = '', employee_code = '' WHERE employee_id = :id"), {"id": employee_id})
+    sess.execute(text("UPDATE bookings SET employee_id = NULL, full_name = '', department = '' WHERE employee_id = :id"), {"id": employee_id})
+    if emp_code:
+        eqs = sess.execute(text("SELECT id FROM equipment WHERE employee_id = :id"), {"id": employee_id}).mappings().all()
+        for eq in eqs:
+            sess.execute(text("""
+                UPDATE equipment_history SET return_date = CURRENT_DATE::text
+                WHERE equipment_id = :eqid AND employee_code = :code AND return_date = ''
+            """), {"eqid": eq["id"], "code": emp_code})
+    sess.execute(text("UPDATE equipment SET employee_id = NULL, issued_date = '', updated_at = CURRENT_TIMESTAMP::text WHERE employee_id = :id"), {"id": employee_id})
+    if delete_user and emp_code:
+        sess.execute(text("DELETE FROM user_permissions WHERE employee_code = :code"), {"code": emp_code})
+        sess.execute(text("UPDATE formula_print_jobs SET requested_by = NULL WHERE requested_by = :code"), {"code": emp_code})
+        sess.execute(text("UPDATE formula_print_logs SET printed_by = NULL WHERE printed_by = :code"), {"code": emp_code})
+        sess.execute(text("UPDATE formula_recipes SET created_by = NULL WHERE created_by = :code"), {"code": emp_code})
+        sess.execute(text("DELETE FROM users WHERE employee_code = :code"), {"code": emp_code})
+    sess.execute(text("DELETE FROM employees WHERE id = :id"), {"id": employee_id})
 
 
 @router.delete("/{employee_id}")
 def delete_employee(employee_id: int, admin_code: str = None, token: str = None, role: str = None):
     _check_employee_perm(admin_code, token, role, "employees.delete")
-    execute("UPDATE tickets SET employee_id = NULL, full_name = '', department = '', employee_code = '' WHERE employee_id = :id", {"id": employee_id})
-    execute("UPDATE bookings SET employee_id = NULL, full_name = '', department = '' WHERE employee_id = :id", {"id": employee_id})
     old = fetchone("SELECT employee_code FROM employees WHERE id = :id", {"id": employee_id})
-    if old:
-        emp_code = old["employee_code"]
-        eqs = fetchall("SELECT id FROM equipment WHERE employee_id = :id", {"id": employee_id})
-        for eq in eqs:
-            execute("""
-                UPDATE equipment_history SET return_date = CURRENT_DATE::text
-                WHERE equipment_id = :eqid AND employee_code = :code AND return_date = ''
-            """, {"eqid": eq["id"], "code": emp_code})
-    execute("UPDATE equipment SET employee_id = NULL, issued_date = '', updated_at = CURRENT_TIMESTAMP::text WHERE employee_id = :id", {"id": employee_id})
-    execute("DELETE FROM employees WHERE id = :id", {"id": employee_id})
+    if not old:
+        raise HTTPException(404, "Không tìm thấy nhân viên")
+    with SessionLocal() as sess:
+        _delete_employee_rows(sess, employee_id, old["employee_code"], delete_user=True)
+        sess.commit()
     return {"success": True}
+
+
+@router.delete("/bulk/resigned")
+def delete_resigned_employees(admin_code: str = None, token: str = None, role: str = None):
+    """Xóa toàn bộ nhân viên đã nghỉ việc cùng tài khoản đăng nhập tương ứng."""
+    _check_employee_perm(admin_code, token, role, "employees.delete")
+    rows = fetchall("SELECT id, employee_code FROM employees WHERE status = 'resigned'")
+    if not rows:
+        return {"success": True, "deleted": 0, "message": "Không có nhân viên đã nghỉ việc"}
+
+    deleted = 0
+    errors = []
+    with SessionLocal() as sess:
+        for row in rows:
+            try:
+                with sess.begin_nested():
+                    _delete_employee_rows(sess, row["id"], row["employee_code"], delete_user=True)
+                deleted += 1
+            except Exception as e:
+                logger.exception("Xóa nhân viên đã nghỉ thất bại: id=%s code=%s", row["id"], row["employee_code"])
+                errors.append(f"{row['employee_code']}: {e}")
+        sess.commit()
+
+    return {
+        "success": len(errors) == 0,
+        "deleted": deleted,
+        "failed": len(errors),
+        "errors": errors[:10],
+        "message": f"Đã xóa {deleted} nhân viên đã nghỉ việc",
+    }
+
 
 
 @router.get("/by-code/{code}")

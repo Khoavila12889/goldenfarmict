@@ -34,15 +34,27 @@ DEFAULT_ROLE_MODULE_PERMS = {
         "orders": {"can_view": True, "can_edit": False},
         "announcements": {"can_view": True, "can_edit": True},
         "password-reset": {"can_view": True, "can_edit": True},
+        "reports": {"can_view": True, "can_edit": False},
         "nghiphep": {"can_view": True, "can_edit": False},
+        "mail": {"can_view": True, "can_edit": True},
     },
     "head": {
         "announcements": {"can_view": True, "can_edit": True},
         "password-reset": {"can_view": True, "can_edit": True},
+        "reports": {"can_view": True, "can_edit": False},
         "nghiphep": {"can_view": True, "can_edit": False},
+        "mail": {"can_view": True, "can_edit": True},
+    },
+    "deputy": {
+        "announcements": {"can_view": True, "can_edit": True},
+        "password-reset": {"can_view": True, "can_edit": True},
+        "reports": {"can_view": True, "can_edit": False},
+        "nghiphep": {"can_view": True, "can_edit": False},
+        "mail": {"can_view": True, "can_edit": True},
     },
     "user": {
         "nghiphep": {"can_view": True, "can_edit": False},
+        "mail": {"can_view": True, "can_edit": True},
     },
 }
 
@@ -164,6 +176,13 @@ def login(req: LoginRequest):
             token=result["token"],
             message="Đăng nhập thành công!",
             permissions=perms,
+        )
+    from ..core.auth import is_isolated, resolve_login
+    resolved = resolve_login(code)
+    if resolved and is_isolated(resolved):
+        return LoginResponse(
+            success=False,
+            message="Tài khoản đã bị cách ly do nhân viên đã nghỉ việc. Vui lòng liên hệ quản trị viên.",
         )
     return LoginResponse(success=False, message="Sai mã NV/Username/Email hoặc mật khẩu")
 
@@ -332,6 +351,7 @@ ALL_MODULES = [
     {"key": "todos.requires_approval", "label": "Công việc — Cơ chế Chờ duyệt", "group": "support"},
     {"key": "tickets", "label": "Tickets", "group": "support"},
     {"key": "orders", "label": "Trung tâm đơn hàng", "group": "support"},
+    {"key": "mail", "label": "Mail (Outlook)", "group": "support"},
     {"key": "approvals", "label": "Phê duyệt", "group": "support"},
     {"key": "workflows", "label": "Quy trình", "group": "admin"},
     {"key": "bookings", "label": "Lịch", "group": "support"},
@@ -339,6 +359,7 @@ ALL_MODULES = [
     {"key": "documents", "label": "Tài liệu", "group": "support"},
     {"key": "salary", "label": "Phiếu lương", "group": "support"},
     {"key": "salary-admin", "label": "Quản lý lương", "group": "admin"},
+    {"key": "reports", "label": "Báo cáo", "group": "admin"},
     {"key": "dashboard", "label": "Dashboard", "group": "support"},
     {"key": "announcements", "label": "Tạo thông báo Dashboard", "group": "support"},
     {"key": "password-reset", "label": "Reset mật khẩu", "group": "support"},
@@ -376,13 +397,57 @@ def list_users(admin_code: str = None, token: str = None, role: str = None):
     if not verify_token(admin_code, token, role):
         raise HTTPException(401, "Invalid token")
     rows = fetchall("""
-        SELECT u.employee_code, u.role, u.created_at,
+        SELECT u.employee_code, u.role, u.created_at, u.is_locked,
                e.full_name, e.department, e.position, e.status
         FROM users u
         LEFT JOIN employees e ON e.employee_code = u.employee_code
         ORDER BY u.role, e.department, e.full_name
     """)
     return {"data": rows}
+
+
+@router.post("/users/isolate-resigned")
+def isolate_resigned_users(admin_code: str = None, token: str = None, role: str = None):
+    """Cách ly toàn bộ tài khoản của nhân viên đã nghỉ việc (khóa đăng nhập & token cũ)."""
+    if role != "admin":
+        raise HTTPException(403, "Admin access required")
+    if not verify_token(admin_code, token, role):
+        raise HTTPException(401, "Invalid token")
+    execute("""
+        UPDATE users u
+        SET is_locked = TRUE, updated_at = CURRENT_TIMESTAMP
+        WHERE u.employee_code IN (
+            SELECT employee_code FROM employees WHERE status = 'resigned'
+        )
+    """)
+    row = fetchone("""
+        SELECT COUNT(*) AS total
+        FROM users u
+        JOIN employees e ON e.employee_code = u.employee_code
+        WHERE e.status = 'resigned'
+    """)
+    return {"success": True, "isolated": int((row or {}).get("total", 0))}
+
+
+@router.post("/users/{employee_code}/reactivate")
+def reactivate_user(employee_code: str, admin_code: str = None, token: str = None, role: str = None):
+    """Mở cách ly: đưa nhân viên trở lại trạng thái đang làm việc và mở khóa tài khoản."""
+    if role != "admin":
+        raise HTTPException(403, "Admin access required")
+    if not verify_token(admin_code, token, role):
+        raise HTTPException(401, "Invalid token")
+    code = (employee_code or "").strip()
+    if not code:
+        raise HTTPException(400, "Thiếu mã nhân viên")
+    execute(
+        "UPDATE employees SET status = 'active', updated_at = CURRENT_TIMESTAMP::text WHERE employee_code = :code",
+        {"code": code},
+    )
+    execute(
+        "UPDATE users SET is_locked = FALSE, updated_at = CURRENT_TIMESTAMP WHERE employee_code = :code",
+        {"code": code},
+    )
+    return {"success": True, "message": f"Đã kích hoạt lại tài khoản {code}"}
 
 
 @router.get("/users/search")
@@ -643,7 +708,7 @@ def update_user_role(
         raise HTTPException(403, "Admin access required")
     if not verify_token(admin_code, token, role):
         raise HTTPException(401, "Invalid token")
-    if body.role not in ("user", "head", "admin"):
+    if body.role not in ("user", "head", "deputy", "admin"):
         raise HTTPException(400, "Invalid role")
     if target_code == admin_code:
         raise HTTPException(400, "Không thể thay đổi role của chính mình")

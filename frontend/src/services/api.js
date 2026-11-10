@@ -1186,4 +1186,108 @@ export function getDocumentPdfPages({ configId, filePath, fileId = '', size = 0,
   return api.get('/documents/pdf-pages', { params })
 }
 
+// ─── Mail (Outlook-like) ────────────────────────────────────────────────
+function mailAuthHeaders() {
+  return {
+    'X-User-Code': sessionStorage.getItem('user_code') || '',
+    'X-User-Role': sessionStorage.getItem('user_role') || '',
+    'X-User-Dept': sessionStorage.getItem('user_department') || '',
+    'X-User-Token': sessionStorage.getItem('token') || '',
+  }
+}
+
+export function getMailAccounts() {
+  return api.get('/mail/accounts', { headers: mailAuthHeaders() })
+}
+
+export function createMailAccount(data) {
+  return api.post('/mail/accounts', data, { headers: mailAuthHeaders() })
+}
+
+export function testMailAccount(data) {
+  return api.post('/mail/accounts/test', data, { headers: mailAuthHeaders() })
+}
+
+export function deleteMailAccount(accountId) {
+  return api.delete(`/mail/accounts/${accountId}`, { headers: mailAuthHeaders() })
+}
+
+export function syncMailAccount(accountId, limit) {
+  return api.post(`/mail/accounts/${accountId}/sync`, null, {
+    params: limit ? { limit } : {},
+    headers: mailAuthHeaders(),
+  })
+}
+
+export function createMailDemo() {
+  return api.post('/mail/demo', null, { headers: mailAuthHeaders() })
+}
+
+export function getMailFolders(accountId) {
+  return api.get('/mail/folders', {
+    params: accountId ? { account_id: accountId } : {},
+    headers: mailAuthHeaders(),
+  })
+}
+
+export function getMailMessages(params = {}) {
+  return api.get('/mail/messages', { params, headers: mailAuthHeaders() })
+}
+
+export function getMailMessage(messageId) {
+  return api.get(`/mail/messages/${messageId}`, { headers: mailAuthHeaders() })
+}
+
+export function getMailThread(threadKey) {
+  return api.get(`/mail/threads/${encodeURIComponent(threadKey)}`, { headers: mailAuthHeaders() })
+}
+
+export function updateMailFlags(messageId, payload) {
+  return api.post(`/mail/messages/${messageId}/flags`, payload, { headers: mailAuthHeaders() })
+}
+
+export function deleteMailMessage(messageId) {
+  return api.delete(`/mail/messages/${messageId}`, { headers: mailAuthHeaders() })
+}
+
+export function getMailUnread() {
+  return api.get('/mail/unread', { headers: mailAuthHeaders() })
+}
+
+export function getMailContacts(q = '') {
+  return api.get('/mail/contacts', { params: { q }, headers: mailAuthHeaders() })
+}
+
+export function getMailDrafts() {
+  return api.get('/mail/drafts', { headers: mailAuthHeaders() })
+}
+
+export function createMailDraft(data) {
+  return api.post('/mail/drafts', data, { headers: mailAuthHeaders() })
+}
+
+export function updateMailDraft(draftId, data) {
+  return api.patch(`/mail/drafts/${draftId}`, data, { headers: mailAuthHeaders() })
+}
+
+export function deleteMailDraft(draftId) {
+  return api.delete(`/mail/drafts/${draftId}`, { headers: mailAuthHeaders() })
+}
+
+export function sendMailDraft(draftId) {
+  return api.post(`/mail/drafts/${draftId}/send`, null, { headers: mailAuthHeaders() })
+}
+
+export function uploadMailAttachment(file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return api.post('/mail/attachments/upload', fd, {
+    headers: { ...mailAuthHeaders(), 'Content-Type': 'multipart/form-data' },
+  })
+}
+
+export function mailAttachmentUrl(path) {
+  return apiUrl(path)
+}
+
 export default api

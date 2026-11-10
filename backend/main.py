@@ -4,6 +4,7 @@ Run: uvicorn main:app --host 127.0.0.1 --port 8080 --reload
 """
 import asyncio
 import json
+import logging
 import os
 from datetime import datetime
 from fastapi import FastAPI, Request
@@ -11,11 +12,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from sqlalchemy import text
+from app.core.logging_config import configure_logging
+
+# Cấu hình root logger trước khi import router để log của mọi module
+# (kể cả các module dùng logging.info/error trực tiếp) vào cùng file.
+LOG_FILE = configure_logging()
+logger = logging.getLogger(__name__)
+
 from app.core.auth import hash_password, verify_session
 from app.core.db import fetchone
 from app.core.todo_permissions import can_view
 from app.core import events
-from app.routers import auth, employees, equipment, tickets, bookings, dashboard, licenses, software, approvals, business_trips, departments, salary_slips, salary_user, documents, todos, comments, attachments, monitor, shares, chat, forum, formulas, module_backups, craft, orders
+from app.routers import auth, employees, equipment, tickets, bookings, dashboard, licenses, software, approvals, business_trips, departments, salary_slips, salary_user, documents, todos, comments, attachments, monitor, shares, chat, forum, formulas, module_backups, craft, orders, mail, reports
 
 app = FastAPI(title="GOLDENFARM ICT API", version="1.0.0")
 
@@ -57,15 +65,22 @@ app.include_router(forum.router)
 app.include_router(formulas.router)
 app.include_router(module_backups.router)
 app.include_router(orders.router)
+app.include_router(mail.router)
+app.include_router(reports.router)
 
 
 @app.on_event("startup")
 async def on_startup():
+    logger.info("Backend startup; application log: %s", LOG_FILE)
     events.init(asyncio.get_event_loop())
 
     # Chat realtime runtime: heartbeat, persist queue, Redis bridge (optional)
     from app.routers.chat import start_chat_runtime
     await start_chat_runtime()
+
+    # Mail sync runtime: poll IMAP cho các hộp thư bật đồng bộ
+    from app.routers.mail import start_mail_runtime
+    await start_mail_runtime()
 
     from app.models import Base
     from app.core.session import engine, SessionLocal
@@ -92,6 +107,15 @@ async def on_startup():
             sess.rollback()
             print(f"  → users.is_first_login migration: {e}")
 
+    # todos.completed_at — mốc thời gian phục vụ KPI deadline; nullable để tương thích task cũ.
+    with SessionLocal() as sess:
+        try:
+            sess.execute(text("ALTER TABLE todos ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP NULL"))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → todos.completed_at migration: {e}")
+
     # employees.start_date — ngày vào làm (tách khỏi handover_date ngày bàn giao thiết bị)
     with SessionLocal() as sess:
         try:
@@ -109,6 +133,22 @@ async def on_startup():
         except Exception as e:
             sess.rollback()
             print(f"  → users.username migration: {e}")
+
+    # users.is_locked — cách ly tài khoản nhân viên đã nghỉ việc (chặn đăng nhập/token cũ).
+    with SessionLocal() as sess:
+        try:
+            sess.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_locked BOOLEAN DEFAULT FALSE"))
+            sess.execute(text("""
+                UPDATE users u
+                SET is_locked = EXISTS (
+                    SELECT 1 FROM employees e
+                    WHERE e.employee_code = u.employee_code AND e.status = 'resigned'
+                )
+            """))
+            sess.commit()
+        except Exception as e:
+            sess.rollback()
+            print(f"  → users.is_locked migration: {e}")
 
     # licenses.employee_id — gán user trực tiếp cho license (không bắt buộc qua thiết bị)
     with SessionLocal() as sess:
@@ -427,6 +467,11 @@ def _ensure_permission_constraints(engine):
 
 @app.on_event("shutdown")
 async def on_shutdown():
+    from app.routers.mail import stop_mail_runtime
+    try:
+        await stop_mail_runtime()
+    except Exception as e:
+        print(f"  → mail runtime shutdown: {e}")
     from app.routers.chat import stop_chat_runtime
     try:
         await stop_chat_runtime()

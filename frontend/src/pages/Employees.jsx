@@ -94,11 +94,21 @@ export default function Employees() {
   const fileInputRef = useRef(null)
   const [importMsg, setImportMsg] = useState('')
 
-  const load = useCallback((q, d, s) => {
-    getEmployees(q || search, d || deptFilter, s || statusFilter).then(r => setEmps(r.data?.data || [])).catch(() => {})
-    getDepartments().then(r => setDepts(r.data?.data || [])).catch(() => {})
-    setLoading(false)
+  const loadEmployees = useCallback((q, d, s) => {
+    getEmployees(q ?? search, d ?? deptFilter, s ?? statusFilter)
+      .then(r => setEmps(r.data?.data || []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
   }, [search, deptFilter, statusFilter])
+
+  const loadDepartments = useCallback(() => {
+    return getDepartments().then(r => setDepts(r.data?.data || [])).catch(() => {})
+  }, [])
+
+  const load = useCallback(() => {
+    loadEmployees()
+    loadDepartments()
+  }, [loadEmployees, loadDepartments])
 
   useEffect(() => { load() }, [])
 
@@ -489,14 +499,14 @@ export default function Employees() {
         <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
           <span style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', fontSize: '0.8rem', color: '#94a3b8', pointerEvents: 'none' }}>🔍</span>
           <input type="text" placeholder="Tìm theo mã, tên NV..." value={search}
-            onChange={e => { setSearch(e.target.value); load(e.target.value, null, null) }}
+            onChange={e => { setSearch(e.target.value); loadEmployees(e.target.value) }}
             style={{
               width: '100%', padding: '0.45rem 0.7rem 0.45rem 1.8rem', background: '#f8fafc',
               border: '1px solid #e2e8f0', borderRadius: 8, fontSize: '0.82rem',
               outline: 'none', fontFamily: 'inherit', color: '#334155', boxSizing: 'border-box',
             }} />
         </div>
-        <select value={deptFilter} onChange={e => { setDeptFilter(e.target.value); load(null, e.target.value, null) }}
+        <select value={deptFilter} onChange={e => { setDeptFilter(e.target.value); loadEmployees(undefined, e.target.value) }}
           style={{
             padding: '0.45rem 0.7rem', background: '#f8fafc', border: '1px solid #e2e8f0',
             borderRadius: 8, fontSize: '0.82rem', outline: 'none', cursor: 'pointer',
@@ -507,7 +517,7 @@ export default function Employees() {
             {d.name || d}{d.head_name ? ` (TP: ${d.head_name})` : ''}
           </option>)}
         </select>
-        <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); load(null, null, e.target.value) }}
+        <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); loadEmployees(undefined, undefined, e.target.value) }}
           style={{
             padding: '0.45rem 0.7rem', background: '#f8fafc', border: '1px solid #e2e8f0',
             borderRadius: 8, fontSize: '0.82rem', outline: 'none', cursor: 'pointer',

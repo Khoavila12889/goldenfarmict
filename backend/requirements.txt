@@ -40,6 +40,11 @@ PyMuPDF>=1.24.0
 # PostgreSQL driver
 psycopg2-binary>=2.9.0
 
+# Mail module (IMAP/SMTP client + mã hoá secret + sanitize HTML)
+imapclient>=3.0.0
+nh3>=0.2.18
+cryptography>=42.0.0
+
 # Testing
 pytest>=8.0.0
 pytest-asyncio>=0.23.0

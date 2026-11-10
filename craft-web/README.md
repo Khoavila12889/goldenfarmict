@@ -9,7 +9,7 @@ Static WASM demo cho webapp (`/craft-demo`), chạy qua profile `craft`, không 
 | pdfcraft-web | 8773 | `./craft-web/pdfcraft` | goldenfarm-pdfcraft-web |
 
 Nginx chung: `./craft-web/nginx.conf` (mount read-only vào cả 3 service).
-Phiên bản đang chạy (15/10/2026): WordCraft `v0.7.0`, GridCraft `v0.7.0`, PdfCraft `v0.8.0`.
+Phiên bản đang chạy (05/11/2026): WordCraft `v0.15.1`, GridCraft `v0.16.0`, PdfCraft `v0.18.1`.
 
 ## Update bản Web mới nhất (copy-paste 1 khối)
 

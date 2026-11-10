@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import {
   Shield, Search, Save, Loader, User, Check, X,
-  Users, BookOpen, FolderOpen, Building, Trash2, Plus, ChevronDown, CheckSquare, Square
+  Users, BookOpen, FolderOpen, Building, Trash2, Plus, ChevronDown, CheckSquare, Square, Lock
 } from 'lucide-react'
 import '../styles/booking.css'
 import './Permissions.css'
@@ -16,10 +16,12 @@ const MODULES = [
   { key: 'licenses', label: 'License Keys', group: 'admin', desc: 'Quản lý bản quyền phần mềm' },
   { key: 'workflows', label: 'Quy trình', group: 'admin', desc: 'Tạo quy trình phê duyệt' },
   { key: 'salary-admin', label: 'Quản lý lương', group: 'admin', desc: 'Import & xuất phiếu lương' },
+  { key: 'reports', label: 'Báo cáo', group: 'admin', desc: 'Xem báo cáo theo phòng ban. Trưởng phòng & Phó phòng chỉ thấy số liệu phòng mình; Admin & phòng IT xem được cả báo cáo tổng (Điều hành, Lương...).' },
   { key: 'todos', label: 'Công việc (Todos)', group: 'support', desc: 'Quản lý công việc cá nhân & phòng ban' },
   { key: 'todos.requires_approval', label: 'Công việc — Cơ chế Chờ duyệt', group: 'support', desc: 'Chỉ áp dụng theo phòng ban đích; mặc định mọi phòng ban đều tắt.' },
   { key: 'tickets', label: 'Tickets', group: 'support', desc: 'Yêu cầu hỗ trợ IT' },
   { key: 'orders', label: 'Trung tâm đơn hàng', group: 'support', desc: 'Cho phép xem danh sách và chi tiết đơn hàng từ hệ thống bán hàng' },
+  { key: 'mail', label: 'Mail (Outlook)', group: 'support', desc: 'Cho phép dùng hộp thư Mail: đọc, soạn, gửi, quản lý hộp thư IMAP/SMTP' },
   { key: 'approvals', label: 'Phê duyệt', group: 'support', desc: 'Phê duyệt yêu cầu' },
   { key: 'bookings', label: 'Lịch (Booking)', group: 'support', desc: 'Đặt lịch xe & phòng họp' },
   { key: 'nghiphep', label: 'Nghỉ phép', group: 'support', desc: 'Đăng ký & theo dõi đơn nghỉ phép / việc' },
@@ -307,6 +309,7 @@ function ModulePermissionsTab({ apiBase, apiUrl, saveMsg, setSaveMsg }) {
   const roleList = [
     { key: 'admin', label: 'Admin', color: '#dc2626' },
     { key: 'head', label: 'Trưởng phòng', color: '#2563eb' },
+    { key: 'deputy', label: 'Phó phòng', color: '#0891b2' },
     { key: 'user', label: 'Nhân viên', color: '#64748b' },
   ]
 
@@ -487,7 +490,7 @@ function ModulePermissionsTab({ apiBase, apiUrl, saveMsg, setSaveMsg }) {
                     <div style={{ fontSize: '0.82rem', color: 'var(--bk-text-secondary)', marginTop: '0.15rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                       <span>{selectedUser.employee_code} · {selectedUser.department || '—'}</span>
                       <span style={{ padding: '0.15rem 0.45rem', borderRadius: '99px', background: 'var(--bk-surface)', fontSize: '0.7rem', fontWeight: 600 }}>
-                        {selectedUser.role === 'admin' ? 'Admin' : selectedUser.role === 'head' ? 'Trưởng phòng' : 'Nhân viên'}
+                        {selectedUser.role === 'admin' ? 'Admin' : selectedUser.role === 'head' ? 'Trưởng phòng' : selectedUser.role === 'deputy' ? 'Phó phòng' : 'Nhân viên'}
                       </span>
                     </div>
                   </div>
@@ -1158,8 +1161,13 @@ function UserRolesTab({ apiUrl, saveMsg, setSaveMsg }) {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [savingRole, setSavingRole] = useState(null)
+  const [busyAction, setBusyAction] = useState(null)
 
   const adminCode = sessionStorage.getItem('user_code') || ''
+  const token = sessionStorage.getItem('token') || ''
+  const userRole = sessionStorage.getItem('user_role') || ''
+
+  const resignedUsers = users.filter(u => (u.status || '').toLowerCase() === 'resigned')
 
   const fetchUsers = useCallback(async () => {
     setLoading(true)
@@ -1171,6 +1179,62 @@ function UserRolesTab({ apiUrl, saveMsg, setSaveMsg }) {
   }, [apiUrl])
 
   useEffect(() => { fetchUsers() }, [fetchUsers])
+
+  async function isolateResigned() {
+    if (!resignedUsers.length) return
+    if (!window.confirm(`Cách ly ${resignedUsers.length} tài khoản của nhân viên đã nghỉ việc? Các tài khoản này sẽ bị chặn đăng nhập.`)) return
+    setBusyAction('isolate')
+    try {
+      const res = await fetch(apiUrl('/users/isolate-resigned'), { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok) {
+        setSaveMsg({ type: 'success', text: `Đã cách ly ${data.isolated ?? resignedUsers.length} tài khoản nhân viên đã nghỉ việc` })
+        fetchUsers()
+      } else {
+        setSaveMsg({ type: 'error', text: data.detail || 'Lỗi khi cách ly tài khoản' })
+      }
+    } catch (_) {
+      setSaveMsg({ type: 'error', text: 'Lỗi kết nối máy chủ' })
+    } finally { setBusyAction(null) }
+  }
+
+  async function deleteResigned() {
+    if (!resignedUsers.length) return
+    if (!window.confirm(`Xóa vĩnh viễn ${resignedUsers.length} nhân viên đã nghỉ việc cùng tài khoản đăng nhập? Hành động này không thể hoàn tác.`)) return
+    if (!window.confirm('Xác nhận lần cuối: xóa toàn bộ nhân viên đã nghỉ việc?')) return
+    setBusyAction('delete')
+    try {
+      const q = new URLSearchParams({ admin_code: adminCode, token, role: userRole })
+      const res = await fetch(`${getApiBase()}/employees/bulk/resigned?${q}`, { method: 'DELETE' })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.success !== false) {
+        setSaveMsg({ type: 'success', text: data.message || `Đã xóa ${data.deleted ?? 0} nhân viên đã nghỉ việc` })
+        fetchUsers()
+      } else {
+        setSaveMsg({ type: 'error', text: data.detail || data.message || 'Lỗi khi xóa nhân viên đã nghỉ việc' })
+        fetchUsers()
+      }
+    } catch (_) {
+      setSaveMsg({ type: 'error', text: 'Lỗi kết nối máy chủ' })
+    } finally { setBusyAction(null) }
+  }
+
+  async function reactivateUser(user) {
+    if (!window.confirm(`Kích hoạt lại tài khoản ${user.full_name || user.employee_code}? Nhân viên sẽ trở lại trạng thái "Đang làm việc" và có thể đăng nhập.`)) return
+    setBusyAction(`reactivate:${user.employee_code}`)
+    try {
+      const res = await fetch(apiUrl(`/users/${encodeURIComponent(user.employee_code)}/reactivate`), { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok) {
+        setSaveMsg({ type: 'success', text: data.message || `Đã kích hoạt lại ${user.employee_code}` })
+        fetchUsers()
+      } else {
+        setSaveMsg({ type: 'error', text: data.detail || 'Lỗi khi kích hoạt lại tài khoản' })
+      }
+    } catch (_) {
+      setSaveMsg({ type: 'error', text: 'Lỗi kết nối máy chủ' })
+    } finally { setBusyAction(null) }
+  }
 
   async function changeRole(user, newRole) {
     if (user.employee_code === adminCode) {
@@ -1196,8 +1260,8 @@ function UserRolesTab({ apiUrl, saveMsg, setSaveMsg }) {
     } finally { setSavingRole(null) }
   }
 
-  const roleColors = { admin: '#dc2626', head: '#2563eb', user: '#64748b' }
-  const roleLabels = { admin: 'Admin', head: 'Trưởng phòng', user: 'Nhân viên' }
+  const roleColors = { admin: '#dc2626', head: '#2563eb', deputy: '#0891b2', user: '#64748b' }
+  const roleLabels = { admin: 'Admin', head: 'Trưởng phòng', deputy: 'Phó phòng', user: 'Nhân viên' }
 
   const filtered = users.filter(u => {
     if (!search) return true
@@ -1208,13 +1272,63 @@ function UserRolesTab({ apiUrl, saveMsg, setSaveMsg }) {
   })
 
   return (
-    <div className="bk-card" style={{ padding: '1.25rem', maxWidth: 800 }}>
+    <div className="bk-card" style={{ padding: '1.25rem', maxWidth: 1000 }}>
       <div className="bk-form-group" style={{ marginBottom: '0.75rem', position: 'relative' }}>
         <Search size={14} style={{ position: 'absolute', left: '0.6rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--bk-text-muted)' }} />
         <input className="bk-form-input" placeholder="Tìm kiếm người dùng..."
           value={search} onChange={e => setSearch(e.target.value)}
           style={{ paddingLeft: '1.8rem', height: '34px', fontSize: '0.85rem' }} />
       </div>
+
+      <div style={{
+        display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem',
+        marginBottom: '0.75rem', padding: '0.5rem 0.65rem', borderRadius: 8,
+        background: resignedUsers.length ? '#fef2f2' : 'var(--bk-surface-hover)',
+        border: `1px solid ${resignedUsers.length ? '#fecaca' : 'var(--bk-border)'}`,
+      }}>
+        <span style={{ fontSize: '0.8rem', fontWeight: 600, color: resignedUsers.length ? '#991b1b' : 'var(--bk-text-secondary)' }}>
+          {resignedUsers.length > 0
+            ? `${resignedUsers.length} nhân viên đã nghỉ việc`
+            : 'Không có nhân viên đã nghỉ việc'}
+        </span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.4rem' }}>
+          <button type="button" onClick={isolateResigned}
+            disabled={!resignedUsers.length || busyAction !== null}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.6rem',
+              borderRadius: 6, border: '1px solid #f59e0b', background: '#fffbeb',
+              color: '#b45309', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
+              opacity: (!resignedUsers.length || busyAction !== null) ? 0.5 : 1,
+            }}>
+            {busyAction === 'isolate' ? <Loader size={13} className="spin" /> : <Lock size={13} />}
+            Cách ly
+          </button>
+          <button type="button" onClick={deleteResigned}
+            disabled={!resignedUsers.length || busyAction !== null}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.6rem',
+              borderRadius: 6, border: '1px solid #dc2626', background: '#dc2626',
+              color: '#fff', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
+              opacity: (!resignedUsers.length || busyAction !== null) ? 0.5 : 1,
+            }}>
+            {busyAction === 'delete' ? <Loader size={13} className="spin" /> : <Trash2 size={13} />}
+            Xóa tất cả nhân viên đã nghỉ
+          </button>
+        </div>
+      </div>
+
+      {saveMsg && (
+        <div style={{
+          marginBottom: '0.75rem', padding: '0.5rem 0.75rem', borderRadius: 6, fontSize: '0.82rem',
+          background: saveMsg.type === 'success' ? '#f0fdf4' : '#fef2f2',
+          border: `1px solid ${saveMsg.type === 'success' ? '#bbf7d0' : '#fecaca'}`,
+          color: saveMsg.type === 'success' ? 'var(--bk-success)' : 'var(--bk-danger)',
+          display: 'flex', alignItems: 'center', gap: '0.4rem',
+        }}>
+          {saveMsg.type === 'success' ? <Check size={14} /> : <X size={14} />}
+          {saveMsg.text}
+        </div>
+      )}
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--bk-text-muted)' }}>
@@ -1228,6 +1342,7 @@ function UserRolesTab({ apiUrl, saveMsg, setSaveMsg }) {
                 <th style={{ textAlign: 'left', padding: '0.5rem 0.65rem', fontWeight: 700, color: 'var(--bk-text-secondary)' }}>NV</th>
                 <th style={{ textAlign: 'left', padding: '0.5rem 0.65rem', fontWeight: 700, color: 'var(--bk-text-secondary)' }}>Họ tên</th>
                 <th style={{ textAlign: 'left', padding: '0.5rem 0.65rem', fontWeight: 700, color: 'var(--bk-text-secondary)' }}>Phòng ban</th>
+                <th style={{ textAlign: 'left', padding: '0.5rem 0.65rem', fontWeight: 700, color: 'var(--bk-text-secondary)' }}>Trạng thái</th>
                 <th style={{ textAlign: 'left', padding: '0.5rem 0.65rem', fontWeight: 700, color: 'var(--bk-text-secondary)' }}>Vai trò</th>
                 <th style={{ textAlign: 'right', padding: '0.5rem 0.65rem', fontWeight: 700, color: 'var(--bk-text-secondary)' }}>Thao tác</th>
               </tr>
@@ -1239,6 +1354,26 @@ function UserRolesTab({ apiUrl, saveMsg, setSaveMsg }) {
                   <td style={{ padding: '0.55rem 0.65rem' }}>{u.full_name || '—'}</td>
                   <td style={{ padding: '0.55rem 0.65rem', color: 'var(--bk-text-secondary)' }}>{u.department || '—'}</td>
                   <td style={{ padding: '0.55rem 0.65rem' }}>
+                    {(u.status || '').toLowerCase() === 'resigned' ? (
+                      <span style={{
+                        display: 'inline-block', padding: '0.2rem 0.55rem', borderRadius: '99px',
+                        fontSize: '0.72rem', fontWeight: 600, background: '#fee2e2', color: '#dc2626',
+                      }}>Đã nghỉ việc</span>
+                    ) : (
+                      <span style={{
+                        display: 'inline-block', padding: '0.2rem 0.55rem', borderRadius: '99px',
+                        fontSize: '0.72rem', fontWeight: 600, background: '#dcfce7', color: '#16a34a',
+                      }}>Đang làm việc</span>
+                    )}
+                    {u.is_locked && (
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '0.2rem', marginLeft: '0.35rem',
+                        padding: '0.2rem 0.5rem', borderRadius: '99px', fontSize: '0.7rem',
+                        fontWeight: 600, background: '#fef3c7', color: '#b45309',
+                      }}><Lock size={10} /> Cách ly</span>
+                    )}
+                  </td>
+                  <td style={{ padding: '0.55rem 0.65rem' }}>
                     <span style={{
                       display: 'inline-block', padding: '0.2rem 0.55rem', borderRadius: '99px',
                       fontSize: '0.72rem', fontWeight: 600,
@@ -1249,6 +1384,21 @@ function UserRolesTab({ apiUrl, saveMsg, setSaveMsg }) {
                     </span>
                   </td>
                   <td style={{ padding: '0.55rem 0.65rem', textAlign: 'right' }}>
+                    {((u.status || '').toLowerCase() === 'resigned' || u.is_locked) && (
+                      <button type="button" onClick={() => reactivateUser(u)}
+                        disabled={busyAction === `reactivate:${u.employee_code}`}
+                        title="Đưa nhân viên về trạng thái Đang làm việc và mở khóa đăng nhập"
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+                          padding: '0.28rem 0.5rem', marginRight: '0.4rem', borderRadius: 6,
+                          border: '1px solid #16a34a', background: '#f0fdf4', color: '#15803d',
+                          fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer',
+                          opacity: busyAction === `reactivate:${u.employee_code}` ? 0.5 : 1,
+                        }}>
+                        {busyAction === `reactivate:${u.employee_code}` ? <Loader size={11} className="spin" /> : <Check size={11} />}
+                        Kích hoạt lại
+                      </button>
+                    )}
                     <select value={u.role} onChange={e => changeRole(u, e.target.value)}
                       disabled={savingRole === u.employee_code || u.employee_code === adminCode}
                       style={{
@@ -1260,6 +1410,7 @@ function UserRolesTab({ apiUrl, saveMsg, setSaveMsg }) {
                       }}>
                       <option value="user">Nhân viên</option>
                       <option value="head">Trưởng phòng</option>
+                      <option value="deputy">Phó phòng</option>
                       <option value="admin">Admin</option>
                     </select>
                     {u.employee_code === adminCode && (

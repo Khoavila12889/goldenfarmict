@@ -1,0 +1,60 @@
+/* Báo cáo — style riêng của trang Reports (trước đây nhúng <style> trong Reports.jsx,
+   tách ra file riêng theo convention của app: mỗi trang một file .css).
+   Các lớp dùng chung (.tbl, .tbl-wrap, .page-title) nằm ở styles/shared.css. */
+.rp-page { padding: 4px 2px 28px; }
+.rp-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; justify-content: space-between; margin-bottom: 14px; }
+.rp-dates { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.rp-dates label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #64748b; }
+.rp-dates input, .rp-dates select { padding: 7px 10px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 13px; background: #fff; }
+.rp-tabs { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 16px; }
+.rp-tab { padding: 7px 13px; border-radius: 999px; border: 1px solid #e2e8f0; background: #fff; font-size: 13px; cursor: pointer; color: #334155; }
+.rp-tab.on { background: var(--bk-primary, #d97706); border-color: var(--bk-primary, #d97706); color: #fff; font-weight: 600; }
+.rp-tab.off { opacity: .55; }
+.rp-scope { display: inline-block; font-size: 12px; font-weight: 600; color: #92400e; background: #fef3c7; border: 1px solid #fde68a; padding: 4px 11px; border-radius: 999px; margin-bottom: 12px; }
+.rp-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.rp-kpi { background: #fff; border: 1px solid #e6edf5; border-radius: 12px; padding: 14px 16px; box-shadow: 0 1px 4px rgba(0,0,0,.04); }
+.rp-kpi-lb { font-size: 12px; color: #64748b; margin-bottom: 6px; }
+.rp-kpi-v { font-size: 24px; font-weight: 700; color: #0f172a; line-height: 1.15; }
+.rp-kpi-v small { font-size: 13px; font-weight: 500; color: #64748b; }
+.rp-delta { display: inline-block; margin-top: 6px; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+.rp-delta.up { background: #dcfce7; color: #15803d; }
+.rp-delta.down { background: #fee2e2; color: #b91c1c; }
+.rp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.rp-card { background: #fff; border: 1px solid #e6edf5; border-radius: 12px; padding: 14px 16px; box-shadow: 0 1px 4px rgba(0,0,0,.04); margin-bottom: 14px; }
+.rp-grid .rp-card { margin-bottom: 0; }
+.rp-card-title { font-size: 13.5px; font-weight: 600; color: #0f172a; margin-bottom: 12px; }
+.rp-bars { display: flex; flex-direction: column; gap: 8px; }
+.rp-bar-row { display: grid; grid-template-columns: 150px 1fr 64px; gap: 10px; align-items: center; font-size: 12.5px; }
+.rp-bar-name { color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rp-bar-track { background: #f1f5f9; border-radius: 6px; height: 14px; overflow: hidden; }
+.rp-bar-fill { height: 100%; border-radius: 6px; }
+.rp-bar-val { text-align: right; font-weight: 600; color: #0f172a; }
+.rp-svg { width: 100%; height: auto; }
+.rp-donut-wrap { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.rp-donut { width: 150px; height: 150px; flex: none; }
+.rp-legend { flex: 1; min-width: 170px; display: flex; flex-direction: column; gap: 6px; }
+.rp-legend-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.rp-dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.rp-legend-name { color: #334155; flex: 1; }
+.rp-legend-val { font-weight: 600; color: #0f172a; }
+.rp-empty, .rp-empty-cell { color: #94a3b8; font-size: 12.5px; text-align: center; padding: 10px; }
+.rp-notes { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; border-radius: 12px; padding: 12px 16px; font-size: 13px; margin-bottom: 14px; }
+.rp-click { cursor: pointer; }
+.rp-click:hover td { background: #f1f5f9; }
+.rp-modal-back { position: fixed; inset: 0; background: rgba(15,23,42,.5); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
+.rp-modal { background: #fff; border-radius: 14px; max-width: 620px; width: 100%; max-height: 86vh; overflow-y: auto; padding: 20px 22px; box-shadow: 0 18px 50px rgba(0,0,0,.25); }
+.rp-modal-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.rp-modal-head h3 { margin: 0; font-size: 17px; color: #0f172a; line-height: 1.4; }
+.rp-modal-x { border: none; background: #f1f5f9; border-radius: 8px; width: 30px; height: 30px; cursor: pointer; font-size: 13px; flex-shrink: 0; }
+.rp-modal-meta { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px 16px; margin: 16px 0; }
+.rp-modal-meta span { display: block; font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: .04em; }
+.rp-modal-meta b { font-size: 13.5px; color: #1e293b; }
+.rp-modal-lb { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+.rp-modal-desc { font-size: 14px; color: #334155; line-height: 1.65; white-space: pre-wrap; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; }
+.rp-modal-tags { margin-top: 10px; font-size: 12.5px; color: #64748b; }
+.rp-modal-load { color: #64748b; font-size: 14px; }
+.rp-notes div { margin: 2px 0; }
+.rp-err { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; border-radius: 12px; padding: 14px 16px; font-size: 13.5px; }
+.rp-loading { color: #64748b; font-size: 13.5px; padding: 18px 4px; }
+@media (max-width: 640px) { .rp-bar-row { grid-template-columns: 104px 1fr 54px; } .rp-kpi-v { font-size: 20px; } }
+      

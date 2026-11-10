@@ -101,6 +101,7 @@ def _add_missing_columns(session):
         ("salary_upload_logs", "file_path", "TEXT DEFAULT ''"),
         ("salaries", "payment_date", "TEXT DEFAULT ''"),
         ("todos", "is_dept_approved", "INTEGER DEFAULT 1"),
+        ("todos", "completed_at", "TIMESTAMP NULL"),
     ]
     
     for table_name, column_name, column_def in columns_to_add:

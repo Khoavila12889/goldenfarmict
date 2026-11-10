@@ -1943,3 +1943,37 @@ SALES_BOT_API_KEY=<giống N8N_ORDER_KEY của /home/sales-bot-api/.env>
 Không đưa key vào frontend. Backend xác minh session Goldenfarm trước khi proxy
 yêu cầu và Sales Bot API vẫn chỉ thực hiện truy vấn đọc.
 
+# Module Báo cáo (thêm 2026-11-10)
+
+Trang `/reports` cho lãnh đạo xem báo cáo của mọi module theo một envelope chung
+(KPI có delta so với kỳ trước, biểu đồ, bảng việc cần xử lý, bảng drill-down, ghi
+chú nguồn dữ liệu). Frontend tự vẽ biểu đồ bằng SVG thuần (app không dùng thư
+viện biểu đồ), style riêng ở `frontend/src/pages/Reports.css`.
+
+- **Backend**: `backend/app/routers/reports.py`, tiền tố `/api/reports`.
+  `GET /api/reports` trả danh mục kèm cờ `allowed`/`scopable` theo người gọi;
+  `GET /api/reports/{key}` trả số liệu kỳ `from`–`to`; `GET /api/reports/todo/{id}`
+  trả chi tiết một công việc cho popup ở báo cáo Công việc (bảng việc quá hạn bấm
+  vào từng dòng để xem nội dung). Ngày nghiệp vụ theo Asia/Ho_Chi_Minh; các cột
+  ngày dạng VARCHAR được chuẩn hoá bằng helper `_d()` (ISO, DD/MM/YYYY, số serial
+  Excel); lương (`salaries.data_json`) phải cộng ở Python vì có dòng JSON lỗi.
+  Đơn hàng nằm ở hệ thống bán hàng ngoài nên trang Đơn hàng là placeholder có ghi chú.
+- **Vai trò hệ thống** (`users.role`) mới là thứ tạo quyền — **chức vụ**
+  (`employees.position`) chỉ là chức danh nhân sự, không tạo quyền. Vai trò:
+  `admin`, `head` (trưởng phòng), `deputy` (phó phòng — thêm 2026-11-10), `user`.
+  Gán vai trò ở Phân quyền → tab "Vai trò người dùng"; quyền module gộp 3 lớp:
+  mặc định theo vai trò → theo phòng ban → cấp riêng cá nhân (lớp sau đè lớp trước).
+- **Quy tắc xem báo cáo**: chỉ `head`/`deputy`/`admin` (nhân viên thường 403).
+  Trưởng/phó phòng bị khóa ở phòng của mình và chỉ thấy 4 tab: Nhân sự, Phê duyệt,
+  Công tác, Công việc. Nhóm báo cáo tổng (Điều hành, Lương, Tài liệu & Chia sẻ,
+  Trao đổi nội bộ, Công thức & In ấn) chỉ dành cho `admin` và phòng IT. Người xem
+  toàn công ty (admin/IT) có thêm bộ lọc "Phòng ban" trên 7 trang báo cáo có số
+  liệu theo phòng; trưởng/phó phòng truyền tay tham số phòng khác cũng không xem
+  chéo được vì server luôn ép phạm vi theo hồ sơ của họ.
+- **Nhãn trạng thái** hiển thị thuần tiếng Việt có dấu (đổi ở tầng hiển thị trong
+  `reports.py`, không sửa dữ liệu gốc): mã công việc/phê duyệt tiếng Anh và trạng
+  thái ticket lưu không dấu đều được ánh xạ sang tiếng Việt khi trả về.
+- **Bảo trì**: các file `.bak-*` của đợt triển khai này được gom ở
+  `backups/2026-11-10/` trong thư mục project. Cột `departments.head_id` là dữ
+  liệu cũ không còn khớp nhân viên hiện tại — đừng dựa vào đó để suy ra trưởng
+  phòng; nguồn đúng là `users.role`.

@@ -86,6 +86,7 @@ postgres/
 
 # Versioned chat performance migration (not a database dump)
 !backend/migrations/20261015_chat_history_indexes.sql
+!backend/migrations/20261102_todos_completed_at.sql
 # ArtCraft web dists (tai tu GitHub Releases, xem docs/CRAFT_DEMO_README.md)
 craft-web/wordcraft/*
 craft-web/gridcraft/*
@@ -98,3 +99,5 @@ craft-web/pdfcraft/*
 *.xlsx
 docker-compose.yml.bak.*
 .claude/
+backend/logs/*.log*
+backups/

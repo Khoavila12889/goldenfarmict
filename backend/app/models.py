@@ -108,6 +108,7 @@ class User(Base):
     password_hash = Column(String, nullable=False)
     role = Column(String, default='user')
     is_first_login = Column(Boolean, default=True)
+    is_locked = Column(Boolean, default=False)
     created_at = Column(String, default='')
     updated_at = Column(String, default='')
 
@@ -333,6 +334,7 @@ class Todo(Base):
     status = Column(String, default='todo', index=True)
     priority = Column(String, default='medium')
     due_date = Column(String, default='')
+    completed_at = Column(DateTime, nullable=True)
     tags = Column(String, default='')
     created_at = Column(String, default='')
     updated_at = Column(String, default='')
@@ -623,3 +625,130 @@ class FormulaPrintJob(Base):
     claimed_at = Column(DateTime, nullable=True)
     finished_at = Column(DateTime, nullable=True)
     error = Column(Text, nullable=True)
+
+
+# ─── Mail module (Outlook-like email client) ────────────────────────────
+
+class MailAccount(Base):
+    __tablename__ = 'mail_accounts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    employee_code = Column(String(50), ForeignKey('users.employee_code', ondelete='CASCADE'), nullable=False, index=True)
+    provider = Column(String(20), nullable=False, default='imap')
+    email_address = Column(String(255), nullable=False)
+    display_name = Column(String(255), default='')
+    imap_host = Column(String(255), default='')
+    imap_port = Column(Integer, default=993)
+    imap_tls = Column(Boolean, default=True)
+    smtp_host = Column(String(255), default='')
+    smtp_port = Column(Integer, default=465)
+    smtp_tls = Column(Boolean, default=True)
+    username = Column(String(255), default='')
+    secret_encrypted = Column(Text, default='')
+    sync_enabled = Column(Boolean, default=True)
+    sync_limit = Column(Integer, default=200)
+    is_demo = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MailFolder(Base):
+    __tablename__ = 'mail_folders'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey('mail_accounts.id', ondelete='CASCADE'), nullable=False, index=True)
+    path = Column(String(500), nullable=False)
+    name = Column(String(255), default='')
+    role = Column(String(30), default='custom')
+    unread_count = Column(Integer, default=0)
+    total_count = Column(Integer, default=0)
+    sort_order = Column(Integer, default=0)
+    __table_args__ = (
+        UniqueConstraint('account_id', 'path', name='uq_mail_folders_account_path'),
+    )
+
+
+class MailMessage(Base):
+    __tablename__ = 'mail_messages'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey('mail_accounts.id', ondelete='CASCADE'), nullable=False, index=True)
+    folder_id = Column(Integer, ForeignKey('mail_folders.id', ondelete='CASCADE'), nullable=False, index=True)
+    uid = Column(Integer, nullable=True)
+    message_id = Column(String(500), default='')
+    thread_key = Column(String(500), default='', index=True)
+    subject = Column(String(1000), default='')
+    snippet = Column(String(500), default='')
+    from_name = Column(String(255), default='')
+    from_email = Column(String(255), default='')
+    to_json = Column(Text, default='[]')
+    cc_json = Column(Text, default='[]')
+    bcc_json = Column(Text, default='[]')
+    sent_at = Column(DateTime, nullable=True)
+    received_at = Column(DateTime, nullable=True)
+    is_read = Column(Boolean, default=False)
+    is_starred = Column(Boolean, default=False)
+    is_draft = Column(Boolean, default=False)
+    has_attachment = Column(Boolean, default=False)
+    size_bytes = Column(Integer, default=0)
+    raw_path = Column(String(1000), default='')
+    created_at = Column(DateTime, default=datetime.utcnow)
+    __table_args__ = (
+        UniqueConstraint('account_id', 'folder_id', 'uid', name='uq_mail_messages_account_folder_uid'),
+        Index('ix_mail_messages_account_received', 'account_id', 'received_at'),
+    )
+
+
+class MailMessageBody(Base):
+    __tablename__ = 'mail_message_bodies'
+    message_id = Column(Integer, ForeignKey('mail_messages.id', ondelete='CASCADE'), primary_key=True)
+    text_plain = Column(Text, default='')
+    text_html = Column(Text, default='')
+
+
+class MailAttachment(Base):
+    __tablename__ = 'mail_attachments'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    message_id = Column(Integer, ForeignKey('mail_messages.id', ondelete='CASCADE'), nullable=False, index=True)
+    filename = Column(String(500), default='')
+    mime_type = Column(String(200), default='')
+    size_bytes = Column(Integer, default=0)
+    content_id = Column(String(500), default='')
+    storage_path = Column(String(1000), default='')
+
+
+class MailSyncState(Base):
+    __tablename__ = 'mail_sync_state'
+    account_id = Column(Integer, ForeignKey('mail_accounts.id', ondelete='CASCADE'), primary_key=True)
+    folder_path = Column(String(500), primary_key=True)
+    uidvalidity = Column(Integer, default=0)
+    last_uid = Column(Integer, default=0)
+    last_sync_at = Column(DateTime, nullable=True)
+    status = Column(String(30), default='idle')
+    last_error = Column(Text, default='')
+
+
+class MailDraft(Base):
+    __tablename__ = 'mail_drafts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey('mail_accounts.id', ondelete='CASCADE'), nullable=False, index=True)
+    employee_code = Column(String(50), ForeignKey('users.employee_code', ondelete='CASCADE'), nullable=False, index=True)
+    in_reply_to = Column(String(500), default='')
+    to_json = Column(Text, default='[]')
+    cc_json = Column(Text, default='[]')
+    bcc_json = Column(Text, default='[]')
+    subject = Column(String(1000), default='')
+    body_html = Column(Text, default='')
+    attachments_json = Column(Text, default='[]')
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MailOutbox(Base):
+    __tablename__ = 'mail_outbox'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey('mail_accounts.id', ondelete='CASCADE'), nullable=False, index=True)
+    draft_id = Column(Integer, ForeignKey('mail_drafts.id', ondelete='SET NULL'), nullable=True)
+    payload_json = Column(Text, default='{}')
+    status = Column(String(30), default='queued', index=True)
+    attempts = Column(Integer, default=0)
+    last_error = Column(Text, default='')
+    created_at = Column(DateTime, default=datetime.utcnow)
+    sent_at = Column(DateTime, nullable=True)

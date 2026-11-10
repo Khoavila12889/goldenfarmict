@@ -535,6 +535,46 @@ select.form-control:disabled {
   font-size: 0.8rem;
 }
 
+.todo-completion-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--todo-text-secondary);
+  font-size: 0.72rem;
+}
+
+.todo-completion-row > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.completion-timing-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.completion-timing-badge.on-time { background: #ecfdf5; color: #047857; }
+.completion-timing-badge.early { background: #eff6ff; color: #1d4ed8; }
+.completion-timing-badge.late { background: #fef2f2; color: #b91c1c; }
+
+.todo-detail-completion {
+  flex-wrap: wrap;
+}
+
+.todo-detail-completion .completion-timing-badge {
+  margin-left: 4px;
+}
+
 .todo-due {
   display: flex;
   align-items: center;
@@ -1541,6 +1581,8 @@ select.form-control:hover {
 .todo-user-progress-label { display: flex; justify-content: space-between; color: var(--todo-text-secondary); font-size: .72rem; }
 .todo-user-progress { height: 6px; margin-top: 5px; overflow: hidden; border-radius: 9px; background: #e2e8f0; }
 .todo-user-progress span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg,#60a5fa,#10b981); }
+.todo-user-on-time { display: flex; justify-content: space-between; margin-top: .65rem; padding-top: .6rem; border-top: 1px solid #eef2f7; color: var(--todo-text-secondary); font-size: .72rem; }
+.todo-user-on-time b { color: #047857; }
 .todo-user-card-action { display: block; margin-top: .7rem; color: #2563eb; font-size: .75rem; font-weight: 600; }
 .todo-table-panel { padding: .6rem .85rem; }
 .todo-table-toolbar { margin: 0; padding: .35rem 0 .7rem; color: var(--todo-text-secondary); font-size: .8rem; }
@@ -1550,15 +1592,17 @@ select.form-control:hover {
 .todo-table-group-head { display: flex; align-items: center; gap: .45rem; width: 100%; padding: .65rem .25rem; border: 0; background: transparent; color: #334155; text-align: left; cursor: pointer; }
 .todo-table-group-head b { margin-left: auto; color: var(--todo-text-secondary); }
 .todo-table-scroll { overflow-x: auto; }
-.todo-table { width: 100%; min-width: 820px; border-collapse: collapse; table-layout: fixed; font-size: .8rem; }
+.todo-table { width: 100%; min-width: 1080px; border-collapse: collapse; table-layout: fixed; font-size: .8rem; }
 .todo-table th, .todo-table td { box-sizing: border-box; padding: 10px 12px; vertical-align: middle; }
 .todo-table th { background: #f8fafc; color: #64748b; text-align: left; font-size: .7rem; font-weight: 600; white-space: nowrap; }
 .todo-table td { border-top: 1px solid #f1f5f9; color: #475569; overflow-wrap: anywhere; }
-.todo-table th:nth-child(1), .todo-table td:nth-child(1) { width: 40%; text-align: left; }
-.todo-table th:nth-child(2), .todo-table td:nth-child(2) { width: 20%; text-align: left; }
-.todo-table th:nth-child(3), .todo-table td:nth-child(3) { width: 15%; text-align: center; }
-.todo-table th:nth-child(4), .todo-table td:nth-child(4) { width: 12%; text-align: center; }
-.todo-table th:nth-child(5), .todo-table td:nth-child(5) { width: 13%; text-align: center; }
+.todo-table th:nth-child(1), .todo-table td:nth-child(1) { width: 29%; text-align: left; }
+.todo-table th:nth-child(2), .todo-table td:nth-child(2) { width: 15%; text-align: left; }
+.todo-table th:nth-child(3), .todo-table td:nth-child(3) { width: 11%; text-align: center; }
+.todo-table th:nth-child(4), .todo-table td:nth-child(4) { width: 9%; text-align: center; }
+.todo-table th:nth-child(5), .todo-table td:nth-child(5) { width: 10%; text-align: center; }
+.todo-table th:nth-child(6), .todo-table td:nth-child(6) { width: 12%; text-align: center; }
+.todo-table th:nth-child(7), .todo-table td:nth-child(7) { width: 14%; text-align: center; }
 .todo-table tbody tr { cursor: pointer; }.todo-table tbody tr:hover { background: #f8fbff; }
 .todo-table td:first-child { color: #0f172a; }.todo-table td:first-child small { display: block; max-width: 420px; margin-top: 3px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .todo-table-status { display: inline-block; padding: 3px 7px; border-radius: 6px; background: #f1f5f9; font-size: .7rem; white-space: nowrap; }

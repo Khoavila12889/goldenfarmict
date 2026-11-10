@@ -158,12 +158,43 @@ def sync_department_head_role(new_head_id=None, old_head_id=None):
                 )
 
 
+def is_isolated(employee_code: str) -> bool:
+    """Tài khoản bị cách ly: đã khóa hoặc nhân viên đang ở trạng thái nghỉ việc."""
+    code = (employee_code or "").strip()
+    if not code:
+        return False
+    try:
+        row = fetchone(
+            """
+            SELECT u.is_locked, e.status
+            FROM users u
+            LEFT JOIN employees e ON e.employee_code = u.employee_code
+            WHERE u.employee_code = :code
+            """,
+            {"code": code},
+        )
+        if row:
+            if row.get("is_locked"):
+                return True
+            return (row.get("status") or "").strip().lower() == "resigned"
+        emp = fetchone(
+            "SELECT status FROM employees WHERE employee_code = :code",
+            {"code": code},
+        )
+        return bool(emp and (emp.get("status") or "").strip().lower() == "resigned")
+    except Exception:
+        return False
+
+
 def authenticate(login_id: str, password: str):
     if not login_id or not password:
         return None
 
     employee_code = resolve_login(login_id)
     if not employee_code:
+        return None
+
+    if is_isolated(employee_code):
         return None
 
     row = fetchone(
@@ -186,7 +217,10 @@ def authenticate(login_id: str, password: str):
 
 def verify_token(user_code: str, token: str, role: str) -> bool:
     expected = make_session_token(user_code, role)
-    return hmac.compare_digest(token or "", expected)
+    if not hmac.compare_digest(token or "", expected):
+        return False
+    # Cách ly: token cũ của tài khoản đã nghỉ việc / bị khóa không còn hiệu lực.
+    return not is_isolated(user_code)
 
 
 from fastapi import HTTPException

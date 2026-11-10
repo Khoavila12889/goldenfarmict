@@ -592,6 +592,10 @@ def update_todo(
     if data.status is not None:
         update_fields.append("status = :status")
         params['status'] = data.status
+        if data.status == "completed":
+            update_fields.append("completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP)")
+        else:
+            update_fields.append("completed_at = NULL")
     elif scope_or_department_changed and todo['status'] == 'review' and not approval_required:
         update_fields.append("status = 'todo'")
     if data.priority is not None:
@@ -647,8 +651,13 @@ def update_todo_status(
     if data.status == "review" and not requires_department_approval(user, todo["scope"], todo["department"]):
         raise HTTPException(status_code=400, detail="Phòng ban này không áp dụng trạng thái Chờ duyệt")
 
+    completed_at_sql = (
+        "completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP)"
+        if data.status == "completed"
+        else "completed_at = NULL"
+    )
     execute(
-        "UPDATE todos SET status = :status, updated_at = CURRENT_TIMESTAMP WHERE id = :todo_id",
+        f"UPDATE todos SET status = :status, {completed_at_sql}, updated_at = CURRENT_TIMESTAMP WHERE id = :todo_id",
         {"status": data.status, "todo_id": todo_id}
     )
 

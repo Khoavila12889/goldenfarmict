@@ -18,6 +18,31 @@ import { formatDate } from '../utils/date'
 import OnlyOfficeViewer from '../components/OnlyOfficeViewer'
 import './Todos.css'
 
+export function getCompletionTiming(dueDate, completedAt) {
+  if (!dueDate || !completedAt) return null
+  const dueDay = String(dueDate).slice(0, 10)
+  const completedDay = String(completedAt).slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDay) || !/^\d{4}-\d{2}-\d{2}$/.test(completedDay)) return null
+
+  const [dueYear, dueMonth, dueDateOfMonth] = dueDay.split('-').map(Number)
+  const [completedYear, completedMonth, completedDateOfMonth] = completedDay.split('-').map(Number)
+  const dueTime = Date.UTC(dueYear, dueMonth - 1, dueDateOfMonth)
+  const completedTime = Date.UTC(completedYear, completedMonth - 1, completedDateOfMonth)
+  if (!Number.isFinite(dueTime) || !Number.isFinite(completedTime)) return null
+
+  const dayDifference = Math.round((completedTime - dueTime) / 86400000)
+  if (dayDifference < 0) return `Trước hạn ${Math.abs(dayDifference)} ngày`
+  if (dayDifference === 0) return 'Đúng hạn'
+  return `Trễ hạn ${dayDifference} ngày`
+}
+
+function completionTimingClass(label) {
+  if (!label) return ''
+  if (label.startsWith('Trễ hạn')) return 'late'
+  if (label.startsWith('Trước hạn')) return 'early'
+  return 'on-time'
+}
+
 function normAtt(a) {
   return {
     id: a.id,
@@ -610,12 +635,15 @@ export default function Todos() {
   const userTaskStats = (employee) => {
     const assigned = todos.filter(todo => String(todo.assignee_code) === String(employee.employee_code))
     const completed = assigned.filter(todo => todo.status === 'completed').length
+    const completedWithDeadline = assigned.filter(todo => todo.status === 'completed' && getCompletionTiming(todo.due_date, todo.completed_at))
+    const completedOnTime = completedWithDeadline.filter(todo => !getCompletionTiming(todo.due_date, todo.completed_at).startsWith('Trễ hạn')).length
     return {
       total: assigned.length,
       inProgress: assigned.filter(todo => todo.status === 'in_progress').length,
       completed,
       overdue: assigned.filter(todo => isOverdue(todo.due_date, todo.status)).length,
       progress: assigned.length ? Math.round(completed / assigned.length * 100) : 0,
+      onTimeRate: completedWithDeadline.length ? Math.round(completedOnTime / completedWithDeadline.length * 100) : 0,
     }
   }
   const groupedTodos = visibleTodos.reduce((groups, todo) => {
@@ -758,6 +786,7 @@ export default function Todos() {
                 <div className="todo-user-card-head"><span className="todo-user-avatar">{(employee.full_name || '?').trim().charAt(0).toUpperCase()}</span><span className="todo-user-ident"><strong>{employee.full_name}</strong><small>{employee.position || 'Nhân viên'} · {employee.department || userDept}</small></span><span className="todo-user-total">{summary.total}</span></div>
                 <div className="todo-user-metrics"><span><i className="metric-dot doing" />Đang làm <b>{summary.inProgress}</b></span><span><i className="metric-dot done" />Hoàn thành <b>{summary.completed}</b></span><span><i className="metric-dot overdue" />Quá hạn <b>{summary.overdue}</b></span></div>
                 <div className="todo-user-progress-label"><span>Tiến độ tổng thể</span><b>{summary.progress}%</b></div><div className="todo-user-progress"><span style={{ width: `${summary.progress}%` }} /></div>
+                <div className="todo-user-on-time"><span>Tỷ lệ hoàn thành đúng hạn</span><b>{summary.onTimeRate}%</b></div>
                 <span className="todo-user-card-action">Xem danh sách công việc →</span>
               </button>
             })}
@@ -771,8 +800,8 @@ export default function Todos() {
             const collapsed = collapsedGroups.has(groupName)
             return <div className="todo-table-group" key={groupName}>
               <button className="todo-table-group-head" onClick={() => setCollapsedGroups(prev => { const next = new Set(prev); next.has(groupName) ? next.delete(groupName) : next.add(groupName); return next })}><ChevronRight size={15} style={{ transform: collapsed ? 'none' : 'rotate(90deg)' }} /><span>{groupName}</span><b>{groupTodos.length}</b></button>
-              {!collapsed && <div className="todo-table-scroll"><table className="todo-table"><thead><tr><th>Tiêu đề</th><th>Người nhận</th><th>Trạng thái</th><th>Ưu tiên</th><th>Hạn chót</th></tr></thead><tbody>
-                {groupTodos.map(todo => <tr key={todo.id} onClick={() => openTodoDetail(todo)}><td><strong>{todo.title}</strong>{todo.description && <small>{todo.description}</small>}</td><td>{todo.assignee_name || todo.creator_name || 'Chưa giao'}</td><td><span className={`todo-table-status status-${columnIdForTodo(todo)}`}>{todoStatusLabel(todo)}</span></td><td><span className={`badge-priority priority-${todo.priority}`}>{todo.priority}</span></td><td className={isOverdue(todo.due_date, todo.status) ? 'todo-overdue-text' : ''}>{todo.due_date ? formatDate(todo.due_date) : '—'}</td></tr>)}
+              {!collapsed && <div className="todo-table-scroll"><table className="todo-table"><thead><tr><th>Tiêu đề</th><th>Người nhận</th><th>Trạng thái</th><th>Ưu tiên</th><th>Hạn chót</th><th>Ngày hoàn thành</th><th>Tiến độ</th></tr></thead><tbody>
+                {groupTodos.map(todo => { const timing = getCompletionTiming(todo.due_date, todo.completed_at); return <tr key={todo.id} onClick={() => openTodoDetail(todo)}><td><strong>{todo.title}</strong>{todo.description && <small>{todo.description}</small>}</td><td>{todo.assignee_name || todo.creator_name || 'Chưa giao'}</td><td><span className={`todo-table-status status-${columnIdForTodo(todo)}`}>{todoStatusLabel(todo)}</span></td><td><span className={`badge-priority priority-${todo.priority}`}>{todo.priority}</span></td><td className={isOverdue(todo.due_date, todo.status) ? 'todo-overdue-text' : ''}>{todo.due_date ? formatDate(todo.due_date) : '—'}</td><td>{todo.completed_at ? formatDate(String(todo.completed_at).replace('T', ' ')) : '—'}</td><td>{timing ? <span className={`completion-timing-badge ${completionTimingClass(timing)}`}>{timing}</span> : '—'}</td></tr> })}
               </tbody></table></div>}
             </div>
           })}
@@ -905,6 +934,10 @@ export default function Todos() {
                               </span>
                             </div>
                           </div>
+                          {col.id === 'completed' && todo.completed_at && (() => {
+                            const timing = getCompletionTiming(todo.due_date, todo.completed_at)
+                            return <div className="todo-completion-row"><span><CheckCircle2 size={12} /> Hoàn thành: {formatDate(String(todo.completed_at).replace('T', ' '))}</span>{timing && <span className={`completion-timing-badge ${completionTimingClass(timing)}`}>{timing}</span>}</div>
+                          })()}
                     </div>
                   )
                 })}
@@ -934,6 +967,7 @@ export default function Todos() {
                   <div className="todo-meta-row">
                     <span className="todo-meta-item"><User size={15}/> <strong>Người nhận:</strong> {viewingTodo.assignee_name || 'Chưa giao'}</span>
                     <span className="todo-meta-item"><Calendar size={15}/> <strong>Hạn:</strong> {viewingTodo.due_date ? formatDate(viewingTodo.due_date) : 'Không có hạn'}</span>
+                    {viewingTodo.completed_at && <span className="todo-meta-item todo-detail-completion"><CheckCircle2 size={15}/> <strong>Hoàn thành:</strong> {formatDate(String(viewingTodo.completed_at).replace('T', ' '))}{getCompletionTiming(viewingTodo.due_date, viewingTodo.completed_at) && <span className={`completion-timing-badge ${completionTimingClass(getCompletionTiming(viewingTodo.due_date, viewingTodo.completed_at))}`}>{getCompletionTiming(viewingTodo.due_date, viewingTodo.completed_at)}</span>}</span>}
                     <span className={`badge-scope`}><Building size={12}/> {viewingTodo.department || 'Cá nhân'}</span>
                     {isPendingApproval(viewingTodo) && (
                       <span className="badge-pending"><Clock size={12}/> Chờ trưởng phòng duyệt</span>
