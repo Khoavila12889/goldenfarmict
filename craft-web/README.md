@@ -71,3 +71,13 @@ Không `restart` toàn bộ compose — sẽ gián đoạn `db`, `backend`, `onl
 - Container Up nhưng curl không 200: kiểm tra mount `./craft-web/<app>:/usr/share/nginx/html:ro` và file `index.html` tồn tại.
 
 Chi tiết demo trong webapp: xem `docs/CRAFT_DEMO_README.md`.
+
+## Cap nhat tu dong (tu 2026-11-10)
+
+Server tu kiem tra release moi cua ca 3 app moi ngay luc 02:30 (systemd timer
+`artcraft-update.timer`, script `/usr/local/sbin/artcraft-update.sh`): tai ban
+web moi nhat tu GitHub releases cua storytold, backup ban dang chay vao
+`backups/artcraft/` (giu 3 ban/app), thay noi dung, restart 3 service va kiem
+tra HTTP 200 o cac cong 8771/8772/8773; app nao loi se tu khoi phuc backup.
+Log o `/var/log/artcraft-update.log`, tag dang cai o `/var/lib/artcraft/`.
+Chay tay khi can: `systemctl start artcraft-update.service`.
