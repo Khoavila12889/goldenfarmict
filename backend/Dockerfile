@@ -20,7 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ArtCraft converters (branch wordcraft-viewer): xem docx/xlsx không cần OnlyOffice.
 # Ping versions trong ENV để dependabot/cache dễ thấy khi nâng cấp.
-ENV WORDCRAFT_VER=0.7.0 GRIDRAFT_VER=0.7.0
+ENV WORDCRAFT_VER=0.17.0 GRIDRAFT_VER=0.18.0
 RUN mkdir -p /opt/craft/bin /app/storage/craft-cache && \
     curl -sL --max-time 120 -o /tmp/wc.tar.gz \
       https://github.com/storytold/wordcraft/releases/download/v${WORDCRAFT_VER}/wordcraft-${WORDCRAFT_VER}-linux-x86_64.tar.gz && \
