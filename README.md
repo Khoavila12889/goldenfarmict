@@ -1981,3 +1981,17 @@ viện biểu đồ), style riêng ở `frontend/src/pages/Reports.css`.
   hoàn thành trong kỳ / quá hạn) hoặc dòng chú thích của biểu đồ trạng thái sẽ mở
   popup danh sách đúng các công việc làm nên con số đó (`GET /api/reports/todos-list`,
   cùng quy tắc phạm vi phòng ban); bấm tiếp vào một dòng để xem chi tiết công việc.
+
+---
+
+## Module Công việc (Todos) — cơ chế duyệt của trưởng phòng (khôi phục 2026-11-11)
+
+**Bối cảnh:** từ commit a5b5055 (28/09/2026, "Fix Todos authorization"), duyệt công việc thành tính năng **bật/tắt theo từng phòng ban** qua bảng `department_permissions`, module `todos.requires_approval` (mặc định TẮT cho mọi phòng). Vì chưa phòng nào được bật nên tính năng duyệt "biến mất": việc phòng ban tạo ra là được duyệt ngay, trạng thái Chờ duyệt bị API từ chối, nhân viên tự chuyển Hoàn thành tùy ý.
+
+**Trạng thái hiện tại (2026-11-11):**
+- Đã bật `todos.requires_approval` (can_view=1, can_edit=0) cho toàn bộ 21 phòng ban. Bật/tắt lại từng phòng tại: Phân quyền → quyền theo phòng ban → "Công việc — Cơ chế Chờ duyệt".
+- Luồng duyệt: nhân viên tạo việc phòng ban → việc ở trạng thái **chưa duyệt** (chỉ người tạo, trưởng/phó phòng và admin thấy) → trưởng/phó phòng bấm **Duyệt** (nút trên thẻ việc) thì cả phòng mới thấy. Khi làm xong, nhân viên chuyển **Chờ duyệt** → trưởng/phó phòng (hoặc admin) mới được kết luận **Hoàn thành**.
+- Chặn ở backend (`backend/app/core/todo_permissions.py` hàm `can_complete`, áp dụng trong PATCH `/api/todos/{id}/status` và PUT `/api/todos/{id}`): nhân viên thường gọi API trực tiếp cũng không tự Hoàn thành được việc phòng ban. Việc cá nhân không đổi — tự hoàn thành bình thường.
+- **Phó phòng (deputy) = trưởng phòng** trong module Todos: xem, sửa, duyệt và kết luận việc của phòng mình (trước đây code chỉ nhận head/admin).
+- Phòng chưa có trưởng/phó phòng thì chỉ admin duyệt được — cần bổ nhiệm trưởng phòng để luồng duyệt chạy đúng người.
+- Dữ liệu cũ: 7 việc nghiên cứu có `department` trống và `is_dept_approved=0` (tạo trước cơ chế này) — chỉ admin đóng/duyệt được cho tới khi gán lại phòng ban.

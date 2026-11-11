@@ -7,9 +7,15 @@ from app.core.db import fetchall, fetchone
 
 ADMIN = "admin"
 HEAD = "head"
+DEPUTY = "deputy"
 USER = "user"
 PERSONAL = "personal"
 DEPARTMENT = "department"
+
+
+def _is_manager(user: dict) -> bool:
+    """Trưởng phòng và phó phòng có quyền quản lý/duyệt như nhau."""
+    return user.get("user_role") in (HEAD, DEPUTY)
 
 
 def _same_dept(a: Any, b: Any) -> bool:
@@ -21,7 +27,7 @@ def _headed_departments(user: dict) -> list[str]:
     if departments:
         return [str(dept).strip() for dept in departments if str(dept).strip()]
     dept = str(user.get("department") or "").strip()
-    return [dept] if user.get("user_role") == HEAD and dept else []
+    return [dept] if _is_manager(user) and dept else []
 
 
 def departments_for(user: dict) -> list[str] | None:
@@ -29,7 +35,7 @@ def departments_for(user: dict) -> list[str] | None:
     role = user.get("user_role")
     if role == ADMIN:
         return None
-    if role == HEAD:
+    if _is_manager(user):
         return _headed_departments(user)
     dept = str(user.get("department") or "").strip()
     return [dept] if dept else []
@@ -97,19 +103,19 @@ def capabilities_for(user: dict) -> dict:
         "can_create": True,
         "can_create_personal": can_create_in_scope(user, PERSONAL),
         "can_create_department": role == ADMIN or bool(allowed),
-        "can_choose_department": role == ADMIN or (role == HEAD and bool(allowed)),
+        "can_choose_department": role == ADMIN or (_is_manager(user) and bool(allowed)),
         "allowed_departments": permitted_departments,
         "approval_by_department": approval_by_department,
         "review_by_department": review_by_department,
         "requires_department_approval": viewer_review_setting if viewer_review_setting is not None else any(review_by_department.values()),
-        "default_scope": DEPARTMENT if role == HEAD else PERSONAL,
+        "default_scope": DEPARTMENT if _is_manager(user) else PERSONAL,
     }
 
 
 def _in_department(user: dict, department: Any) -> bool:
     if user.get("user_role") == ADMIN:
         return True
-    allowed = _headed_departments(user) if user.get("user_role") == HEAD else [user.get("department")]
+    allowed = _headed_departments(user) if _is_manager(user) else [user.get("department")]
     return any(_same_dept(department, item) for item in allowed)
 
 
@@ -122,7 +128,7 @@ def can_view(user: dict, todo: dict) -> bool:
         return code in (todo.get("creator_code"), todo.get("assignee_code"))
     if scope == DEPARTMENT and _in_department(user, todo.get("department")):
         approved = str(todo.get("is_dept_approved") or "0").strip() in {"1", "true", "True"}
-        return user.get("user_role") == HEAD or approved or todo.get("creator_code") == code
+        return _is_manager(user) or approved or todo.get("creator_code") == code
     return False
 
 
@@ -130,7 +136,7 @@ def can_edit(user: dict, todo: dict) -> bool:
     if user.get("user_role") == ADMIN:
         return True
     code = user.get("user_code")
-    if user.get("user_role") == HEAD and todo.get("scope") == DEPARTMENT:
+    if _is_manager(user) and todo.get("scope") == DEPARTMENT:
         return _in_department(user, todo.get("department"))
     return code in (todo.get("creator_code"), todo.get("assignee_code")) and can_view(user, todo)
 
@@ -138,7 +144,7 @@ def can_edit(user: dict, todo: dict) -> bool:
 def can_delete(user: dict, todo: dict) -> bool:
     if user.get("user_role") == ADMIN:
         return True
-    if todo.get("scope") == DEPARTMENT and user.get("user_role") == HEAD:
+    if todo.get("scope") == DEPARTMENT and _is_manager(user):
         return _in_department(user, todo.get("department"))
     return todo.get("creator_code") == user.get("user_code") and can_view(user, todo)
 
@@ -146,9 +152,27 @@ def can_delete(user: dict, todo: dict) -> bool:
 def can_change_status(user: dict, todo: dict) -> bool:
     if user.get("user_role") == ADMIN:
         return True
-    if user.get("user_role") == HEAD and todo.get("scope") == DEPARTMENT:
+    if _is_manager(user) and todo.get("scope") == DEPARTMENT:
         return _in_department(user, todo.get("department"))
     return user.get("user_code") in (todo.get("creator_code"), todo.get("assignee_code")) and can_view(user, todo)
+
+
+def can_complete(user: dict, todo: dict) -> bool:
+    """Chuyển sang Hoàn thành.
+
+    Công việc phòng ban có bật cơ chế duyệt: chỉ admin hoặc trưởng/phó phòng
+    của chính phòng đó mới được kết luận Hoàn thành. Nhân viên phải chuyển
+    trạng thái Chờ duyệt để trưởng phòng duyệt.
+    """
+    if not can_change_status(user, todo):
+        return False
+    if todo.get("scope") != DEPARTMENT:
+        return True
+    if user.get("user_role") == ADMIN:
+        return True
+    if _is_manager(user) and _in_department(user, todo.get("department")):
+        return True
+    return not requires_department_approval(user, todo.get("scope"), todo.get("department"))
 
 
 def can_approve(user: dict, todo: dict) -> bool:
@@ -156,7 +180,7 @@ def can_approve(user: dict, todo: dict) -> bool:
     if todo.get("scope") != DEPARTMENT or approved:
         return False
     return user.get("user_role") == ADMIN or (
-        user.get("user_role") == HEAD and _in_department(user, todo.get("department"))
+        _is_manager(user) and _in_department(user, todo.get("department"))
     )
 
 
@@ -174,6 +198,7 @@ def permissions_for(user: dict, todo: dict) -> dict:
         "can_edit": editable,
         "can_delete": can_delete(user, todo),
         "can_change_status": can_change_status(user, todo),
+        "can_complete": can_complete(user, todo),
         "can_approve": can_approve(user, todo),
         "can_comment": visible,
         "can_manage_subtasks": editable,
@@ -199,7 +224,7 @@ def visible_sql(user: dict, alias: str = "") -> tuple[str, dict]:
     if role == ADMIN:
         return "1=1", {}
 
-    if role == HEAD:
+    if role in (HEAD, DEPUTY):
         departments = _headed_departments(user)
         if departments:
             params = {f"todo_dept_{idx}": dept.casefold() for idx, dept in enumerate(departments)}

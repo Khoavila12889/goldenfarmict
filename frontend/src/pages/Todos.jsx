@@ -122,7 +122,7 @@ export default function Todos() {
   const userDept = sessionStorage.getItem('user_department') || ''
   const userCode = sessionStorage.getItem('user_code') || ''
   const userRole = sessionStorage.getItem('user_role') || 'user'
-  const canViewDepartmentOverview = userRole === 'head' || userRole === 'admin'
+  const canViewDepartmentOverview = userRole === 'head' || userRole === 'deputy' || userRole === 'admin'
   
   const userName = sessionStorage.getItem('user_name') || userCode
   const allowedDepartmentNames = todoCapabilities.allowed_departments
@@ -919,7 +919,7 @@ export default function Todos() {
                               <option value="todo">Cần làm</option>
                               <option value="in_progress">Đang xử lý</option>
                               {(canSetReviewStatus || todo.status === 'review') && <option value="review" disabled={!canSetReviewStatus}>Chờ duyệt</option>}
-                              <option value="completed">Hoàn thành</option>
+                              <option value="completed" disabled={todo.permissions?.can_complete === false}>Hoàn thành{todo.permissions?.can_complete === false ? ' (cần trưởng phòng duyệt)' : ''}</option>
                               <option value="cancelled">Hủy</option>
                             </select>
                           </div>

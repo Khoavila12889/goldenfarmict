@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query, Header
 from app.core.db import fetchall, fetchone, execute, insert
 from app.core.auth import verify_session, same_dept, canonical_dept_name
 from app.core.todo_permissions import (
-    ADMIN, HEAD, PERSONAL, DEPARTMENT, can_delete, can_change_status,
+    ADMIN, HEAD, PERSONAL, DEPARTMENT, can_delete, can_change_status, can_complete,
     can_approve, can_create_in_scope, capabilities_for, departments_for, permissions_for,
     requires_department_approval, visible_sql, require_edit,
 )
@@ -554,6 +554,8 @@ def update_todo(
     approval_required = requires_department_approval(user, new_scope, target_dept)
     if data.status == "review" and not approval_required:
         raise HTTPException(status_code=400, detail="Phòng ban này không áp dụng trạng thái Chờ duyệt")
+    if data.status == "completed" and not can_complete(user, dict(todo)):
+        raise HTTPException(status_code=403, detail="Công việc phòng ban phải được trưởng phòng duyệt — hãy chuyển trạng thái Chờ duyệt")
 
     if data.assignee_code and new_scope == DEPARTMENT:
         emp = _active_employee(data.assignee_code)
@@ -650,6 +652,8 @@ def update_todo_status(
         raise HTTPException(status_code=403, detail="Bạn không có quyền cập nhật trạng thái công việc này")
     if data.status == "review" and not requires_department_approval(user, todo["scope"], todo["department"]):
         raise HTTPException(status_code=400, detail="Phòng ban này không áp dụng trạng thái Chờ duyệt")
+    if data.status == "completed" and not can_complete(user, dict(todo)):
+        raise HTTPException(status_code=403, detail="Công việc phòng ban phải được trưởng phòng duyệt — hãy chuyển trạng thái Chờ duyệt")
 
     completed_at_sql = (
         "completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP)"
