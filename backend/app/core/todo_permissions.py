@@ -158,11 +158,11 @@ def can_change_status(user: dict, todo: dict) -> bool:
 
 
 def can_complete(user: dict, todo: dict) -> bool:
-    """Chuyển sang Hoàn thành.
+    """Được kết luận Hoàn thành trực tiếp hay không.
 
     Công việc phòng ban có bật cơ chế duyệt: chỉ admin hoặc trưởng/phó phòng
-    của chính phòng đó mới được kết luận Hoàn thành. Nhân viên phải chuyển
-    trạng thái Chờ duyệt để trưởng phòng duyệt.
+    của chính phòng đó mới kết luận Hoàn thành trực tiếp. Nhân viên bấm
+    Hoàn thành thì hệ thống chuyển việc vào Chờ duyệt (xem routers/todos.py).
     """
     if not can_change_status(user, todo):
         return False

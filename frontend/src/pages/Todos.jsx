@@ -918,8 +918,8 @@ export default function Todos() {
                             >
                               <option value="todo">Cần làm</option>
                               <option value="in_progress">Đang xử lý</option>
-                              {(canSetReviewStatus || todo.status === 'review') && <option value="review" disabled={!canSetReviewStatus}>Chờ duyệt</option>}
-                              <option value="completed" disabled={todo.permissions?.can_complete === false}>Hoàn thành{todo.permissions?.can_complete === false ? ' (cần trưởng phòng duyệt)' : ''}</option>
+                              {todo.status === 'review' && <option value="review" disabled>Chờ duyệt</option>}
+                              <option value="completed">Hoàn thành</option>
                               <option value="cancelled">Hủy</option>
                             </select>
                           </div>

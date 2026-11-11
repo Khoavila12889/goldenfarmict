@@ -554,8 +554,11 @@ def update_todo(
     approval_required = requires_department_approval(user, new_scope, target_dept)
     if data.status == "review" and not approval_required:
         raise HTTPException(status_code=400, detail="Phòng ban này không áp dụng trạng thái Chờ duyệt")
-    if data.status == "completed" and not can_complete(user, dict(todo)):
-        raise HTTPException(status_code=403, detail="Công việc phòng ban phải được trưởng phòng duyệt — hãy chuyển trạng thái Chờ duyệt")
+    # Nhân viên bấm Hoàn thành ở phòng có duyệt -> việc vào Chờ duyệt,
+    # trưởng/phó phòng duyệt mới sang Đã hoàn thành (giống PATCH status).
+    status_to_set = data.status
+    if data.status == "completed" and todo['status'] != "completed" and not can_complete(user, dict(todo)):
+        status_to_set = "review"
 
     if data.assignee_code and new_scope == DEPARTMENT:
         emp = _active_employee(data.assignee_code)
@@ -593,8 +596,8 @@ def update_todo(
         params['assignee_name'] = data.assignee_name
     if data.status is not None:
         update_fields.append("status = :status")
-        params['status'] = data.status
-        if data.status == "completed":
+        params['status'] = status_to_set
+        if status_to_set == "completed":
             update_fields.append("completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP)")
         else:
             update_fields.append("completed_at = NULL")
@@ -630,7 +633,7 @@ def update_todo(
                 VALUES (:todo_id, :title, :is_completed, :sort_order)
             """, {"todo_id": todo_id, "title": sub.title, "is_completed": sub.is_completed or 0, "sort_order": idx})
 
-    events.publish("todo_updated", {"id": todo_id, "status": data.status or todo['status']})
+    events.publish("todo_updated", {"id": todo_id, "status": status_to_set or todo['status']})
     return {"status": "success", "message": "Cập nhật công việc thành công"}
 
 @router.patch("/{todo_id}/status")
@@ -652,21 +655,26 @@ def update_todo_status(
         raise HTTPException(status_code=403, detail="Bạn không có quyền cập nhật trạng thái công việc này")
     if data.status == "review" and not requires_department_approval(user, todo["scope"], todo["department"]):
         raise HTTPException(status_code=400, detail="Phòng ban này không áp dụng trạng thái Chờ duyệt")
-    if data.status == "completed" and not can_complete(user, dict(todo)):
-        raise HTTPException(status_code=403, detail="Công việc phòng ban phải được trưởng phòng duyệt — hãy chuyển trạng thái Chờ duyệt")
+
+    # Nhân viên bấm Hoàn thành ở phòng có duyệt -> việc vào ô Chờ duyệt,
+    # trưởng/phó phòng duyệt mới sang Đã hoàn thành.
+    effective_status = data.status
+    if data.status == "completed" and todo["status"] != "completed" and not can_complete(user, dict(todo)):
+        effective_status = "review"
 
     completed_at_sql = (
         "completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP)"
-        if data.status == "completed"
+        if effective_status == "completed"
         else "completed_at = NULL"
     )
     execute(
         f"UPDATE todos SET status = :status, {completed_at_sql}, updated_at = CURRENT_TIMESTAMP WHERE id = :todo_id",
-        {"status": data.status, "todo_id": todo_id}
+        {"status": effective_status, "todo_id": todo_id}
     )
 
-    events.publish("todo_updated", {"id": todo_id, "status": data.status})
-    return {"status": "success", "message": "Cập nhật trạng thái thành công"}
+    events.publish("todo_updated", {"id": todo_id, "status": effective_status})
+    message = "Đã gửi chờ trưởng phòng duyệt" if effective_status != data.status else "Cập nhật trạng thái thành công"
+    return {"status": "success", "message": message}
 
 @router.delete("/{todo_id}")
 def delete_todo(
