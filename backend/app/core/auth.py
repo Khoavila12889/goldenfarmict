@@ -101,8 +101,24 @@ def headed_departments(employee_code: str) -> List[str]:
     return [r["name"] for r in rows if r.get("name")]
 
 
+def deputy_departments(employee_code: str) -> List[str]:
+    if not employee_code:
+        return []
+    rows = fetchall(
+        """
+        SELECT d.name
+        FROM departments d
+        JOIN employees e ON e.id = d.deputy_id
+        WHERE e.employee_code = :code
+        ORDER BY d.name
+        """,
+        {"code": employee_code},
+    )
+    return [r["name"] for r in rows if r.get("name")]
+
+
 def resolve_effective_identity(employee_code: str) -> dict:
-    """Role hiệu lực: admin giữ nguyên; người được gán departments.head_id → head."""
+    """Role hiệu lực: admin giữ nguyên; departments.head_id → head; departments.deputy_id → deputy."""
     user = fetchone("SELECT role FROM users WHERE employee_code = :code", {"code": employee_code})
     db_role = ((user["role"] if user else None) or "user").strip() or "user"
 
@@ -113,10 +129,13 @@ def resolve_effective_identity(employee_code: str) -> dict:
     full_name = emp["full_name"] if emp else employee_code
     emp_dept = canonical_dept_name(emp["department"] if emp else "")
     headed = headed_departments(employee_code)
+    deputized = deputy_departments(employee_code)
 
     role = db_role
     if role != "admin" and headed:
         role = "head"
+    elif role != "admin" and role not in ("head", "deputy") and deputized:
+        role = "deputy"
 
     department = emp_dept
     if headed:
@@ -129,33 +148,52 @@ def resolve_effective_identity(employee_code: str) -> dict:
         "department": department,
         "full_name": full_name,
         "headed_departments": headed,
+        "deputy_departments": deputized,
     }
 
 
-def sync_department_head_role(new_head_id=None, old_head_id=None):
-    """Gán trưởng phòng → role=head; bỏ gán và không còn head phòng nào → role=user."""
-    def _emp_code(emp_id):
-        if not emp_id:
-            return None
-        row = fetchone("SELECT employee_code FROM employees WHERE id = :id", {"id": emp_id})
-        return row["employee_code"] if row else None
+def _employee_code_for_id(emp_id):
+    if not emp_id:
+        return None
+    row = fetchone("SELECT employee_code FROM employees WHERE id = :id", {"id": emp_id})
+    return row["employee_code"] if row else None
 
-    new_code = _emp_code(new_head_id)
-    if new_code:
+
+def _resync_user_role(employee_code):
+    """Vai trò là chuẩn suy ra từ bảng departments: head_id của phòng nào →
+    head; deputy_id → deputy; không còn gán ở đâu → user. Admin không đổi.
+    Chỉ gọi cho người vừa được gán/gỡ ở trang Phòng ban."""
+    if not employee_code:
+        return
+    row = fetchone("SELECT role FROM users WHERE employee_code = :code", {"code": employee_code})
+    if not row:
+        return
+    current = ((row["role"] or "user").strip() or "user")
+    if current == "admin":
+        return
+    if headed_departments(employee_code):
+        target = "head"
+    elif deputy_departments(employee_code):
+        target = "deputy"
+    else:
+        target = "user"
+    if target != current:
         execute(
-            "UPDATE users SET role = 'head' WHERE employee_code = :code AND role = 'user'",
-            {"code": new_code},
+            "UPDATE users SET role = :role WHERE employee_code = :code",
+            {"role": target, "code": employee_code},
         )
 
-    if old_head_id and str(old_head_id) != str(new_head_id or ""):
-        still = fetchone("SELECT id FROM departments WHERE head_id = :id", {"id": old_head_id})
-        if not still:
-            old_code = _emp_code(old_head_id)
-            if old_code:
-                execute(
-                    "UPDATE users SET role = 'user' WHERE employee_code = :code AND role = 'head'",
-                    {"code": old_code},
-                )
+
+def sync_department_head_role(new_head_id=None, old_head_id=None):
+    """Đồng bộ users.role sau khi gán/gỡ trưởng phòng ở trang Phòng ban."""
+    for emp_id in {new_head_id, old_head_id}:
+        _resync_user_role(_employee_code_for_id(emp_id))
+
+
+def sync_department_deputy_role(new_deputy_id=None, old_deputy_id=None):
+    """Đồng bộ users.role sau khi gán/gỡ phó phòng ở trang Phòng ban."""
+    for emp_id in {new_deputy_id, old_deputy_id}:
+        _resync_user_role(_employee_code_for_id(emp_id))
 
 
 def is_isolated(employee_code: str) -> bool:

@@ -89,7 +89,7 @@ export default function Employees() {
 
   const [deptOpen, setDeptOpen] = useState(false)
   const [deptEditId, setDeptEditId] = useState(null)
-  const [deptForm, setDeptForm] = useState({ name: '', head_id: '', description: '' })
+  const [deptForm, setDeptForm] = useState({ name: '', head_id: '', deputy_id: '', description: '' })
 
   const fileInputRef = useRef(null)
   const [importMsg, setImportMsg] = useState('')
@@ -379,11 +379,11 @@ export default function Employees() {
   // ─── Department Management ─────────────────────────────────
 
   function openDeptAdd() {
-    setDeptEditId(null); setDeptForm({ name: '', head_id: '', description: '' }); setDeptOpen(true)
+    setDeptEditId(null); setDeptForm({ name: '', head_id: '', deputy_id: '', description: '' }); setDeptOpen(true)
   }
 
   function openDeptEdit(d) {
-    setDeptEditId(d.id); setDeptForm({ name: d.name, head_id: d.head_id || '', description: d.description || '' }); setDeptOpen(true)
+    setDeptEditId(d.id); setDeptForm({ name: d.name, head_id: d.head_id || '', deputy_id: d.deputy_id || '', description: d.description || '' }); setDeptOpen(true)
   }
 
   async function handleDeptSubmit(e) {
@@ -636,6 +636,17 @@ export default function Employees() {
                   </select>
                 </div>
                 <div>
+                  <label style={deptLabelS}>Phó phòng</label>
+                  <select value={deptForm.deputy_id} onChange={e => setDeptForm({ ...deptForm, deputy_id: e.target.value ? Number(e.target.value) : '' })} style={inputS}>
+                    <option value="">-- Chọn Phó phòng --</option>
+                    {emps.map(emp => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.full_name} ({emp.employee_code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ gridColumn: '1 / span 2' }}>
                   <label style={deptLabelS}>Mô tả</label>
                   <input type="text" value={deptForm.description} placeholder="Mô tả ngắn"
                     onChange={e => setDeptForm({ ...deptForm, description: e.target.value })} style={inputS} />
@@ -656,18 +667,20 @@ export default function Employees() {
                 <thead>
                   <tr>
                     <th>Tên phòng ban</th>
-                    <th style={{ width: 140 }}>Trưởng phòng</th>
+                    <th style={{ width: 130 }}>Trưởng phòng</th>
+                    <th style={{ width: 130 }}>Phó phòng</th>
                     <th style={{ width: 80, textAlign: 'center' }}>Số NV</th>
                     <th style={{ width: 80, textAlign: 'center' }}></th>
                   </tr>
                 </thead>
                 <tbody>
                   {depts.length === 0 ? (
-                    <tr><td colSpan={4} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>Chưa có phòng ban nào.</td></tr>
+                    <tr><td colSpan={5} style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>Chưa có phòng ban nào.</td></tr>
                   ) : depts.map(d => (
                     <tr key={d.id || d.name}>
                       <td style={{ fontWeight: 600, color: '#0f172a' }}>{d.name}</td>
                       <td>{d.head_name || <span style={{ color: '#94a3b8' }}>—</span>}</td>
+                      <td>{d.deputy_name || <span style={{ color: '#94a3b8' }}>—</span>}</td>
                       <td style={{ textAlign: 'center' }}>
                         <span style={{ background: '#f1f5f9', padding: '0.1rem 0.45rem', borderRadius: 20, fontSize: '0.72rem', fontWeight: 600, color: '#475569' }}>{d.emp_count || 0}</span>
                       </td>

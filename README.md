@@ -1995,3 +1995,13 @@ viện biểu đồ), style riêng ở `frontend/src/pages/Reports.css`.
 - **Phó phòng (deputy) = trưởng phòng** trong module Todos: xem, sửa, duyệt và kết luận việc của phòng mình (trước đây code chỉ nhận head/admin).
 - Phòng chưa có trưởng/phó phòng thì chỉ admin duyệt được — cần bổ nhiệm trưởng phòng để luồng duyệt chạy đúng người.
 - Dữ liệu cũ: 7 việc nghiên cứu có `department` trống và `is_dept_approved=0` (tạo trước cơ chế này) — chỉ admin đóng/duyệt được cho tới khi gán lại phòng ban.
+
+---
+
+## Vai trò hệ thống — nguồn chuẩn là trang Phòng ban (phương án A, 2026-11-12)
+
+**Quy tắc:** `departments.head_id` / `departments.deputy_id` là nguồn sự thật duy nhất về lãnh đạo phòng. Gán/gỡ trưởng phòng hoặc phó phòng tại **Nhân viên → 📂 Phòng ban** thì backend tự đồng bộ `users.role` (`core/auth.py`: `_resync_user_role` — còn giữ chức trưởng phòng ở phòng nào → `head`; chỉ còn phó phòng → `deputy`; không còn gán ở đâu → `user`; tài khoản `admin` không bao giờ bị đổi). Chức vụ (`employees.position`) chỉ là thông tin nhân sự, **không** quyết định quyền. Phân quyền → đổi role tay vẫn dùng được cho trường hợp đặc biệt, nhưng người đang được gán ở Phòng ban sẽ bị tính lại mỗi khi có thay đổi gán/gỡ liên quan đến họ.
+
+- Cột mới: `departments.deputy_id` (migration `backend/migrations/20261112_departments_deputy_id.sql`). API Phòng ban trả thêm `deputy_name`/`deputy_code`; form Phòng ban có ô chọn Phó phòng cạnh Trưởng phòng.
+- `resolve_effective_identity` cũng suy ra vai trò từ hai cột này (head_id → head, deputy_id → deputy) nên báo cáo/công việc áp dụng ngay cả trước khi role trong DB kịp đồng bộ.
+- Dọn dữ liệu 2026-11-12: toàn bộ `head_id` cũ trỏ vào nhân viên không còn tồn tại đã xoá về NULL; nối đúng trưởng phòng cho IT (Huỳnh Anh Khoa), Kỹ Thuật (Lê Hải Lưu), Thu Mua (Đặng Thị Phương); tạo phòng **Quản lý chất lượng** và gán Võ Hoàng Thắng — cùng Hoàng Thị Hoài Nam (KD - Siêu thị) là 2 trường hợp "có chức vụ Trưởng phòng nhưng role nhân viên" nay đã thành trưởng phòng thật, xem/duyệt được báo cáo và công việc phòng mình. Các phòng còn lại chưa có trưởng/phó phòng — admin bổ nhiệm dần tại trang Phòng ban.
