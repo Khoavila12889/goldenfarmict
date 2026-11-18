@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Monitor, Key, Ticket, CheckCircle, 
   Settings, Calendar, Receipt, Folder, Shield, Menu, X, User, 
   Lock, Eye, EyeOff, CheckSquare, HelpCircle, Activity, MessageSquare,
-  CalendarOff, PenTool, Printer, FileSpreadsheet, Archive, ShoppingCart, Mail, BarChart3
+  CalendarOff, PenTool, Printer, FileSpreadsheet, Archive, ShoppingCart, Mail, BarChart3, BellRing
 } from 'lucide-react'
 import { changePassword, getProfile, apiUrl } from '../services/api'
 import { driver } from 'driver.js'
@@ -37,11 +37,13 @@ const iconMap = {
   backups: Archive,
   orders: ShoppingCart,
   reports: BarChart3,
+  waRecords: BellRing,
 }
 
 const allNavItems = [
   { path: '/', label: 'Dashboard', icon: 'dashboard', roles: ['user', 'head', 'deputy', 'admin'] },
   { path: '/reports', label: 'Báo cáo', icon: 'reports', roles: ['head', 'deputy', 'admin'] },
+  { path: '/wa-records', label: 'Thông báo WhatsApp', icon: 'waRecords', roles: ['head', 'deputy', 'admin'] },
   { path: '/todos', label: 'Công việc (Todos)', icon: 'todos', roles: ['user', 'head', 'deputy', 'admin'] },
   { path: '/chat', label: 'Chat', icon: 'chat', roles: ['user', 'head', 'deputy', 'admin'] },
   { path: '/mail', label: 'Mail', icon: 'mail', roles: ['user', 'head', 'deputy', 'admin'] },
@@ -76,6 +78,7 @@ const MODULE_MAP = {
   '/licenses': 'licenses',
   '/tickets': 'tickets',
   '/reports': 'reports',
+  '/wa-records': 'wa-records',
   '/orders': 'orders',
   '/approvals': 'approvals',
   '/workflows': 'workflows',

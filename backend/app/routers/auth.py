@@ -31,6 +31,7 @@ class LoginResponse(BaseModel):
 # Mặc định bật cho admin và trưởng phòng; cấp thêm cho user đặc biệt qua trang Phân quyền.
 DEFAULT_ROLE_MODULE_PERMS = {
     "admin": {
+        "wa-records": {"can_view": True, "can_edit": True},
         "orders": {"can_view": True, "can_edit": False},
         "announcements": {"can_view": True, "can_edit": True},
         "password-reset": {"can_view": True, "can_edit": True},
@@ -39,6 +40,7 @@ DEFAULT_ROLE_MODULE_PERMS = {
         "mail": {"can_view": True, "can_edit": True},
     },
     "head": {
+        "wa-records": {"can_view": True, "can_edit": True},
         "announcements": {"can_view": True, "can_edit": True},
         "password-reset": {"can_view": True, "can_edit": True},
         "reports": {"can_view": True, "can_edit": False},
@@ -46,6 +48,7 @@ DEFAULT_ROLE_MODULE_PERMS = {
         "mail": {"can_view": True, "can_edit": True},
     },
     "deputy": {
+        "wa-records": {"can_view": True, "can_edit": True},
         "announcements": {"can_view": True, "can_edit": True},
         "password-reset": {"can_view": True, "can_edit": True},
         "reports": {"can_view": True, "can_edit": False},
@@ -360,6 +363,7 @@ ALL_MODULES = [
     {"key": "salary", "label": "Phiếu lương", "group": "support"},
     {"key": "salary-admin", "label": "Quản lý lương", "group": "admin"},
     {"key": "reports", "label": "Báo cáo", "group": "admin"},
+    {"key": "wa-records", "label": "Thông báo WhatsApp", "group": "support"},
     {"key": "dashboard", "label": "Dashboard", "group": "support"},
     {"key": "announcements", "label": "Tạo thông báo Dashboard", "group": "support"},
     {"key": "password-reset", "label": "Reset mật khẩu", "group": "support"},

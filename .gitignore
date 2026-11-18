@@ -101,3 +101,6 @@ docker-compose.yml.bak.*
 .claude/
 backend/logs/*.log*
 backups/
+
+# Bot secret (server-only, khong commit)
+.env.wa

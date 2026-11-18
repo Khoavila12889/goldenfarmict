@@ -28,6 +28,7 @@ import FormulaManagement from './pages/FormulaManagement'
 import AdminBackups from './pages/AdminBackups'
 import Orders from './pages/Orders'
 import Reports from './pages/Reports'
+import WaRecords from './pages/WaRecords'
 import Layout from './components/Layout'
 
 function ProtectedRoute({ children }) {
@@ -99,6 +100,7 @@ export default function App() {
         <Route path="formulas/print" element={<AdminRoute requiredModule="factory-printing"><FactoryPrinting /></AdminRoute>} />
         <Route path="formulas/manage" element={<AdminRoute requiredModule="formula-management"><FormulaManagement /></AdminRoute>} />
         <Route path="reports" element={<AdminRoute requiredModule="reports"><Reports /></AdminRoute>} />
+        <Route path="wa-records" element={<AdminRoute requiredModule="wa-records"><WaRecords /></AdminRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

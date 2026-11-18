@@ -140,6 +140,18 @@ export function getOrderDetail(orderNumber) {
   return api.get(`/orders/${encodeURIComponent(orderNumber)}`, { headers: orderAuthHeaders() })
 }
 
+export function getWaRecords(params = {}) {
+  return api.get('/wa-records', { params, headers: orderAuthHeaders() })
+}
+
+export function getWaRecord(id) {
+  return api.get(`/wa-records/${id}`, { headers: orderAuthHeaders() })
+}
+
+export function updateWaRecordStatus(id, status) {
+  return api.patch(`/wa-records/${id}/status`, { status }, { headers: orderAuthHeaders() })
+}
+
 export function getMonitorStats(config = {}) {
   return api.get('/monitor/stats', {
     ...config,

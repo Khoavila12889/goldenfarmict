@@ -27,6 +27,8 @@ services:
       dockerfile: Dockerfile
     platform: linux/amd64  
     container_name: goldenfarm-backend
+    env_file:
+      - .env.wa
     ports:
       - "${BACKEND_PORT}:8000"
     depends_on:
