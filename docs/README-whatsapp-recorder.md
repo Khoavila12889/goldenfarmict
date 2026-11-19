@@ -171,6 +171,7 @@ và được mirror trong `.env` của profile:
 | `WHATSAPP_MODE` (.env) | `bot` | Bắt buộc: chế độ `self-chat` mặc định ban đầu loại bỏ mọi tin không phải của chính chủ → không thể ghi group |
 | `group_policy` | `allowlist` | Chỉ các group trong allowlist mới được xử lý |
 | `group_allow_from` | `["120363421346130787@g.us", "120363420637565910@g.us", "120363405283973589@g.us"]` | Đúng **ba** JID: "GROUP GOLDEN FARM - VP (Không có NV Tỉnh)", "GROUP GOLDEN FARM", "GROUP GOLDEN FARM - Văn phòng" |
+| `group_allowed_chats` | cùng 3 JID như trên | **Cấp quyền ở lớp admission của gateway** (mục 3.2.1): mọi người gửi trong các group này đều qua được lớp kiểm tra thứ hai. Chỉ áp dụng cho tin group — DM không bao giờ nhìn thấy danh sách này. Thêm 2026-11-19 15:19 (backup `config.yaml.bak-20261119151913`) |
 | `dm_policy` | `disabled` | Tin nhắn riêng bị tắt ở cả bridge lẫn adapter |
 | `whatsapp.unauthorized_dm_behavior` | `ignore` | DM lạ bị bỏ qua lặng lẽ (không trả lời mã ghép nối) |
 | `require_mention` | `false` | Nghe tất cả tin trong group rồi tự lọc (quyết định của chủ tài khoản) |
@@ -180,12 +181,54 @@ và được mirror trong `.env` của profile:
 | `reply_prefix` | `""` | Không tiền tố trả lời |
 | `home_channel` | chat của chính chủ tài khoản | Tránh việc Hermes đòi đặt home channel với người lạ |
 | `allow_admin_from` / `group_allow_admin_from` | JID của chủ tài khoản | Lệnh quản trị chỉ từ chủ tài khoản |
-| `WHATSAPP_ALLOWED_USERS` | **cố ý KHÔNG đặt** | Nếu đặt sender-allowlist thì từng thành viên group phải được liệt kê; không đặt thì allowlist theo JID group tự nó bao phủ **mọi thành viên** của các group trong allowlist, trong khi DM vẫn bị chặn bởi `dm_policy` |
+| `WHATSAPP_ALLOWED_USERS` | **cố ý KHÔNG đặt** | Sender-allowlist theo từng cá nhân — không dùng, vì quyền vào group được cấp theo **chat** qua `group_allowed_chats` (xem dưới). ⚠️ Bài học 2026-11-19: KHÔNG đặt biến này **không** tự nó cho phép thành viên group — gateway còn một lớp admission thứ hai (mục 3.2.1) từng từ chối mọi thành viên khi cả hai cơ chế đều trống |
 
 Tài khoản có mặt trong 5 group; 3 group ở trên được mở cổng (phạm vi ban đầu
 chỉ có group "GROUP GOLDEN FARM - VP (Không có NV Tỉnh)" làm pilot, mở rộng
 lên 3 group ngày 2026-11-19 theo yêu cầu của chủ tài khoản). Hai group còn
 lại (đều tên "GOLDEN FARM COMPANY") không được xử lý.
+
+### 3.2.1. Lớp admission thứ hai của gateway (session envelope) — và bản sửa 2026-11-19
+
+Ngoài cổng intake ở mục 3.2, gateway Hermes v0.23.2 còn **kiểm tra lại một
+lớp thứ hai** trước khi giao tin cho agent: `gateway/session_envelope.py`
+gọi `runner._is_user_authorized_for_source(...)` (logic ở
+`gateway/authz_mixin.py` → `_principal_authorized`). Khác với intake, lớp
+này **không** uỷ quyền cho chính sách riêng của adapter WhatsApp
+(`enforces_own_access_policy` chỉ được tin khi lời gọi cho phép delegation —
+đường envelope thì không), và nó cũng **không** đối chiếu `group_allow_from`
+theo chat: nó so danh sách đó với **user_id của người gửi** nên không bao
+giờ khớp.
+
+Hệ quả đã xảy ra thật: với `WHATSAPP_ALLOWED_USERS` để trống, **mọi** tin
+của thành viên group đều bị lớp này từ chối —
+`Native admission refused: permission_denied (user_not_authorized)` — trước
+khi tới agent. Cả 3 tin thật ngày 2026-11-19 (14:30, 14:37, 14:39) đều
+chết ở đây; mọi bản ghi "thành công" trước đó đều từ file outbox thả tay.
+(Ba payload 190 ký tự mà GF SENDBLOCK chặn ở 14:30/14:37/14:39 chính là
+tin *thông báo từ chối* cố định mà gateway định gửi sau mỗi lần refusal —
+không phải agent trả lời.)
+
+**Cơ chế đúng mà mã nguồn dành cho việc này:** `_chat_scoped_grant` trong
+`authz_mixin.py` cấp quyền **theo chat** cho tin group khi `chat_id` nằm
+trong `platforms.<platform>.extra.group_allowed_chats` ở config.yaml
+(đường env tương đương `group_allowed_chats_env` không được plugin
+WhatsApp khai báo — `plugins/platforms/whatsapp/gateway_env.py` chỉ khai
+`WHATSAPP_ALLOWED_USERS` / `WHATSAPP_ALLOW_ALL_USERS` — nên đường config
+là đường duy nhất). Cấp theo chat nghĩa là: **mọi thành viên** của các
+group trong danh sách đều được nhận, thành viên mới vào group tự có hiệu
+lực, không phải liệt kê từng người; và vì grant chỉ chạy cho tin group,
+**DM vẫn bị từ chối** như trước (thêm một lớp nữa: `dm_policy: disabled`
+đã chặn DM ngay ở intake).
+
+**Bản sửa đã áp (2026-11-19 15:19, chủ hệ thống đã duyệt):** thêm khóa
+`group_allowed_chats` = đúng 3 JID của phạm vi vào
+`platforms.whatsapp.extra` trong `config.yaml` của profile (backup
+`config.yaml.bak-20261119151913`), restart
+`hermes-gateway-gf-recorder.service` → "✓ whatsapp connected" 15:19:28;
+`gf-sendblock.log` tăng 14 → 16 dòng (cặp thông báo tắt/khởi động gửi về
+chủ tài khoản, đều bị chặn — chốt chặn nguyên vẹn). Khi đổi phạm vi group
+(mục 4.4), **phải sửa cả khóa này** cùng lúc với `group_allow_from`.
 
 ### 3.3. Im lặng tuyệt đối — 3 lớp + 1 chốt cứng
 
@@ -478,8 +521,11 @@ Phạm vi hiện tại là **3 group** (danh sách ở mục 3.2). Muốn thêm/
    khoản bằng một script Baileys dùng một lần với auth state đã lưu (cách đã
    dùng ngày 2026-11-19), hoặc xem trong log/cấu hình khi bot được thêm vào
    group.
-2. Sửa **3 nơi** cho khớp nhau:
+2. Sửa **4 nơi** cho khớp nhau:
    - `config.yaml` của profile: `platforms.whatsapp.extra.group_allow_from`
+   - `config.yaml` của profile: `platforms.whatsapp.extra.group_allowed_chats`
+     (cùng danh sách JID — thiếu khóa này thì tin group bị lớp admission từ
+     chối `user_not_authorized`, xem mục 3.2.1)
    - `.env` của profile: `WHATSAPP_GROUP_ALLOWED_USERS`
    - `SKILL.md` của skill `wa-room-recorder`: tên group + JID ở phần đầu và
      trường `group_name` trong quy tắc output.
@@ -534,6 +580,7 @@ Bản vá GF SENDBLOCK nằm trong file `bridge.js` thuộc cây mã nguồn c�
 |---|---|---|
 | Gateway không chạy | Service dừng / máy vừa reboot mà linger chưa bật / lỗi config | `gateway status` → xem `logs/gateway.log` + `errors.log` → `gateway start`. Kiểm tra `loginctl show-user hermes -p Linger` = yes |
 | Gateway chạy nhưng không ghi bản ghi nào | Bridge mất kết nối WhatsApp; hoặc tin test do chính chủ tài khoản gửi (bị bỏ qua theo thiết kế); hoặc group chưa đúng JID | Xem log bridge trong `gateway.log` có "whatsapp connected" không; test bằng tin của **người khác**; đối chiếu JID ở mục 3.2 |
+| Tin thật trong group không được ghi; `gateway.log` có `user_not_authorized` / `Native admission refused` | Lớp admission thứ hai của gateway (mục 3.2.1) từ chối người gửi: grant theo chat chưa có hoặc thiếu JID của group | Kiểm tra `platforms.whatsapp.extra.group_allowed_chats` trong `config.yaml` của profile có đủ JID các group trong phạm vi không (đây là nơi phải sửa — `WHATSAPP_ALLOWED_USERS` để trống là **đúng thiết kế** khi đã có grant theo chat); sửa xong restart gateway rồi test lại bằng tin của thành viên khác |
 | WhatsApp rớt phiên (log báo not connected / yêu cầu đăng nhập lại) | Phiên liên kết bị hủy từ điện thoại, hoặc WhatsApp ép đăng nhập lại | Ghép nối lại: mở tmux trên server (`sudo -u hermes -H tmux attach -t wa-pair` hoặc tạo phiên mới), chạy `hermes whatsapp`, chọn chế độ số cá nhân, quét QR bằng điện thoại (WhatsApp → Cài đặt → Thiết bị liên kết). **Đừng Ctrl+C** trong tmux; thoát bằng Ctrl+B rồi D |
 | Không SSH được vào server qua Tailscale nhưng máy vẫn sống trên LAN | `tailscaled` trên server bị treo (đã xảy ra 2026-11-18, kéo dài ~16 giờ trong khi ping LAN 10.0.0.114 vẫn 3/3) | Tại console máy hoặc SSH qua LAN: `sudo systemctl restart tailscaled` rồi `tailscale status`. VPS qua cùng đường tunnel vẫn đáp = lỗi nằm ở tailscaled của máy này, không phải đường truyền |
 | Bridge báo port bận / không kết nối được ở port 3000 | Port 3000 trên host đã bị một dịch vụ node không liên quan chiếm từ 10/2026 | Đang dùng **3010** qua khóa `platforms.whatsapp.extra.bridge_port` — **không** kill tiến trình ở port 3000 (không thuộc hệ thống này). Nếu 3010 cũng bận: đổi sang port trống khác trong config rồi restart gateway |
@@ -600,6 +647,15 @@ Bản vá GF SENDBLOCK nằm trong file `bridge.js` thuộc cây mã nguồn c�
   động của Hermes ở go-live.
 - ✅ API key riêng của bot đã cấu hình và kiểm chứng (GET /v1/models → 200,
   `cx/gpt-5.6-sol` có trong danh sách; gateway warm-up nhận ngữ cảnh 372k token).
+- ✅ **Sửa lớp admission 2026-11-19 15:19**: thêm `group_allowed_chats` (3 JID)
+  vào `platforms.whatsapp.extra` — trước đó lớp admission thứ hai của
+  gateway từ chối **mọi** tin thật của thành viên group
+  (`user_not_authorized`, mục 3.2.1). Restart sạch, "✓ whatsapp connected"
+  15:19:28, `gf-sendblock.log` 14 → 16 dòng như kỳ vọng. Kiểm chứng hiệu
+  lực cấu hình qua `hermes -p gf-recorder config get`; bằng chứng sống cuối
+  cùng (tin thật đầu tiên được admission chấp nhận) chờ tin phối hợp nghiệm
+  thu ở mục 6.3 — trong 5 phút theo dõi ngay sau restart không có tin thật
+  nào đến.
 - ✅ **Go-live 2026-11-19 13:30:44**: `hermes-gateway-gf-recorder.service`
   active + enabled + linger; bridge kết nối ở port 3010; footprint
   ~310–340 MB RAM.
@@ -634,7 +690,9 @@ Riêng bài **forum [TEST-THONG-BAO]** dùng để nghiệm thu nhánh `thongbao
 
 - ⏳ **Nghiệm thu tin thật** (mục 4.3): một tin mượn phòng/check-in/check-out
   thật từ **thành viên khác** trong một group thuộc phạm vi rơi vào module — đây là mốc
-  nghiệm thu cuối cùng còn thiếu.
+  nghiệm thu cuối cùng còn thiếu. Lớp admission đã được sửa (mục 3.2.1) nên
+  tin thật giờ mới có đường tới agent; chỉ còn chờ một tin đăng phối hợp để
+  xác nhận sống.
 - ⏳ Theo dõi sát group + `gf-sendblock.log` + RAM trong tuần đầu vận hành.
 - ⏳ Thông báo một lần trong các group thuộc phạm vi rằng group có bot ghi nhận (khuyến
   nghị về minh bạch với thành viên).
