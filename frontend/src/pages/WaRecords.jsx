@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Search, RefreshCw, X, MapPin, CalendarClock, ClipboardList, Megaphone, UserRound, Users, Clock3 } from 'lucide-react'
+import { Search, RefreshCw, X, MapPin, CalendarClock, ClipboardList, Megaphone, LogOut, UserRound, Users, Clock3 } from 'lucide-react'
 import { apiErrorMessage, getWaRecords, getWaRecord, updateWaRecordStatus } from '../services/api'
 import './WaRecords.css'
 
 const TYPE_META = {
   datlich: { label: 'Đặt lịch', icon: CalendarClock, cls: 'wa-badge-datlich' },
   checkin: { label: 'Check-in', icon: MapPin, cls: 'wa-badge-checkin' },
+  checkout: { label: 'Check-out', icon: LogOut, cls: 'wa-badge-checkout' },
   baocao: { label: 'Báo cáo', icon: Megaphone, cls: 'wa-badge-baocao' },
 }
 
@@ -120,6 +121,7 @@ export default function WaRecords() {
           <option value="">Tất cả loại</option>
           <option value="datlich">Đặt lịch</option>
           <option value="checkin">Check-in</option>
+          <option value="checkout">Check-out</option>
           <option value="baocao">Báo cáo</option>
         </select>
         <select value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}>

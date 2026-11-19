@@ -1,7 +1,7 @@
 """Module "Thông báo WhatsApp" (key: wa-records).
 
 Nơi lưu + xem các bản ghi bot Hermes trích từ group WhatsApp (đặt lịch /
-check-in vị trí / báo cáo). Hai mặt tách bạch:
+check-in / check-out phòng họp / báo cáo). Hai mặt tách bạch:
 
 - Ingest (bot -> app): POST /api/wa-records/ingest, xác thực CHỈ bằng header
   X-Bot-Secret so với biến môi trường WA_BOT_SECRET (file .env.wa trên server,
@@ -27,7 +27,7 @@ from .auth import _get_effective_permissions
 
 router = APIRouter(prefix="/api/wa-records", tags=["wa-records"])
 
-RECORD_TYPES = ("datlich", "checkin", "baocao")
+RECORD_TYPES = ("datlich", "checkin", "checkout", "baocao")
 STATUSES = ("moi", "daxuly", "huy")
 MAX_PAGE_SIZE = 100
 
@@ -135,8 +135,8 @@ def ingest_record(body: dict, x_bot_secret: Optional[str] = Header(None, alias="
     scheduled_at = _parse_scheduled_at(body.get("scheduled_at"))
     lat = _parse_coord(body.get("lat"), "lat", -90, 90)
     lng = _parse_coord(body.get("lng"), "lng", -180, 180)
-    if record_type == "checkin" and (lat is None or lng is None):
-        raise HTTPException(400, "Bản ghi checkin bắt buộc có lat và lng")
+    # Toa do la tuy chon: check-in/check-out phong hop khong co GPS.
+    # Neu co gui kem thi _parse_coord o tren da kiem tra khoang hop le.
 
     new_id = insert(
         """

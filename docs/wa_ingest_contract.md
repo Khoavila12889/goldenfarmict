@@ -3,7 +3,8 @@
 Bot Hermes (profile `gf-recorder`, chạy trên server nội bộ) ghi bản ghi trích từ
 group WhatsApp vào GoldenFarmICT qua endpoint dưới đây. Người dùng xem/quản lý
 các bản ghi tại trang **Thông báo WhatsApp** (route `/wa-records`, module key
-`wa-records`, mặc định chỉ admin/head/deputy).
+`wa-records`; quyền xem/sửa do trang Phân quyền quyết định — giai đoạn phát
+triển chỉ cấp cho admin).
 
 ## Endpoint
 
@@ -23,7 +24,7 @@ POST /api/wa-records/ingest
 
 | Trường | Kiểu | Bắt buộc | Ghi chú |
 |---|---|---|---|
-| `record_type` | string | ✔ | Một trong `datlich`, `checkin`, `baocao` |
+| `record_type` | string | ✔ | Một trong `datlich`, `checkin`, `checkout`, `baocao`. Bot Hermes chỉ dùng 3 loại đầu (đặt phòng họp / vào phòng / trả phòng); `baocao` giữ trong schema, bot không dùng |
 | `title` | string | ✔* | Tiêu đề ngắn. *Ít nhất một trong `title`/`content` phải có |
 | `content` | string | ✔* | Nội dung chi tiết đã trích xuất |
 | `sender_name` | string | | Tên người gửi trong group |
@@ -31,8 +32,8 @@ POST /api/wa-records/ingest
 | `group_name` | string | | Tên group WhatsApp nguồn |
 | `scheduled_at` | string (ISO 8601) | | Chỉ dùng cho `datlich`. Nên kèm múi giờ, vd `2026-11-20T09:00:00+07:00` |
 | `place` | string | | Địa điểm dạng chữ (kho, chi nhánh, địa chỉ...) |
-| `lat` | number | ✔ với `checkin` | Vĩ độ, -90..90 |
-| `lng` | number | ✔ với `checkin` | Kinh độ, -180..180 |
+| `lat` | number | | Vĩ độ, -90..90. Tùy chọn — check-in/check-out phòng họp không có GPS; nếu gửi kèm sẽ được kiểm tra khoảng |
+| `lng` | number | | Kinh độ, -180..180. Tùy chọn như `lat` |
 | `raw_message` | string | | Nguyên văn tin nhắn gốc trong group (phục vụ đối chiếu) |
 | `source` | string | | Mặc định `hermes`; để trống nếu không chắc |
 
@@ -84,14 +85,45 @@ Báo cáo:
 }
 ```
 
+Check-out (trả phòng họp — không có tọa độ):
+
+```json
+{
+  "record_type": "checkout",
+  "title": "Check-out phòng họp tầng 2 — Nguyen Van A",
+  "content": "PNS trả phòng họp tầng 2, kết thúc lúc 10:30",
+  "sender_name": "Nguyen Van A",
+  "group_name": "GROUP GOLDEN FARM - VP (Không có NV Tỉnh)",
+  "place": "Phòng họp tầng 2",
+  "raw_message": "PNS trả phòng họp tầng 2 rồi ạ"
+}
+```
+
 ## Phản hồi
 
 - `200`: `{"success": true, "id": <id bản ghi mới>}`
 - `400`: dữ liệu không hợp lệ (thiếu `record_type`/`title`/`content`,
-  `scheduled_at` sai định dạng, tọa độ ngoài khoảng, `checkin` thiếu lat/lng).
+  `scheduled_at` sai định dạng, tọa độ ngoài khoảng).
   Body: `{"detail": "..."}`.
 - `401`: thiếu hoặc sai `X-Bot-Secret`.
 - `503`: server chưa cấu hình `WA_BOT_SECRET`.
+
+## Đường vận chuyển (file → relay → ingest)
+
+Bot Hermes KHÔNG gọi endpoint trực tiếp và KHÔNG bao giờ gửi tin WhatsApp.
+Luồng ghi thực tế:
+
+1. Skill `wa-room-recorder` của profile `gf-recorder` trích xuất bản ghi từ
+   group pilot (JID `120363421346130787@g.us`) và ghi MỖI bản ghi thành MỘT
+   file JSON (đúng các trường ở bảng trên) vào thư mục
+   `/home/hermes/.hermes/profiles/gf-recorder/workspace/wa-outbox/`.
+2. Dịch vụ `gf-wa-relay` (systemd timer, mỗi 1 phút, script
+   `/usr/local/sbin/gf-wa-relay.py`; bản nguồn trong `tools/wa-relay/` của
+   repo này) quét thư mục, POST từng file tới endpoint ingest với header
+   `X-Bot-Secret` (đọc từ `.env.wa`, không ghi vào log). Thành công (200):
+   file chuyển vào `wa-outbox/sent/`. Thất bại: giữ nguyên file, ghi log
+   `/var/log/gf-wa-relay.log`, thử lại ở lần chạy sau; sau 10 lần thất bại
+   file chuyển vào `wa-outbox/failed/` để xem tay.
 
 ## Phía app (tham khảo)
 

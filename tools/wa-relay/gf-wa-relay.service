@@ -1,0 +1,8 @@
+[Unit]
+Description=Golden Farm WhatsApp record relay (Hermes wa-outbox -> GoldenFarmICT ingest)
+After=network.target docker.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/python3 /usr/local/sbin/gf-wa-relay.py
