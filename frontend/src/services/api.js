@@ -152,6 +152,18 @@ export function updateWaRecordStatus(id, status) {
   return api.patch(`/wa-records/${id}/status`, { status }, { headers: orderAuthHeaders() })
 }
 
+export function getZaloRecords(params = {}) {
+  return api.get('/zalo-records', { params, headers: orderAuthHeaders() })
+}
+
+export function getZaloRecord(id) {
+  return api.get(`/zalo-records/${id}`, { headers: orderAuthHeaders() })
+}
+
+export function updateZaloRecordStatus(id, status) {
+  return api.patch(`/zalo-records/${id}/status`, { status }, { headers: orderAuthHeaders() })
+}
+
 export function getMonitorStats(config = {}) {
   return api.get('/monitor/stats', {
     ...config,

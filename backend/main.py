@@ -23,7 +23,7 @@ from app.core.auth import hash_password, verify_session
 from app.core.db import fetchone
 from app.core.todo_permissions import can_view
 from app.core import events
-from app.routers import auth, employees, equipment, tickets, bookings, dashboard, licenses, software, approvals, business_trips, departments, salary_slips, salary_user, documents, todos, comments, attachments, monitor, shares, chat, forum, formulas, module_backups, craft, orders, mail, reports, wa_records
+from app.routers import auth, employees, equipment, tickets, bookings, dashboard, licenses, software, approvals, business_trips, departments, salary_slips, salary_user, documents, todos, comments, attachments, monitor, shares, chat, forum, formulas, module_backups, craft, orders, mail, reports, wa_records, zalo_records
 
 app = FastAPI(title="GOLDENFARM ICT API", version="1.0.0")
 
@@ -68,6 +68,7 @@ app.include_router(orders.router)
 app.include_router(mail.router)
 app.include_router(reports.router)
 app.include_router(wa_records.router)
+app.include_router(zalo_records.router)
 
 
 @app.on_event("startup")

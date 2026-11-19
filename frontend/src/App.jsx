@@ -29,6 +29,7 @@ import AdminBackups from './pages/AdminBackups'
 import Orders from './pages/Orders'
 import Reports from './pages/Reports'
 import WaRecords from './pages/WaRecords'
+import ZaloRecords from './pages/ZaloRecords'
 import Layout from './components/Layout'
 
 function ProtectedRoute({ children }) {
@@ -101,6 +102,7 @@ export default function App() {
         <Route path="formulas/manage" element={<AdminRoute requiredModule="formula-management"><FormulaManagement /></AdminRoute>} />
         <Route path="reports" element={<AdminRoute requiredModule="reports"><Reports /></AdminRoute>} />
         <Route path="wa-records" element={<AdminRoute requiredModule="wa-records"><WaRecords /></AdminRoute>} />
+        <Route path="zalo-records" element={<AdminRoute requiredModule="zalo-records"><ZaloRecords /></AdminRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

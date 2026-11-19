@@ -38,12 +38,14 @@ const iconMap = {
   orders: ShoppingCart,
   reports: BarChart3,
   waRecords: BellRing,
+  zaloRecords: BellRing,
 }
 
 const allNavItems = [
   { path: '/', label: 'Dashboard', icon: 'dashboard', roles: ['user', 'head', 'deputy', 'admin'] },
   { path: '/reports', label: 'Báo cáo', icon: 'reports', roles: ['head', 'deputy', 'admin'] },
   { path: '/wa-records', label: 'Thông báo WhatsApp', icon: 'waRecords', roles: ['admin'] },
+  { path: '/zalo-records', label: 'Thông báo Zalo', icon: 'zaloRecords', roles: ['admin'] },
   { path: '/todos', label: 'Công việc (Todos)', icon: 'todos', roles: ['user', 'head', 'deputy', 'admin'] },
   { path: '/chat', label: 'Chat', icon: 'chat', roles: ['user', 'head', 'deputy', 'admin'] },
   { path: '/mail', label: 'Mail', icon: 'mail', roles: ['user', 'head', 'deputy', 'admin'] },
@@ -79,6 +81,7 @@ const MODULE_MAP = {
   '/tickets': 'tickets',
   '/reports': 'reports',
   '/wa-records': 'wa-records',
+  '/zalo-records': 'zalo-records',
   '/orders': 'orders',
   '/approvals': 'approvals',
   '/workflows': 'workflows',

@@ -29,6 +29,7 @@ services:
     container_name: goldenfarm-backend
     env_file:
       - .env.wa
+      - .env.zalo
     ports:
       - "${BACKEND_PORT}:8000"
     depends_on:
