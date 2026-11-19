@@ -12,6 +12,11 @@ check-in / check-out phòng họp / báo cáo). Hai mặt tách bạch:
   admin luôn được phép). Giai đoạn phát triển chỉ cấp cho admin — trưởng/
   phó phòng và user thường bị 403 cho tới khi admin cấp quyền ở Phân quyền.
 
+Ngoại lệ duy nhất: record_type "thongbao" KHÔNG lưu vào wa_records. Ingest
+rẽ nhánh sang bảng forum_posts — đăng THẲNG lên bảng Thông báo trên
+Dashboard (target_type='all', hiện ngay toàn công ty, không qua duyệt) theo
+quyết định của chủ hệ thống ngày 2026-11-19. Xem _ingest_announcement.
+
 Hợp đồng ingest: docs/wa_ingest_contract.md.
 """
 import hmac
@@ -21,6 +26,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException, Query
 
+from ..core import events
 from ..core.auth import verify_session
 from ..core.db import execute, fetchall, fetchone, insert
 from .auth import _get_effective_permissions
@@ -28,6 +34,14 @@ from .auth import _get_effective_permissions
 router = APIRouter(prefix="/api/wa-records", tags=["wa-records"])
 
 RECORD_TYPES = ("datlich", "checkin", "checkout", "baocao")
+# "thongbao" được ingest chấp nhận nhưng KHÔNG thuộc RECORD_TYPES và không
+# bao giờ lưu vào wa_records (bảng này giữ CHECK chỉ 4 loại trên): nó rẽ
+# nhánh sang forum_posts — xem _ingest_announcement.
+ANNOUNCE_TYPE = "thongbao"
+ANNOUNCE_AUTHOR_CODE = "wa-bot"
+# forum_posts.author_name là varchar không giới hạn độ dài; vẫn cắt ở 255 ký
+# tự để phòng tên người gửi bất thường (an toàn, không mất thông tin thực tế).
+ANNOUNCE_AUTHOR_NAME_MAX = 255
 STATUSES = ("moi", "daxuly", "huy")
 MAX_PAGE_SIZE = 100
 
@@ -117,6 +131,46 @@ def _parse_coord(value, field, lo, hi):
     return num
 
 
+def _ingest_announcement(body: dict) -> dict:
+    """Thông báo từ group WhatsApp -> đăng THẲNG lên bảng Thông báo Dashboard.
+
+    Theo quyết định của chủ hệ thống (2026-11-19): không qua bước duyệt —
+    bài hiện ngay cho toàn công ty (target_type='all') như một bài forum
+    thường. Gắn tác giả 'wa-bot' / 'WhatsApp · <người gửi>' để truy vết
+    nguồn (author_code của forum_posts không có FK nên dùng được mã này).
+    Nguyên văn tin gốc không lưu ở đây: bản JSON gốc nằm trong
+    wa-outbox/sent/ phía bot (relay chuyển vào đó sau khi ingest 200).
+    """
+    title = (body.get("title") or "").strip()
+    if not title:
+        raise HTTPException(400, "Thông báo (thongbao) thiếu title")
+    content = (body.get("content") or "").strip() or (body.get("raw_message") or "").strip()
+    sender_name = (body.get("sender_name") or "").strip()
+    author_name = f"WhatsApp · {sender_name}" if sender_name else "WhatsApp"
+    author_name = author_name[:ANNOUNCE_AUTHOR_NAME_MAX]
+
+    post_id = insert(
+        """
+        INSERT INTO forum_posts
+            (title, content, author_code, author_name, target_type, target_value,
+             is_pinned, attachment_url, attachment_name, attachment_type,
+             attachment_size, created_at, updated_at)
+        VALUES
+            (:title, :content, :author, :author_name, 'all', '',
+             0, '', '', '', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING id
+        """,
+        {
+            "title": title,
+            "content": content,
+            "author": ANNOUNCE_AUTHOR_CODE,
+            "author_name": author_name,
+        },
+    )
+    events.publish_sync("forum_post_added", {"id": post_id})
+    return {"success": True, "id": post_id, "forum_post_id": post_id}
+
+
 @router.post("/ingest")
 def ingest_record(body: dict, x_bot_secret: Optional[str] = Header(None, alias="X-Bot-Secret")):
     _require_bot_secret(x_bot_secret)
@@ -124,6 +178,8 @@ def ingest_record(body: dict, x_bot_secret: Optional[str] = Header(None, alias="
         raise HTTPException(400, "Body phải là JSON object")
 
     record_type = (body.get("record_type") or "").strip()
+    if record_type == ANNOUNCE_TYPE:
+        return _ingest_announcement(body)
     if record_type not in RECORD_TYPES:
         raise HTTPException(400, f"record_type phải thuộc {list(RECORD_TYPES)}")
 
