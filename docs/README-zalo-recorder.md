@@ -88,8 +88,13 @@ Lỗi ghi snapshot được nuốt trong try/catch — không bao giờ ảnh h�
   chính tài khoản (`isSelf`), **không** bắt đầu bằng `!`, group nằm trong
   allowlist, nội dung là text, chưa từng xử lý (seen-file).
 - **Allowlist:** biến `ZALO_CAPTURE_GROUPS` trong `.env` của bot (ID group,
-  phân tách dấu phẩy). Khởi đầu chỉ có **4387335651004809871 — "Bot GF TEST
-  api"** (group thử nghiệm 1 thành viên). Thêm group: sửa biến này rồi
+  phân tách dấu phẩy). Hiện có **4 group** (mở rộng 2026-11-19 theo quyết
+  định của chủ hệ thống, gương phạm vi 3 group phía WhatsApp):
+  **4387335651004809871 — "Bot GF TEST api"** (group thử nghiệm 1 thành
+  viên, pilot từ đầu), **851154979834534050 — "Group GOLDEN FARM"** (262
+  thành viên), **9127971756548132800 — "Group GOLDEN FARM - Văn Phòng"**
+  (130 thành viên), **1324164774563393037 — "Group GOLDEN FARM_VP (Ko có
+  NV tỉnh)"** (101 thành viên). Thêm/bớt group: sửa biến này rồi
   `systemctl restart zalo-personal-bot.service`.
 - **Phân loại:** gọi 9Router qua đúng client sẵn có của bot
   (`src/9router/client.js`, cùng base URL + key các lệnh `!chat` dùng),
