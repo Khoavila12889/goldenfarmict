@@ -12,10 +12,16 @@ check-in / check-out phòng họp / báo cáo). Hai mặt tách bạch:
   admin luôn được phép). Giai đoạn phát triển chỉ cấp cho admin — trưởng/
   phó phòng và user thường bị 403 cho tới khi admin cấp quyền ở Phân quyền.
 
-Ngoại lệ duy nhất: record_type "thongbao" KHÔNG lưu vào wa_records. Ingest
-rẽ nhánh sang bảng forum_posts — đăng THẲNG lên bảng Thông báo trên
-Dashboard (target_type='all', hiện ngay toàn công ty, không qua duyệt) theo
-quyết định của chủ hệ thống ngày 2026-11-19. Xem _ingest_announcement.
+Định tuyến theo người gửi: record_type "thongbao" được rẽ nhánh theo SỐ
+ĐIỆN THOẠI người gửi (quyết định của chủ hệ thống ngày 2026-11-19, bản
+"tạm" — có thể thay đổi): chỉ người gửi có số nằm trong biến môi trường
+WA_ANNOUNCE_DIRECT_PHONES (file .env.wa; hiện tại là Nhung Nhân sự) mới
+đăng THẲNG lên bảng Thông báo trên Dashboard (forum_posts,
+target_type='all', hiện ngay toàn công ty, không qua duyệt — xem
+_ingest_announcement). Mọi thông báo còn lại — kể cả thiếu/không đọc được
+số điện thoại — lưu vào wa_records như bản ghi thường (trạng thái 'moi')
+cho admin duyệt trong module này. Danh sách trống = không ai đăng thẳng
+(fail-safe về phía module).
 
 Hợp đồng ingest: docs/wa_ingest_contract.md.
 """
@@ -34,10 +40,14 @@ from .auth import _get_effective_permissions
 router = APIRouter(prefix="/api/wa-records", tags=["wa-records"])
 
 RECORD_TYPES = ("datlich", "checkin", "checkout", "baocao")
-# "thongbao" được ingest chấp nhận nhưng KHÔNG thuộc RECORD_TYPES và không
-# bao giờ lưu vào wa_records (bảng này giữ CHECK chỉ 4 loại trên): nó rẽ
-# nhánh sang forum_posts — xem _ingest_announcement.
+# "thongbao" được ingest chấp nhận nhưng KHÔNG thuộc RECORD_TYPES: nó được
+# định tuyến theo số điện thoại người gửi — khớp danh sách đăng thẳng thì
+# rẽ nhánh sang forum_posts (xem _ingest_announcement), còn lại lưu vào
+# wa_records như bản ghi thường (CHECK của bảng đã gồm 'thongbao' từ
+# migration 20261119_wa_records_thongbao.sql).
 ANNOUNCE_TYPE = "thongbao"
+# Các loại hợp lệ khi LỌC danh sách trong module (gồm cả thongbao đã lưu).
+FILTER_TYPES = RECORD_TYPES + (ANNOUNCE_TYPE,)
 ANNOUNCE_AUTHOR_CODE = "wa-bot"
 # forum_posts.author_name là varchar không giới hạn độ dài; vẫn cắt ở 255 ký
 # tự để phòng tên người gửi bất thường (an toàn, không mất thông tin thực tế).
@@ -131,15 +141,48 @@ def _parse_coord(value, field, lo, hi):
     return num
 
 
+def _normalize_phone(value) -> str:
+    """Chuẩn hoá số điện thoại về dạng chỉ-chữ-số, đầu 84 (Việt Nam).
+
+    '0906932250' -> '84906932250'; '+84 906 932 250' -> '84906932250';
+    '0084...' -> bỏ tiền tố 00 trước. Không đọc được -> ''.
+    """
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    if digits.startswith("00"):
+        digits = digits[2:]
+    if digits.startswith("0"):
+        digits = "84" + digits[1:]
+    return digits
+
+
+def _announce_direct_phones() -> set:
+    """Danh sách số được đăng thẳng thông báo, đọc từ WA_ANNOUNCE_DIRECT_PHONES.
+
+    Biến môi trường (file .env.wa) dạng phân tách bằng dấu phẩy; mỗi số được
+    chuẩn hoá như _normalize_phone. Chưa cấu hình -> tập rỗng -> KHÔNG ai
+    đăng thẳng (mọi thongbao vào module chờ duyệt) — fail-safe có chủ đích.
+    """
+    raw = os.environ.get("WA_ANNOUNCE_DIRECT_PHONES") or ""
+    return {p for p in (_normalize_phone(x) for x in raw.split(",")) if p}
+
+
+def _announce_goes_direct(body: dict) -> bool:
+    """True khi người gửi thongbao thuộc danh sách đăng thẳng Dashboard."""
+    phone = _normalize_phone(body.get("sender_phone"))
+    return bool(phone) and phone in _announce_direct_phones()
+
+
 def _ingest_announcement(body: dict) -> dict:
     """Thông báo từ group WhatsApp -> đăng THẲNG lên bảng Thông báo Dashboard.
 
-    Theo quyết định của chủ hệ thống (2026-11-19): không qua bước duyệt —
-    bài hiện ngay cho toàn công ty (target_type='all') như một bài forum
-    thường. Gắn tác giả 'wa-bot' / 'WhatsApp · <người gửi>' để truy vết
-    nguồn (author_code của forum_posts không có FK nên dùng được mã này).
-    Nguyên văn tin gốc không lưu ở đây: bản JSON gốc nằm trong
-    wa-outbox/sent/ phía bot (relay chuyển vào đó sau khi ingest 200).
+    CHỈ dành cho người gửi có số điện thoại trong WA_ANNOUNCE_DIRECT_PHONES
+    (xem _announce_goes_direct); các thông báo khác không vào hàm này.
+    Không qua bước duyệt — bài hiện ngay cho toàn công ty
+    (target_type='all') như một bài forum thường. Gắn tác giả 'wa-bot' /
+    'WhatsApp · <người gửi>' để truy vết nguồn (author_code của forum_posts
+    không có FK nên dùng được mã này). Nguyên văn tin gốc không lưu ở đây:
+    bản JSON gốc nằm trong wa-outbox/sent/ phía bot (relay chuyển vào đó
+    sau khi ingest 200).
     """
     title = (body.get("title") or "").strip()
     if not title:
@@ -179,8 +222,14 @@ def ingest_record(body: dict, x_bot_secret: Optional[str] = Header(None, alias="
 
     record_type = (body.get("record_type") or "").strip()
     if record_type == ANNOUNCE_TYPE:
-        return _ingest_announcement(body)
-    if record_type not in RECORD_TYPES:
+        # Title bắt buộc cho CẢ hai đường (đăng thẳng lẫn lưu module).
+        if not (body.get("title") or "").strip():
+            raise HTTPException(400, "Thông báo (thongbao) thiếu title")
+        if _announce_goes_direct(body):
+            return _ingest_announcement(body)
+        # Người gửi không thuộc danh sách đăng thẳng (hoặc thiếu số):
+        # rơi xuống insert wa_records thường ở dưới với record_type này.
+    elif record_type not in RECORD_TYPES:
         raise HTTPException(400, f"record_type phải thuộc {list(RECORD_TYPES)}")
 
     title = (body.get("title") or "").strip()
@@ -245,8 +294,8 @@ def list_records(
     where = ["1=1"]
     params: dict = {}
     if record_type:
-        if record_type not in RECORD_TYPES:
-            raise HTTPException(400, f"record_type phải thuộc {list(RECORD_TYPES)}")
+        if record_type not in FILTER_TYPES:
+            raise HTTPException(400, f"record_type phải thuộc {list(FILTER_TYPES)}")
         where.append("record_type = :rtype")
         params["rtype"] = record_type
     if status:

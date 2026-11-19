@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Search, RefreshCw, X, MapPin, CalendarClock, ClipboardList, Megaphone, LogOut, UserRound, Users, Clock3 } from 'lucide-react'
+import { Search, RefreshCw, X, MapPin, CalendarClock, ClipboardList, Megaphone, Speaker, LogOut, UserRound, Users, Clock3 } from 'lucide-react'
 import { apiErrorMessage, getWaRecords, getWaRecord, updateWaRecordStatus } from '../services/api'
 import './WaRecords.css'
 
@@ -8,6 +8,7 @@ const TYPE_META = {
   checkin: { label: 'Check-in', icon: MapPin, cls: 'wa-badge-checkin' },
   checkout: { label: 'Check-out', icon: LogOut, cls: 'wa-badge-checkout' },
   baocao: { label: 'Báo cáo', icon: Megaphone, cls: 'wa-badge-baocao' },
+  thongbao: { label: 'Thông báo', icon: Speaker, cls: 'wa-badge-thongbao' },
 }
 
 const STATUS_META = {
@@ -109,7 +110,7 @@ export default function WaRecords() {
       <div className="wa-header">
         <div>
           <h1>Thông báo WhatsApp</h1>
-          <p>Bản ghi bot Hermes trích từ group WhatsApp: đặt lịch, check-in vị trí và báo cáo.</p>
+          <p>Bản ghi bot Hermes trích từ group WhatsApp: đặt lịch, check-in, check-out, báo cáo và thông báo chờ duyệt.</p>
         </div>
         <button className="wa-btn" onClick={load} disabled={loading}>
           <RefreshCw size={15} className={loading ? 'wa-spin' : ''} /> Làm mới
@@ -123,6 +124,7 @@ export default function WaRecords() {
           <option value="checkin">Check-in</option>
           <option value="checkout">Check-out</option>
           <option value="baocao">Báo cáo</option>
+          <option value="thongbao">Thông báo</option>
         </select>
         <select value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}>
           <option value="">Tất cả trạng thái</option>

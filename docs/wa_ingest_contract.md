@@ -24,11 +24,11 @@ POST /api/wa-records/ingest
 
 | Trường | Kiểu | Bắt buộc | Ghi chú |
 |---|---|---|---|
-| `record_type` | string | ✔ | Một trong `datlich`, `checkin`, `checkout`, `baocao` (lưu vào `wa_records`). Bot Hermes dùng 3 loại đầu (đặt phòng họp / vào phòng / trả phòng); `baocao` giữ trong schema, bot không dùng. **Ngoại lệ:** `thongbao` cũng được ingest chấp nhận nhưng KHÔNG lưu vào `wa_records` — xem mục riêng bên dưới |
-| `title` | string | ✔* | Tiêu đề ngắn. *Ít nhất một trong `title`/`content` phải có |
+| `record_type` | string | ✔ | Một trong `datlich`, `checkin`, `checkout`, `baocao`, `thongbao`. Bốn loại đầu + `thongbao`-không-đăng-thẳng lưu vào `wa_records`. Bot Hermes dùng `datlich`/`checkin`/`checkout` (đặt phòng họp / vào phòng / trả phòng) và `thongbao` (thông báo chính thức); `baocao` giữ trong schema, bot không dùng. Riêng `thongbao` được **định tuyến theo người gửi** — xem mục riêng bên dưới |
+| `title` | string | ✔* | Tiêu đề ngắn. *Ít nhất một trong `title`/`content` phải có. Riêng `thongbao`: `title` **bắt buộc** ở cả hai đường |
 | `content` | string | ✔* | Nội dung chi tiết đã trích xuất |
 | `sender_name` | string | | Tên người gửi trong group |
-| `sender_phone` | string | | Số điện thoại người gửi (định dạng quốc tế nếu có) |
+| `sender_phone` | string | | Số điện thoại người gửi (chỉ chữ số, định dạng quốc tế nếu có). Với `thongbao` trường này quyết định định tuyến (xem mục riêng) — skill ≥ 1.3.0 luôn gửi kèm khi bridge có định danh người gửi |
 | `group_name` | string | | Tên group WhatsApp nguồn |
 | `scheduled_at` | string (ISO 8601) | | Chỉ dùng cho `datlich`. Nên kèm múi giờ, vd `2026-11-20T09:00:00+07:00` |
 | `place` | string | | Địa điểm dạng chữ (kho, chi nhánh, địa chỉ...) |
@@ -99,16 +99,38 @@ Check-out (trả phòng họp — không có tọa độ):
 }
 ```
 
-## Loại `thongbao` — đăng thẳng lên bảng Thông báo Dashboard
+## Loại `thongbao` — định tuyến theo người gửi
 
-Từ 2026-11-19 (quyết định của chủ hệ thống: đăng thẳng, **không qua duyệt**),
-ingest chấp nhận thêm `record_type = "thongbao"` và rẽ nhánh: thay vì ghi vào
-`wa_records`, nó tạo một bài trong bảng **`forum_posts`** — chính là bảng
-Thông báo (Forum) hiện trên Dashboard của app. CHECK của `wa_records` giữ
-nguyên 4 loại cũ; `thongbao` không bao giờ xuất hiện trong module
-"Thông báo WhatsApp".
+Từ 2026-11-19 15:46 (quyết định của chủ hệ thống, mang tính "tạm" — thay
+cho bản đăng-thẳng-cho-mọi-người ban sáng cùng ngày), `thongbao` được định
+tuyến theo **số điện thoại người gửi**:
 
-Ánh xạ trường (payload → `forum_posts`):
+- **Người gửi thuộc danh sách đăng thẳng** → tạo bài trong **`forum_posts`**
+  (bảng Thông báo Dashboard), **không qua duyệt**, hiện ngay toàn công ty.
+- **Mọi trường hợp còn lại** (số không khớp, thiếu số, số không đọc được)
+  → ghi vào **`wa_records`** như bản ghi thường (trạng thái `moi`, đủ các
+  trường chuẩn) để admin duyệt trong module "Thông báo WhatsApp" — module
+  có badge và bộ lọc riêng cho loại "Thông báo". CHECK của `wa_records` đã
+  gồm `thongbao` (migration `backend/migrations/20261119_wa_records_thongbao.sql`).
+
+**Danh sách đăng thẳng:** biến môi trường `WA_ANNOUNCE_DIRECT_PHONES` trong
+file `.env.wa` (cùng file với `WA_BOT_SECRET`, chmod 600, không nằm trong
+git), dạng các số phân tách bằng dấu phẩy. Hiện tại danh sách chỉ có số của
+**Nhung Nhân sự**. Backend đọc biến này ở mỗi request; thay đổi giá trị cần
+recreate container backend (`docker compose up -d backend`) để nạp env mới.
+
+**Chuẩn hoá số trước khi so:** chỉ giữ chữ số; bỏ tiền tố `00` quốc tế;
+số bắt đầu bằng `0` → thay `0` đầu bằng `84`. Ví dụ `0906932250`,
+`+84 906 932 250` và `84906932250` đều chuẩn hoá thành `84906932250`.
+Các số trong `WA_ANNOUNCE_DIRECT_PHONES` được chuẩn hoá cùng cách.
+
+**Fail-safe:** biến chưa cấu hình hoặc rỗng → danh sách trống → **không ai
+đăng thẳng**, mọi `thongbao` vào module chờ duyệt.
+
+**`title` bắt buộc cho cả hai đường** — thiếu/rỗng trả `400`, không tạo
+bài/bản ghi nào.
+
+Ánh xạ trường cho đường đăng thẳng (payload → `forum_posts`):
 
 | Payload | `forum_posts` | Ghi chú |
 |---|---|---|
@@ -120,18 +142,22 @@ nguyên 4 loại cũ; `thongbao` không bao giờ xuất hiện trong module
 | — | `is_pinned`, đính kèm | `0`; `attachment_*` rỗng/`0` |
 | — | `created_at` / `updated_at` | `CURRENT_TIMESTAMP`, giống hệt `forum.py` |
 
-Sau khi insert, ingest bắn sự kiện realtime `forum_post_added` (đúng lời gọi
-của `forum.py`) để các Dashboard đang mở tự cập nhật. Bài đăng là bài forum
-thường: admin sửa/xóa được trên Dashboard; người dùng bình luận được như mọi
-thông báo. Truy vết nguồn (người gửi, group, nguyên văn tin) nằm ở file JSON
-gốc mà relay lưu trong `wa-outbox/sent/` sau khi ingest trả 200.
+Sau khi insert ở đường đăng thẳng, ingest bắn sự kiện realtime
+`forum_post_added` (đúng lời gọi của `forum.py`) để các Dashboard đang mở
+tự cập nhật. Bài đăng là bài forum thường: admin sửa/xóa được trên
+Dashboard; người dùng bình luận được như mọi thông báo. Truy vết nguồn
+(người gửi, group, nguyên văn tin) nằm ở file JSON gốc mà relay lưu trong
+`wa-outbox/sent/` sau khi ingest trả 200; ở đường module, các trường này
+nằm ngay trong bản ghi `wa_records`.
 
-Phía bot (skill `wa-room-recorder` ≥ 1.2.0): chỉ phân loại `thongbao` cho
+Phía bot (skill `wa-room-recorder` ≥ 1.3.0): chỉ phân loại `thongbao` cho
 thông báo **chính thức** theo chuẩn precision-first (marker "thông báo"/"kính
 gửi", lĩnh vực trang trọng như nghỉ lễ/quy định/tuyển dụng, ngày hiệu lực,
 ký tên phòng ban…); nghi ngờ thì bỏ qua. `title` là dòng tiêu đề/dòng đầu
 của tin (hoặc tóm tắt ngắn trung thực), `content` là **toàn văn tin nguyên
-văn**. Không gửi `scheduled_at`/`place`/tọa độ cho loại này.
+văn**. Không gửi `scheduled_at`/`place`/tọa độ cho loại này. Mọi loại bản
+ghi đều kèm `sender_phone` lấy từ định danh người gửi do bridge cung cấp
+(không bao giờ bịa) — với `thongbao` đây là trường quyết định định tuyến.
 
 Ví dụ:
 
@@ -141,20 +167,27 @@ Ví dụ:
   "title": "THÔNG BÁO NGHỈ LỄ 2/9",
   "content": "THÔNG BÁO NGHỈ LỄ 2/9\nKính gửi toàn thể CBNV, công ty nghỉ lễ Quốc khánh từ ngày 01/09 đến hết ngày 02/09.",
   "sender_name": "Nguyen Van A",
+  "sender_phone": "84901234567",
   "group_name": "GROUP GOLDEN FARM",
   "raw_message": "THÔNG BÁO NGHỈ LỄ 2/9\nKính gửi toàn thể CBNV, công ty nghỉ lễ Quốc khánh từ ngày 01/09 đến hết ngày 02/09.",
   "source": "hermes"
 }
 ```
 
-Phản hồi cho `thongbao`: `200` với
-`{"success": true, "id": <id bài forum>, "forum_post_id": <id bài forum>}`
-(relay coi như ingest thường: 200 → chuyển file vào `sent/`).
+Phản hồi cho `thongbao`:
+
+- Đường đăng thẳng: `200` với
+  `{"success": true, "id": <id bài forum>, "forum_post_id": <id bài forum>}`.
+- Đường module: `200` với `{"success": true, "id": <id bản ghi wa_records>}`
+  (không có `forum_post_id`).
+
+(relay coi như ingest thường ở cả hai đường: 200 → chuyển file vào `sent/`).
 
 ## Phản hồi
 
-- `200`: `{"success": true, "id": <id bản ghi mới>}` (với `thongbao`: id của
-  bài forum + thêm trường `forum_post_id`, xem mục riêng ở trên)
+- `200`: `{"success": true, "id": <id bản ghi mới>}` (với `thongbao` đăng
+  thẳng: id của bài forum + thêm trường `forum_post_id`; `thongbao` vào
+  module thì như bản ghi thường — xem mục riêng ở trên)
 - `400`: dữ liệu không hợp lệ (thiếu `record_type`/`title`/`content`,
   `scheduled_at` sai định dạng, tọa độ ngoài khoảng; riêng `thongbao`:
   thiếu/rỗng `title`).
