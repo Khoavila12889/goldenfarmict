@@ -26,18 +26,22 @@ Hệ thống này dùng **Hermes Agent** (tác tử AI mã nguồn mở của No
 ghép nối vào WhatsApp qua cầu nối Baileys, **nghe 3 group trong phạm vi cho phép**,
 tự phân loại các tin liên quan và ghi thành bản ghi có cấu trúc vào module
 **"Thông báo WhatsApp"** của app GoldenFarmICT để admin theo dõi/xử lý.
+Riêng **thông báo chính thức** (`thongbao`) được **đăng thẳng lên bảng
+Thông báo trên Dashboard** cho toàn công ty — không qua bước duyệt (mục 3.6).
 
-### 1.2. Phạm vi thu thập — chỉ đúng 3 loại
+### 1.2. Phạm vi thu thập — 4 loại bản ghi
 
-| Loại | Ý nghĩa |
-|---|---|
-| `datlich` | Đăng ký / mượn phòng họp (kèm hủy đặt phòng — xem mục 3.4) |
-| `checkin` | Vào phòng / bắt đầu sử dụng phòng họp |
-| `checkout` | Trả phòng / họp xong, phòng trống |
+| Loại | Ý nghĩa | Đích đến |
+|---|---|---|
+| `datlich` | Đăng ký / mượn phòng họp (kèm hủy đặt phòng — xem mục 3.4) | Module "Thông báo WhatsApp" (`wa_records`) |
+| `checkin` | Vào phòng / bắt đầu sử dụng phòng họp | Module "Thông báo WhatsApp" (`wa_records`) |
+| `checkout` | Trả phòng / họp xong, phòng trống | Module "Thông báo WhatsApp" (`wa_records`) |
+| `thongbao` | Thông báo chính thức gửi toàn thể nhân viên (nghỉ lễ, họp toàn thể, quy định mới…) | **Bảng Thông báo Dashboard** (`forum_posts`) — đăng thẳng, không duyệt |
 
-Mọi tin khác trong group (trò chuyện, hỏi đáp, thông báo không liên quan…)
-đều bị bỏ qua lặng lẽ. Báo cáo chung chung (`baocao`) **không** nằm trong
-phạm vi — loại này vẫn tồn tại trong schema của app nhưng bot không bao giờ tạo.
+Mọi tin khác trong group (trò chuyện, hỏi đáp, nhắc việc lặt vặt, thông báo
+không đạt chuẩn trang trọng ở mục 3.4…) đều bị bỏ qua lặng lẽ. Báo cáo chung
+chung (`baocao`) **không** nằm trong phạm vi — loại này vẫn tồn tại trong
+schema của app nhưng bot không bao giờ tạo.
 
 ### 1.3. Các quyết định thiết kế chính (và lý do)
 
@@ -50,6 +54,7 @@ phạm vi — loại này vẫn tồn tại trong schema của app nhưng bot kh
 | **Bot không có công cụ mạng/thực thi** — nó chỉ ghi file JSON; một relay độc lập phía server đẩy file vào app | Thu hẹp bề mặt rủi ro: kể cả khi agent bị lừa bởi nội dung tin nhắn, nó cũng không tự gọi được API hay chạy lệnh |
 | **Khóa phạm vi ở nhiều lớp** (cấu hình bridge + allowlist JID + skill) | Chỉ đúng các group trong allowlist (hiện 3 group) được xử lý; DM và group khác bị loại ngay ở cổng |
 | **Chốt chặn gửi tin ở tầng code** (ngoài cấu hình và chỉ thị trong skill) | Hermes v0.23.2 không có công tắc "chỉ nghe" ở tầng cấu hình — chốt code là lớp đảm bảo cứng duy nhất (mục 3.3) |
+| **Thông báo chính thức đăng thẳng lên Dashboard, không qua duyệt** (quyết định của chủ hệ thống ngày 2026-11-19, thay cho phương án vào module chờ admin duyệt) | Muốn thông báo tới nhân viên ngay như khi đăng trong group; giảm thiểu rủi ro đăng nhầm bằng phân loại "precision-first" trong skill — nghi ngờ thì bỏ qua, không đăng (mục 3.4) |
 | **Đặt bot trên server nội bộ GoldenFarmICT** (không phải VPS) | Cùng máy với app đích; máy đã có sẵn Node; VPS chật đĩa hơn |
 
 ### 1.4. Rủi ro còn lại (đã biết và chấp nhận)
@@ -213,15 +218,31 @@ lại (đều tên "GOLDEN FARM COMPANY") không được xử lý.
 ### 3.4. Skill ghi nhận — phân loại & trích xuất
 
 - File: `/home/hermes/.hermes/profiles/gf-recorder/skills/goldenfarm/wa-room-recorder/SKILL.md`
-  (skill `wa-room-recorder`, version 1.0.0, trạng thái **enabled** — kiểm
-  chứng bằng `hermes -p gf-recorder skills list`).
+  (skill `wa-room-recorder`, version **1.2.0** — 1.2.0 thêm loại `thongbao`,
+  trạng thái **enabled** — kiểm chứng bằng `hermes -p gf-recorder skills list`).
 - **Rule 0 — Absolute silence:** không bao giờ gửi tin; final response rỗng;
   tin không phải bản ghi → không làm gì cả, kết thúc lượt trống; không bao
   giờ hỏi lại người gửi khi thiếu thông tin (ghi phần có được, admin đối
   chiếu trong app).
 - **Phân loại** mỗi tin trong các group thuộc phạm vi vào đúng một trong: `datlich`,
-  `checkin`, `checkout`, hoặc *không phải bản ghi* (hỏi "mai phòng có ai đặt
+  `checkin`, `checkout`, `thongbao`, hoặc *không phải bản ghi* (hỏi "mai phòng có ai đặt
   chưa?" là câu hỏi, không phải đặt phòng → bỏ qua).
+- **`thongbao` — thông báo chính thức (từ version 1.2.0):** phân loại theo
+  chuẩn **precision-first** — tin phải mang nhiều tín hiệu trang trọng:
+  marker rõ ("thông báo", "TB:", "kính gửi/thân gửi", dòng tiêu đề riêng);
+  lĩnh vực trang trọng (nghỉ lễ, họp toàn thể, quy định/chính sách mới,
+  tuyển dụng, lương/thưởng, an toàn lao động, bảo trì hệ thống); văn phong
+  trang trọng kèm ngày hiệu lực ("kể từ ngày…", "áp dụng từ…"); tiền tố ký
+  tên phòng ban ("PNS:", "Hành chính:", "Ban Giám đốc:"); văn bản có cấu
+  trúc nhiều câu. **Nghi ngờ → KHÔNG phân loại `thongbao`** (bỏ qua hẳn):
+  vì đích đến là bảng Thông báo toàn công ty **không qua duyệt**, đăng nhầm
+  một tin tán gẫu thành "thông báo chính thức" tệ hơn bỏ sót một thông báo.
+  Thứ tự ưu tiên: tin khớp `datlich`/`checkin`/`checkout` thì luôn là bản
+  ghi phòng, không bao giờ là `thongbao`.
+  - `title`: dòng tiêu đề/dòng đầu của chính tin nếu có; không có thì tóm
+    tắt ngắn trung thực từ nội dung tin — **không bịa** sự kiện/ngày/tên.
+  - `content`: **toàn văn tin, nguyên văn** (Dashboard hiện đúng như đã viết).
+  - Không `scheduled_at`, không `place`, không tọa độ.
 - **Trích xuất theo văn phong lỏng tiếng Việt, không bao giờ bịa:**
   - Phòng ban/đội: lấy nguyên tiền tố như đã viết (`PNS`, `MKT`, `Thu mua`,
     `R&D`…) — không tự mở rộng viết tắt.
@@ -333,6 +354,33 @@ Tin gốc: `Họp xong rồi, trả phòng họp tầng 2 ạ`
   nhận session người dùng. Chưa cấu hình secret → `503`; secret sai/thiếu →
   `401`; `record_type` sai → `400`; check-in thiếu tọa độ → nay **không**
   lỗi (xem dưới).
+- **Nhánh `thongbao` → bảng Thông báo Dashboard (từ 2026-11-19):** ingest
+  chấp nhận thêm `record_type = "thongbao"` nhưng **không** lưu vào
+  `wa_records` (CHECK của bảng giữ nguyên 4 loại cũ). Hàm
+  `_ingest_announcement` trong `wa_records.py` ghi thẳng một hàng vào
+  **`forum_posts`** — cùng bảng/cùng cách ghi với chức năng Thông báo
+  (Forum) của app:
+  - `title` = trường `title` của payload — **bắt buộc, rỗng → `400`**.
+  - `content` = trường `content`; trống thì dùng `raw_message`.
+  - `author_code = 'wa-bot'`, `author_name = 'WhatsApp · <sender_name>'`
+    (cột của `forum_posts` là varchar không giới hạn, không có FK trên
+    `author_code`; `author_name` được cắt an toàn ở 255 ký tự).
+  - `target_type = 'all'`, `target_value = ''`, `is_pinned = 0`, không file
+    đính kèm; `created_at`/`updated_at` ghi bằng `CURRENT_TIMESTAMP` đúng
+    như `forum.py`, và bắn cùng sự kiện realtime
+    `events.publish_sync("forum_post_added", {"id": ...})` để Dashboard
+    đang mở tự cập nhật.
+  - Phản hồi: `{"success": true, "id": <id bài forum>, "forum_post_id": <id>}`
+    — relay vẫn hiểu như ingest thường (200 → file vào `sent/`).
+  - **Không có bước duyệt:** bài hiện ngay cho toàn công ty. Truy vết nguồn
+    (người gửi, group, nguyên văn tin) nằm ở file JSON gốc trong
+    `wa-outbox/sent/` + `author_name` trên bài. Admin vẫn sửa/xóa bài trên
+    Dashboard như mọi thông báo khác.
+  - Đã kiểm chứng 2026-11-19: file `thongbao` [TEST] thả vào outbox → sau
+    ~40 giây có bài trên `forum_posts` với đúng các trường trên, admin thấy
+    qua `GET /api/forum/posts` và xóa được qua API (bảng trở về 0);
+    payload `thongbao` thiếu title → `400`, không tạo bài; bản ghi
+    `datlich` qua relay vẫn vào `wa_records` như cũ (id=7).
 - **Bảng `wa_records`** (kiểu dữ liệu đúng chuẩn, không theo thói quen VARCHAR
   của các bảng cũ): `id BIGINT`, `record_type VARCHAR(20)` CHECK ∈
   (`datlich`,`checkin`,`baocao`,`checkout`), `sender_name TEXT`,
@@ -556,10 +604,16 @@ Bản vá GF SENDBLOCK nằm trong file `bridge.js` thuộc cây mã nguồn c�
   active + enabled + linger; bridge kết nối ở port 3010; footprint
   ~310–340 MB RAM.
 - ✅ Module "Thông báo WhatsApp" live trong app; phân quyền hiện chỉ admin.
+- ✅ **Tính năng thông báo `thongbao` (2026-11-19):** skill 1.2.0 phân loại
+  thông báo chính thức; ingest rẽ nhánh đăng thẳng lên bảng Thông báo
+  Dashboard (`forum_posts`, target toàn công ty, không duyệt — quyết định
+  của chủ hệ thống). Đã test đầu-cuối bằng dữ liệu tổng hợp và dọn sạch
+  (mục 3.6); gateway đã restart để nạp skill mới (14:45, chốt chặn
+  SENDBLOCK vẫn chặn thông báo tắt/mở dịch vụ như thường lệ).
 
 ### 6.2. Dữ liệu test đang có trong bảng
 
-6 bản ghi **[TEST]** (ids **1–6**) được tạo trong quá trình xây dựng/kiểm
+7 bản ghi **[TEST]** (ids **1–7**) được tạo trong quá trình xây dựng/kiểm
 chứng — đều ghi rõ [TEST], xóa tự do trong app:
 
 | id | Loại | Trạng thái | Nguồn gốc |
@@ -570,6 +624,11 @@ chứng — đều ghi rõ [TEST], xóa tự do trong app:
 | 4 | checkout | moi | Test khi thêm loại checkout (không tọa độ) |
 | 5 | checkin | moi | Test check-in phòng họp không tọa độ |
 | 6 | datlich | moi | Test đầu-cuối qua relay (file → ingest) |
+| 7 | datlich | moi | Test hồi quy khi thêm nhánh `thongbao` (2026-11-19) — module không có endpoint xóa cứng nên giữ lại cùng nhóm [TEST] này |
+
+Riêng bài **forum [TEST-THONG-BAO]** dùng để nghiệm thu nhánh `thongbao`
+(forum_posts id=2) đã **xóa qua API ngay sau khi kiểm chứng** — bảng
+`forum_posts` trở về 0 bài như trước khi test.
 
 ### 6.3. Việc còn lại
 
@@ -589,6 +648,7 @@ chứng — đều ghi rõ [TEST], xóa tự do trong app:
 | `68f0013` | Module "Thông báo WhatsApp": bảng `wa_records` + ingest bot (X-Bot-Secret) + trang feed |
 | `ffa1232` | Phân quyền qua trang Phân quyền; giai đoạn phát triển chỉ admin (gỡ defaults head/deputy) |
 | `e0e6375` | Thêm loại bản ghi `checkout` + nới tọa độ check-in thành tùy chọn + relay file→ingest + cập nhật hợp đồng ingest |
+| `501b500` | Nhánh `thongbao`: ingest đăng thẳng thông báo lên bảng Thông báo Dashboard (`forum_posts`) + cập nhật hợp đồng ingest (skill v1.2.0 nằm phía Hermes, ngoài git app) |
 
 Phía Hermes (profile/skill/send-block/relay) không nằm trong git của app —
 cấu hình chuẩn để tra cứu chính là tài liệu này + `OPS-WHATSAPP-RECORDER.md`
@@ -612,13 +672,14 @@ cấu hình chuẩn để tra cứu chính là tài liệu này + `OPS-WHATSAPP-
 | Khóa phạm vi chính | `group_policy=allowlist`, `dm_policy=disabled`, `require_mention=false`, `WHATSAPP_MODE=bot` (config.yaml `platforms.whatsapp.extra` + mirror trong profile `.env`) |
 | Model | Provider `goldenfarm`: `cx/gpt-5.6-sol` @ `https://api.goldenfarm.com.vn/v1` (9Router; dashboard `https://api.goldenfarm.com.vn/dashboard`) |
 | API key | Biến `GOLDENFARM_API_KEY`, profile `.env` (600) — key riêng của bot |
-| Skill | `wa-room-recorder` — `profiles/gf-recorder/skills/goldenfarm/wa-room-recorder/SKILL.md` (enabled) |
+| Skill | `wa-room-recorder` v1.2.0 — `profiles/gf-recorder/skills/goldenfarm/wa-room-recorder/SKILL.md` (enabled; đổi skill xong phải restart gateway để nạp bản mới) |
 | Outbox | `profiles/gf-recorder/workspace/wa-outbox/` (+ `sent/`, `failed/`) |
 | Relay | `/usr/local/sbin/gf-wa-relay.py` (root) + `gf-wa-relay.timer` (mỗi 1 phút); state `/var/lib/gf-wa-relay/state.json`; tối đa 10 lần thử |
 | Bot secret | Biến `WA_BOT_SECRET`, `/home/goldenfarmict/.env.wa` (600, ngoài git) |
 | Ingest | `POST /api/wa-records/ingest` (header `X-Bot-Secret`); relay gọi qua `http://localhost:8000` |
 | App | `/home/goldenfarmict`, branch `wordcraft-viewer-151026`; backend :8000, frontend :8088, PostgreSQL container `goldenfarm-postgres` db `goldenfarmict` |
-| Bảng dữ liệu | `wa_records` — loại: datlich/checkin/baocao/checkout; trạng thái: moi/daxuly/huy |
+| Bảng dữ liệu | `wa_records` — loại: datlich/checkin/baocao/checkout; trạng thái: moi/daxuly/huy. Loại `thongbao` KHÔNG vào bảng này — ingest ghi vào `forum_posts` (bảng Thông báo Dashboard): `author_code='wa-bot'`, `author_name='WhatsApp · <người gửi>'`, `target_type='all'` |
+| Bảng Thông báo Dashboard | `forum_posts` (router `forum.py`, hộp Thông báo trên Dashboard) — bài từ WhatsApp đăng thẳng, không duyệt; admin sửa/xóa như bài thường |
 | Module app | "Thông báo WhatsApp", key `wa-records`, route `/wa-records`; quyền hiện tại: chỉ admin |
 | Hợp đồng ingest | `/home/goldenfarmict/docs/wa_ingest_contract.md` |
 | Ghi chú vận hành rút gọn | `profiles/gf-recorder/workspace/OPS-WHATSAPP-RECORDER.md` |
