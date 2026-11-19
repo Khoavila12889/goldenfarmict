@@ -1,0 +1,634 @@
+# README TỔNG HỢP — Bot Hermes ghi nhận WhatsApp (Golden Farm)
+
+> Tài liệu cơ chế + quy trình vận hành của hệ thống bot ghi nhận đăng ký phòng họp,
+> check-in, check-out từ group WhatsApp vào app GoldenFarmICT.
+> Mọi thông số trong tài liệu này đã được đối chiếu trực tiếp với server thật
+> ngày **2026-11-19** (lần kiểm tra gần nhất ~14:05). Không có giá trị bí mật
+> (API key, bot secret) nào được ghi trong tài liệu này — chỉ ghi nơi chúng nằm.
+>
+> Bản sao của tài liệu này nằm ở 3 nơi:
+> 1. `~/workspace/hermes_phase0/README-tong-hop-whatsapp-recorder.md` (máy trạm của trợ lý)
+> 2. `/home/goldenfarmict/docs/README-whatsapp-recorder.md` (repo app, branch `wordcraft-viewer-151026`)
+> 3. `/home/hermes/.hermes/profiles/gf-recorder/workspace/README-whatsapp-recorder.md` (cạnh ghi chú vận hành `OPS-WHATSAPP-RECORDER.md`)
+
+---
+
+## 1. Tổng quan
+
+### 1.1. Mục đích
+
+Trong group WhatsApp của văn phòng, các phòng ban đăng tin mượn phòng họp,
+check-in khi vào phòng và check-out khi trả phòng bằng văn phong rất tự do
+(ví dụ: *"PNS mượn phòng họp tầng 2 từ 10h - 10h30 ạ"*). Trước đây không ai
+tổng hợp lại các tin này.
+
+Hệ thống này dùng **Hermes Agent** (tác tử AI mã nguồn mở của Nous Research)
+ghép nối vào WhatsApp qua cầu nối Baileys, **nghe duy nhất một group pilot**,
+tự phân loại các tin liên quan và ghi thành bản ghi có cấu trúc vào module
+**"Thông báo WhatsApp"** của app GoldenFarmICT để admin theo dõi/xử lý.
+
+### 1.2. Phạm vi thu thập — chỉ đúng 3 loại
+
+| Loại | Ý nghĩa |
+|---|---|
+| `datlich` | Đăng ký / mượn phòng họp (kèm hủy đặt phòng — xem mục 3.4) |
+| `checkin` | Vào phòng / bắt đầu sử dụng phòng họp |
+| `checkout` | Trả phòng / họp xong, phòng trống |
+
+Mọi tin khác trong group (trò chuyện, hỏi đáp, thông báo không liên quan…)
+đều bị bỏ qua lặng lẽ. Báo cáo chung chung (`baocao`) **không** nằm trong
+phạm vi — loại này vẫn tồn tại trong schema của app nhưng bot không bao giờ tạo.
+
+### 1.3. Các quyết định thiết kế chính (và lý do)
+
+| Quyết định | Lý do |
+|---|---|
+| **Dùng số WhatsApp chính** của chủ tài khoản để ghép nối (quyết định của chủ tài khoản ngày 2026-11-19, sau khi đã được trình bày rủi ro) | Các group cần ghi đã có sẵn số này là thành viên; không cần thêm số mới vào group |
+| **Bot im lặng tuyệt đối** — không bao giờ gửi bất kỳ tin WhatsApp nào (không xác nhận, không hỏi lại, không nhắc, không tổng hợp vào group) | Bot chỉ là thiết bị thu thập; mọi hiển thị/xử lý diễn ra trong app. Đây cũng là cơ sở để chấp nhận dùng số chính |
+| **Nghe tất cả tin trong group pilot rồi tự lọc** (không yêu cầu @mention) | Nhân viên giữ thói quen nhắn tự nhiên như cũ, không phải học cú pháp mới |
+| **Ghi thẳng vào GoldenFarmICT**, không qua Google Sheet | Dữ liệu nằm trong hệ thống nội bộ, dùng chung cơ chế phân quyền sẵn có |
+| **Bot không có công cụ mạng/thực thi** — nó chỉ ghi file JSON; một relay độc lập phía server đẩy file vào app | Thu hẹp bề mặt rủi ro: kể cả khi agent bị lừa bởi nội dung tin nhắn, nó cũng không tự gọi được API hay chạy lệnh |
+| **Khóa phạm vi ở nhiều lớp** (cấu hình bridge + allowlist JID + skill) | Chỉ đúng 1 group được xử lý; DM và group khác bị loại ngay ở cổng |
+| **Chốt chặn gửi tin ở tầng code** (ngoài cấu hình và chỉ thị trong skill) | Hermes v0.23.2 không có công tắc "chỉ nghe" ở tầng cấu hình — chốt code là lớp đảm bảo cứng duy nhất (mục 3.3) |
+| **Đặt bot trên server nội bộ GoldenFarmICT** (không phải VPS) | Cùng máy với app đích; máy đã có sẵn Node; VPS chật đĩa hơn |
+
+### 1.4. Rủi ro còn lại (đã biết và chấp nhận)
+
+- Cầu nối Baileys là đường **không chính thức** (WhatsApp Web) → luôn tồn tại
+  nguy cơ bị WhatsApp khóa số. Cơ chế im lặng + chỉ nghe làm giảm bề mặt rủi ro
+  nhưng không triệt tiêu. Nút ngắt khẩn cấp: mục 4.8.
+- Server nội bộ **chật RAM** (tổng ~7,7 GB, ~30 container; lúc kiểm tra chỉ còn
+  ~2,2 GB available) — gateway của bot dùng ~310–340 MB, cần để mắt tuần đầu.
+- Phiên WhatsApp là một **thiết bị liên kết** trên tài khoản chính: về nguyên
+  tắc phiên nhìn thấy mọi cuộc trò chuyện của tài khoản; việc thu hẹp nằm ở
+  cấu hình xử lý (chỉ group pilot) + profile bị khóa công cụ (mục 5).
+
+---
+
+## 2. Sơ đồ kiến trúc
+
+```
+                          SERVER NỘI BỘ GOLDEN FARM (AlmaLinux, LAN 10.0.0.114, Tailscale 100.71.228.86)
+                          ┌────────────────────────────────────────────────────────────────────────────────┐
+                          │                                                                                │
+ [Group WhatsApp]         │   [Hermes Agent v0.23.2 — cài trực tiếp trên host, user `hermes`]              │
+  GROUP GOLDEN FARM       │    ┌──────────────────┐   WebSocket    ┌───────────────────────────────┐      │
+  - VP (Không có NV Tỉnh) │    │ Bridge Baileys   │◄──────────────►│ WhatsApp (thiết bị liên kết  │      │
+  JID 120363421346130787  │    │ bridge.js        │   (phiên đã    │ của số chính)                │      │
+  @g.us                   │    │ port 127.0.0.1:  │    ghép nối)   └───────────────────────────────┘      │
+        │                 │    │ 3010             │                                                        │
+        │ tin nhắn        │    └────────┬─────────┘                                                        │
+        ▼                 │             │ chỉ tin của group pilot mới qua cổng (allowlist JID,             │
+ ════════════════════════ │ ════════════╪══════════ DM disabled, require_mention=false) ══════════════════ │
+   WhatsApp cloud         │             ▼                                                                  │
+                          │    ┌──────────────────┐   gọi model (HTTPS)                                    │
+                          │    │ Agent + Skill    │──────────────► https://api.goldenfarm.com.vn/v1        │
+                          │    │ wa-room-recorder │                (9Router, model cx/gpt-5.6-sol)          │
+                          │    │ (IM LẶNG: final  │                                                        │
+                          │    │  response rỗng;  │   MỌI tin gửi ra đều bị GF SENDBLOCK chặn ở bridge ──┐ │
+                          │    │  chỉ ghi file)   │                                                    │ │
+                          │    └────────┬─────────┘                                                    │ │
+                          │             │ 1 file JSON / bản ghi                                        │ │
+                          │             ▼                                                              │ │
+                          │    wa-outbox/  (workspace của profile gf-recorder)                         │ │
+                          │             │                                                              │ │
+                          │    ┌────────┴─────────┐  systemd timer, mỗi 1 phút                         │ │
+                          │    │ Relay            │  /usr/local/sbin/gf-wa-relay.py (root)             │ │
+                          │    │ gf-wa-relay      │  đọc WA_BOT_SECRET từ .env.wa trong tiến trình     │ │
+                          │    └────────┬─────────┘                                                    │ │
+                          └─────────────┼──────────────────────────────────────────────────────────────┘ │
+                                        │ POST http://localhost:8000/api/wa-records/ingest     │
+                                        │ header X-Bot-Secret                                    │
+                                        ▼                                                              │
+                          ┌──────────────────────────────┐      ┌──────────────────────────────┐    │
+                          │ App GoldenFarmICT (Docker)   │      │ Người dùng app               │    │
+                          │ backend :8000 → bảng         │─────►│ Module "Thông báo WhatsApp"  │    │
+                          │ wa_records (PostgreSQL,      │ feed │ route /wa-records            │    │
+                          │ container goldenfarm-        │      │ Phân quyền: hiện chỉ admin   │    │
+                          │ postgres, db goldenfarmict)  │      └──────────────────────────────┘    │
+                          │ frontend :8088               │                                         │
+                          └──────────────────────────────┘                                         │
+                                                                                     gf-sendblock.log ◄┘
+                                                                                     (log các lần gửi bị chặn)
+```
+
+Các chặng chính:
+
+1. **Group → Bridge:** nhân viên nhắn trong group như bình thường. Bridge
+   Baileys (Node.js, trong thư mục `scripts/whatsapp-bridge` của Hermes) giữ
+   kết nối WebSocket thường trực tới WhatsApp với tư cách thiết bị liên kết.
+2. **Bridge → Agent:** bridge chạy ở cổng nội bộ `127.0.0.1:3010`. Chỉ tin từ
+   JID group pilot mới được chuyển cho agent; DM bị vô hiệu ở cả hai lớp
+   (bridge và adapter).
+3. **Agent + Skill:** gateway (dịch vụ `hermes-gateway-gf-recorder.service`)
+   chạy agent với skill `wa-room-recorder`; model `cx/gpt-5.6-sol` qua gateway
+   9Router tự host phân loại + trích xuất. Đầu ra duy nhất: file JSON.
+4. **Outbox → Relay:** relay root-owned quét thư mục `wa-outbox/` mỗi phút,
+   POST vào ingest API bằng bot secret; thành công → chuyển file sang `sent/`,
+   lỗi → giữ lại thử tiếp, 10 lần lỗi → `failed/`.
+5. **Ingest → DB → Module:** backend ghi vào bảng `wa_records`; admin xem ở
+   module "Thông báo WhatsApp" (route `/wa-records`).
+
+---
+
+## 3. Cơ chế từng thành phần
+
+### 3.1. Ghép nối & phiên đăng nhập WhatsApp
+
+- Hermes **v0.23.2** (bản stable 2026.9.24, commit `ae2a81ccc00e`) được cài
+  **trực tiếp trên host** (không container) bằng script cài chính thức, dưới
+  user hệ thống riêng **`hermes`** (uid 1003), thư mục cài
+  `/home/hermes/.hermes/hermes-agent`.
+- Profile dùng cho bot: **`gf-recorder`** tại
+  `/home/hermes/.hermes/profiles/gf-recorder`, bị khóa còn **5/26 toolset**
+  cho cả CLI lẫn WhatsApp: `file, memory, skills, todo, session_search`
+  (File, Memory, Skills, Task Planning, Session Search) — **không có
+  Terminal, không Browser, không thực thi mã** (mặc định gốc của Hermes cho
+  WhatsApp vốn gồm cả terminal — đã gỡ).
+- Ghép nối hoàn tất **2026-11-19 12:44** bằng cách quét QR tại terminal của
+  server (phiên tmux `wa-pair`). Thông tin đăng nhập nằm trong
+  `whatsapp/session/` của profile (file lõi `creds.json`, quyền 600). Mã lỗi
+  **515** xuất hiện trong log ngay sau khi quét là WhatsApp chủ động yêu cầu
+  client khởi động lại một nhịp trong bắt tay — hành vi bình thường, không
+  phải lỗi; ngay sau đó log ghi "Pairing complete. Credentials saved."
+- Hệ quả thiết kế cần nhớ: bridge **bỏ qua mọi tin do chính chủ tài khoản gửi
+  trong group** (cơ chế `from_me` của bridge ở chế độ bot, lý do ghi log là
+  `from_me_group`). Bot chỉ ghi tin của **người khác** — khi nghiệm thu không
+  được dùng tin của chính chủ tài khoản để test.
+
+### 3.2. Khóa phạm vi (intake)
+
+Cấu hình nằm trong `config.yaml` của profile (đoạn `platforms.whatsapp.extra`)
+và được mirror trong `.env` của profile:
+
+| Khóa | Giá trị | Ý nghĩa |
+|---|---|---|
+| `WHATSAPP_MODE` (.env) | `bot` | Bắt buộc: chế độ `self-chat` mặc định ban đầu loại bỏ mọi tin không phải của chính chủ → không thể ghi group |
+| `group_policy` | `allowlist` | Chỉ các group trong allowlist mới được xử lý |
+| `group_allow_from` | `["120363421346130787@g.us"]` | Đúng **một** JID: group pilot "GROUP GOLDEN FARM - VP (Không có NV Tỉnh)" |
+| `dm_policy` | `disabled` | Tin nhắn riêng bị tắt ở cả bridge lẫn adapter |
+| `whatsapp.unauthorized_dm_behavior` | `ignore` | DM lạ bị bỏ qua lặng lẽ (không trả lời mã ghép nối) |
+| `require_mention` | `false` | Nghe tất cả tin trong group rồi tự lọc (quyết định của chủ tài khoản) |
+| `send_read_receipts` | `false` | Không gửi tick xanh "đã đọc" |
+| `display.platforms.whatsapp.tool_progress` | `off` | Không hiện bong bóng trạng thái xử lý |
+| `display.platforms.whatsapp.interim_assistant_messages` | `false` | Không gửi tin tạm thời |
+| `reply_prefix` | `""` | Không tiền tố trả lời |
+| `home_channel` | chat của chính chủ tài khoản | Tránh việc Hermes đòi đặt home channel với người lạ |
+| `allow_admin_from` / `group_allow_admin_from` | JID của chủ tài khoản | Lệnh quản trị chỉ từ chủ tài khoản |
+| `WHATSAPP_ALLOWED_USERS` | **cố ý KHÔNG đặt** | Nếu đặt sender-allowlist thì từng thành viên group phải được liệt kê; không đặt thì allowlist theo JID group tự nó bao phủ **mọi thành viên** của group pilot, trong khi DM vẫn bị chặn bởi `dm_policy` |
+
+Tài khoản có mặt trong 5 group; chỉ group pilot ở trên được mở cổng. Bốn group
+còn lại (2 group "GOLDEN FARM COMPANY", "GROUP GOLDEN FARM",
+"GROUP GOLDEN FARM - Văn phòng") không được xử lý.
+
+### 3.3. Im lặng tuyệt đối — 3 lớp + 1 chốt cứng
+
+1. **Lớp cổng (intake):** như mục 3.2 — ngoài group pilot, không tin nào tới
+   được agent; DM bị `ignore` nên không phát sinh phản hồi ghép nối.
+2. **Lớp hiển thị & hành vi:** tắt read receipts, tool progress, interim
+   messages; và **Rule 0 trong skill** buộc câu trả lời cuối (final response)
+   của agent trên mọi lượt WhatsApp phải **rỗng** — đầu ra duy nhất được phép
+   là thao tác ghi file.
+3. **Lớp code — chốt chặn GF SENDBLOCK (lớp đảm bảo cứng):** Hermes v0.23.2
+   không có công tắc observe-only/no-reply ở tầng cấu hình, nên một bản vá
+   cục bộ đã được áp vào `scripts/whatsapp-bridge/bridge.js`:
+   - Mọi đường gửi tin (text / sửa tin / media / vị trí / poll) đều chảy qua
+     một hàm duy nhất `sendWithTimeout()` → `sock.sendMessage()`. Guard nằm
+     ngay đầu hàm này: nếu đang bật, nó **nuốt mọi lần gửi**, trả về một
+     "thành công giả" (id `GF-BLOCKED-<timestamp>`) để phía gọi không thử lại
+     hay báo lỗi, và ghi log (timestamp, JID đích, độ dài payload — **không
+     ghi nội dung**) vào `scripts/whatsapp-bridge/gf-sendblock.log`.
+   - Endpoint `/typing` (trạng thái "đang nhập…") cũng bị chặn tương tự —
+     không phát tín hiệu presence.
+   - **Fail-closed:** chốt bật trừ khi biến môi trường `GF_WA_SEND_BLOCK=0`
+     (mặc định không đặt = bật). Bản gốc trước vá được lưu ở
+     `bridge.js.pre-sendblock.bak` cùng thư mục.
+   - **Bằng chứng thực tế:** vài giây sau khi gateway kết nối lúc go-live
+     (2026-11-19 13:30:51), chính Hermes định gửi tin thông báo khởi động về
+     JID của chủ tài khoản — log ghi `BLOCKED sendMessage to=<JID chủ tài
+     khoản> payload_len=56`. Không có gì tới được WhatsApp. (3 dòng BLOCKED
+     trước đó trong cùng log là bài test khô với số giả lúc 13:27.)
+
+### 3.4. Skill ghi nhận — phân loại & trích xuất
+
+- File: `/home/hermes/.hermes/profiles/gf-recorder/skills/goldenfarm/wa-room-recorder/SKILL.md`
+  (skill `wa-room-recorder`, version 1.0.0, trạng thái **enabled** — kiểm
+  chứng bằng `hermes -p gf-recorder skills list`).
+- **Rule 0 — Absolute silence:** không bao giờ gửi tin; final response rỗng;
+  tin không phải bản ghi → không làm gì cả, kết thúc lượt trống; không bao
+  giờ hỏi lại người gửi khi thiếu thông tin (ghi phần có được, admin đối
+  chiếu trong app).
+- **Phân loại** mỗi tin trong group pilot vào đúng một trong: `datlich`,
+  `checkin`, `checkout`, hoặc *không phải bản ghi* (hỏi "mai phòng có ai đặt
+  chưa?" là câu hỏi, không phải đặt phòng → bỏ qua).
+- **Trích xuất theo văn phong lỏng tiếng Việt, không bao giờ bịa:**
+  - Phòng ban/đội: lấy nguyên tiền tố như đã viết (`PNS`, `MKT`, `Thu mua`,
+    `R&D`…) — không tự mở rộng viết tắt.
+  - Phòng → `place`: như tin ghi ("phòng họp tầng 2"); chỉ nói "phòng họp"
+    thì place là `Phòng họp`.
+  - Ngày: "hôm nay" = ngày của tin; "ngày mai/mai" = +1; "19/11" = dd/mm năm
+    hiện tại; thứ trong tuần = lần xuất hiện tiếp theo. Múi giờ
+    Asia/Ho_Chi_Minh.
+  - Giờ: chấp nhận `10h`, `10h30`, `10:00`, `1g30pm` (=13:30), `2g30pm`
+    (=14:30). Thiếu giờ kết thúc thì ghi rõ "không rõ giờ kết thúc" trong
+    content — **không tự invent giờ kết thúc**.
+  - `scheduled_at` (chỉ cho `datlich`): ISO 8601 kèm `+07:00`, lấy ngày +
+    giờ bắt đầu.
+  - Người đặt: tên người gửi từ envelope của tin → `sender_name`.
+- **Trường hợp đặc biệt:**
+  - Một tin có nhiều khung giờ ("10h-10h30 & 15h30-16h30") → **mỗi khung một
+    bản ghi** (nhiều file).
+  - **Hủy đặt phòng** → ghi một bản ghi `datlich` với tiêu đề bắt đầu bằng
+    `HỦY:` để admin đối chiếu trong app.
+  - Check-in/check-out: lấy giờ theo timestamp của tin (trừ khi tin ghi giờ
+    khác); **không có `scheduled_at`, không có `lat`/`lng`** — sự kiện phòng
+    họp không có GPS, tuyệt đối không bịa tọa độ.
+- **Đầu ra:** mỗi bản ghi = 1 file JSON UTF-8 trong
+  `workspace/wa-outbox/` của profile, tên dạng
+  `wa-<yyyymmddHHMMSS>-<loại>-<4 chữ số ngẫu nhiên>.json`.
+
+**Ví dụ 1 — đặt phòng (mẫu thật trong group):**
+
+Tin gốc: `PNS mượn phòng họp tầng 2 từ 10h - 10h30 ạ` (gửi 2026-11-20, người gửi Nguyen Van A)
+
+```json
+{
+  "record_type": "datlich",
+  "sender_name": "Nguyen Van A",
+  "group_name": "GROUP GOLDEN FARM - VP (Không có NV Tỉnh)",
+  "title": "PNS đặt phòng họp tầng 2 10:00–10:30 20/11",
+  "content": "PNS đặt phòng họp tầng 2, ngày 20/11, 10:00–10:30. Người đặt: Nguyen Van A.",
+  "scheduled_at": "2026-11-20T10:00:00+07:00",
+  "place": "Phòng họp tầng 2",
+  "raw_message": "PNS mượn phòng họp tầng 2 từ 10h - 10h30 ạ",
+  "source": "hermes"
+}
+```
+
+**Ví dụ 2 — đặt phòng với giờ am/pm và ngày dd/mm:**
+
+Tin gốc: `MKT mượn phòng họp từ 1g30pm-2g30pm 19/11 nhé`
+
+```json
+{
+  "record_type": "datlich",
+  "sender_name": "<tên người gửi>",
+  "group_name": "GROUP GOLDEN FARM - VP (Không có NV Tỉnh)",
+  "title": "MKT đặt phòng họp 13:30–14:30 19/11",
+  "content": "MKT đặt phòng họp, ngày 19/11, 13:30–14:30. Người đặt: <tên người gửi>.",
+  "scheduled_at": "2026-11-19T13:30:00+07:00",
+  "place": "Phòng họp",
+  "raw_message": "MKT mượn phòng họp từ 1g30pm-2g30pm 19/11 nhé",
+  "source": "hermes"
+}
+```
+
+**Ví dụ 3 — check-out:**
+
+Tin gốc: `Họp xong rồi, trả phòng họp tầng 2 ạ`
+
+```json
+{
+  "record_type": "checkout",
+  "sender_name": "<tên người gửi>",
+  "group_name": "GROUP GOLDEN FARM - VP (Không có NV Tỉnh)",
+  "title": "Check-out phòng họp tầng 2 — <tên người gửi>",
+  "content": "Trả phòng họp tầng 2, lúc <giờ của tin>.",
+  "place": "Phòng họp tầng 2",
+  "raw_message": "Họp xong rồi, trả phòng họp tầng 2 ạ",
+  "source": "hermes"
+}
+```
+
+### 3.5. Relay file → ingest
+
+- Script: `/usr/local/sbin/gf-wa-relay.py` — **root sở hữu**, agent (user
+  `hermes`) không sửa được; chạy bởi `gf-wa-relay.service` kích hoạt bởi
+  **`gf-wa-relay.timer` mỗi 1 phút** (enabled + active).
+- Mỗi lần chạy: quét `wa-outbox/*.json` → POST từng file tới
+  `http://localhost:8000/api/wa-records/ingest` với header `X-Bot-Secret`.
+  Secret được đọc **trong tiến trình** từ `/home/goldenfarmict/.env.wa`
+  (biến `WA_BOT_SECRET`) — không bao giờ in ra log hay màn hình.
+- Chính sách kết quả:
+  - HTTP 200 → chuyển file vào `wa-outbox/sent/`, log `OK ... -> ingest id=<id>`.
+  - Lỗi (JSON hỏng, API từ chối, mất kết nối…) → giữ file, tăng bộ đếm lần
+    thử trong `/var/lib/gf-wa-relay/state.json`, thử lại ở phút sau.
+  - Đủ **10 lần lỗi** → chuyển vào `wa-outbox/failed/` (cách ly file độc,
+    tránh lặp vô hạn) và log `QUARANTINE`.
+- Log: `/var/log/gf-wa-relay.log`.
+- Đã kiểm chứng đầu-cuối ngày 2026-11-19: file datlich [TEST] thả vào outbox
+  → relay tự chạy → bản ghi **id=6** xuất hiện trong DB với `scheduled_at`
+  đổi múi giờ đúng (10:00+07:00 → 03:00Z) → file nằm trong `sent/`. Đường lỗi
+  cũng đã test bằng file JSON hỏng (bị giữ + log `FAIL ... attempt 1/10`).
+
+### 3.6. Phía app GoldenFarmICT — ingest, schema, phân quyền
+
+- Repo `/home/goldenfarmict`, branch `wordcraft-viewer-151026`; backend
+  container `goldenfarm-backend` (host port 8000), frontend
+  `goldenfarm-frontend` (host port 8088), DB container `goldenfarm-postgres`
+  (database `goldenfarmict`).
+- **Ingest:** `POST /api/wa-records/ingest` — xác thực **chỉ** bằng header
+  `X-Bot-Secret` so khớp hằng-thời-gian với `WA_BOT_SECRET`; **không** chấp
+  nhận session người dùng. Chưa cấu hình secret → `503`; secret sai/thiếu →
+  `401`; `record_type` sai → `400`; check-in thiếu tọa độ → nay **không**
+  lỗi (xem dưới).
+- **Bảng `wa_records`** (kiểu dữ liệu đúng chuẩn, không theo thói quen VARCHAR
+  của các bảng cũ): `id BIGINT`, `record_type VARCHAR(20)` CHECK ∈
+  (`datlich`,`checkin`,`baocao`,`checkout`), `sender_name TEXT`,
+  `sender_phone VARCHAR(32)`, `group_name TEXT`, `title TEXT`,
+  `content TEXT`, `scheduled_at TIMESTAMPTZ`, `place TEXT`,
+  `lat`/`lng NUMERIC(10,7)`, `raw_message TEXT`,
+  `source VARCHAR(32)` mặc định `hermes`, `status VARCHAR(20)` CHECK ∈
+  (`moi`,`daxuly`,`huy`) mặc định `moi`, `created_at TIMESTAMPTZ`. Index trên
+  `created_at DESC` và `record_type`.
+  - Tọa độ là **tùy chọn**: bản thiết kế ban đầu bắt buộc lat/lng cho
+    `checkin`, nhưng check-in phòng họp không bao giờ có GPS — giữ nguyên thì
+    mọi check-in thật đều bị ingest trả 400. Nay nếu gửi kèm tọa độ thì vẫn
+    kiểm tra khoảng hợp lệ (−90..90 / −180..180); giao diện chỉ hiện link bản
+    đồ khi có tọa độ.
+- **Hợp đồng dữ liệu:** `docs/wa_ingest_contract.md` trong repo app (endpoint,
+  header, schema JSON, ví dụ từng loại, mã lỗi, và mục mô tả đường
+  file → relay → ingest).
+- **Module "Thông báo WhatsApp"** (module key `wa-records`, route
+  `/wa-records`): trang feed mới-nhất-trước, badge theo loại (Đặt lịch /
+  Check-in / Check-out / Báo cáo), lọc theo loại + trạng thái + khoảng ngày
+  (lọc theo `created_at`) + tìm kiếm, xem chi tiết kèm tin gốc, đổi trạng
+  thái (Đã xử lý / Hủy / Mở lại). Đăng ký đủ 4 chạm chuẩn của app
+  (MODULE_MAP, ALL_MODULES, DEFAULT_ROLE_MODULE_PERMS, route guard).
+- **Phân quyền:** quyền hiệu lực của app gộp 3 tầng
+  `user_permissions > department_permissions > role_permissions`. Module này
+  được quản lý hoàn toàn qua trang **Phân quyền**; trạng thái hiện tại (giai
+  đoạn phát triển): **chỉ admin** — `role_permissions`: admin view=1/edit=1,
+  head/deputy/user đều 0/0; backend kiểm tra thuần theo quyền (`can_view` để
+  đọc, `can_edit` để đổi trạng thái), không hard-code theo vai trò. Lưu ý kỹ
+  thuật đã xử lý ở commit `ffa1232`: `DEFAULT_ROLE_MODULE_PERMS` của app tự
+  điền-bổ-sung và seed lại quyền mặc định cho head/deputy mỗi lần backend
+  khởi động, nên `wa-records` đã được gỡ khỏi defaults của head/deputy —
+  nếu không, việc thu quyền trong DB sẽ bị cấp lại sau mỗi lần restart.
+
+---
+
+## 4. Quy trình vận hành
+
+> Quy ước: các lệnh phía Hermes chạy dưới user `hermes`. Từ root:
+> `sudo -u hermes -H bash -lc '<lệnh>'`. Lệnh qua `systemctl --user` cần thêm
+> `XDG_RUNTIME_DIR=/run/user/1003`. Ghi chú vận hành rút gọn nằm tại
+> `workspace/OPS-WHATSAPP-RECORDER.md` của profile.
+
+### 4.1. Kiểm tra sức khỏe hằng ngày
+
+| Kiểm tra | Lệnh / nơi xem | Kỳ vọng |
+|---|---|---|
+| Gateway còn chạy | `hermes -p gf-recorder gateway status` | `Active: active (running)` |
+| Gateway có lỗi gần đây | `logs/gateway.log`, `logs/agent.log`, `logs/errors.log` trong profile; hoặc `journalctl --user -u hermes-gateway-gf-recorder.service` | Không có 401 (key), không disconnect lặp lại |
+| Bridge đang nghe | `ss -tlnp \| grep 3010` | `127.0.0.1:3010` bởi tiến trình node của bridge |
+| Relay còn chạy | `systemctl list-timers gf-wa-relay.timer` | Có mốc NEXT trong ~1 phút |
+| Relay có lỗi | `tail /var/log/gf-wa-relay.log` | Toàn dòng `OK`; dòng `FAIL` phải có lý do rõ và không lặp mãi một file |
+| Outbox có kẹt | `ls .../workspace/wa-outbox/*.json` | Thường rỗng (file được xử lý trong ≤1 phút); `sent/` tăng dần; `failed/` phải rỗng |
+| Có lần gửi tin nào bị chặn | `tail scripts/whatsapp-bridge/gf-sendblock.log` | Không dòng mới ngoài kỳ vọng; **có dòng mới = có thứ gì đó đã cố gửi tin — cần xem lại** |
+| Bản ghi có vào app | Mở module "Thông báo WhatsApp" (tài khoản admin) | Bản ghi mới nhất khớp hoạt động trong group |
+| RAM của gateway | `systemctl --user show hermes-gateway-gf-recorder.service -p MemoryCurrent` | ~310–340 MB; host còn ~2 GB available là mức chật quen thuộc |
+
+### 4.2. Khởi động / dừng / khởi động lại gateway
+
+```bash
+sudo -u hermes -H bash -lc 'hermes -p gf-recorder gateway status'
+sudo -u hermes -H bash -lc 'hermes -p gf-recorder gateway start'
+sudo -u hermes -H bash -lc 'hermes -p gf-recorder gateway stop'
+sudo -u hermes -H bash -lc 'hermes -p gf-recorder gateway restart'
+# Tương đương qua systemd:
+sudo -u hermes env XDG_RUNTIME_DIR=/run/user/1003 systemctl --user status hermes-gateway-gf-recorder.service
+```
+
+Service đã `enabled` + user `hermes` đã bật **linger** → tự lên sau khi máy
+khởi động lại, không cần ai đăng nhập.
+
+Relay không cần thao tác thường ngày; khi cần chạy ngay một lượt:
+`systemctl start gf-wa-relay.service`.
+
+### 4.3. Quy trình nghiệm thu tin thật (acceptance)
+
+1. Nhờ **một thành viên khác** trong group pilot đăng một tin thật, ví dụ:
+   *"Em mượn phòng họp tầng 2 từ 15h–16h hôm nay"* — **không** dùng tin của
+   chính chủ tài khoản (bridge bỏ qua tin `from_me`, mục 3.1).
+2. Trong ~1–2 phút (agent xử lý + relay chu kỳ 1 phút), mở app bằng tài
+   khoản admin → module **Thông báo WhatsApp** (nhớ Ctrl+F5 nếu vừa rebuild
+   frontend).
+3. Đối chiếu: loại = Đặt lịch; tiêu đề có phòng ban + phòng + khung giờ +
+   ngày; `scheduled_at` đúng giờ bắt đầu (+07:00); `raw_message` nguyên văn.
+4. Thử tiếp một tin check-in và một tin check-out tương tự; kiểm tra badge
+   và việc đổi trạng thái (Đã xử lý) trong app.
+5. Kiểm tra `gf-sendblock.log` không phát sinh dòng mới và group không nhận
+   bất kỳ tin nào từ bot.
+
+### 4.4. Đổi group pilot
+
+Thiết kế hiện tại là **đúng một group**. Muốn chuyển sang group khác:
+
+1. Lấy JID của group mới (dạng `120363...@g.us`) — liệt kê các group của tài
+   khoản bằng một script Baileys dùng một lần với auth state đã lưu (cách đã
+   dùng ngày 2026-11-19), hoặc xem trong log/cấu hình khi bot được thêm vào
+   group.
+2. Sửa **3 nơi** cho khớp nhau:
+   - `config.yaml` của profile: `platforms.whatsapp.extra.group_allow_from`
+   - `.env` của profile: `WHATSAPP_GROUP_ALLOWED_USERS`
+   - `SKILL.md` của skill `wa-room-recorder`: tên group + JID ở phần đầu và
+     trường `group_name` trong quy tắc output.
+3. `hermes -p gf-recorder gateway restart`, rồi nghiệm thu lại theo 4.3.
+
+### 4.5. Cấp quyền xem module cho vai trò khác
+
+1. Đăng nhập app bằng tài khoản admin → trang **Phân quyền**.
+2. Chọn vai trò (head / deputy / user…) → module **Thông báo WhatsApp**
+   (`wa-records`) → tick **Xem** (`can_view`) và/hoặc **Sửa** (`can_edit` —
+   quyền đổi trạng thái bản ghi).
+3. Có hiệu lực ngay, không cần sửa code hay restart (quyền được đọc từ bảng
+   `role_permissions` theo từng request). Thu hồi cũng tại đây.
+
+### 4.6. Đổi API key của gateway (9Router)
+
+1. Tạo key mới trong dashboard của gateway:
+   **https://api.goldenfarm.com.vn/dashboard** (mục API Keys) — nên tạo key
+   riêng cho bot (hiện tại bot đã có key riêng) để khóa/giới hạn độc lập,
+   không dùng chung key của n8n hay dịch vụ khác.
+2. Thay giá trị biến `GOLDENFARM_API_KEY` trong `.env` của profile
+   `/home/hermes/.hermes/profiles/gf-recorder/.env` (giữ quyền file 600).
+   Không dán key vào chat/tài liệu/git.
+3. Kiểm tra key mới mà không cần agent:
+   `curl -H "Authorization: Bearer <key>" https://api.goldenfarm.com.vn/v1/models`
+   → kỳ vọng HTTP 200 và model `cx/gpt-5.6-sol` có trong danh sách.
+4. `hermes -p gf-recorder gateway restart`; xem `logs/gateway.log` xác nhận
+   không còn 401 và model được warm-up.
+5. Thu hồi key cũ trong dashboard.
+
+### 4.7. Sau khi `hermes update` — BẮT BUỘC làm
+
+Bản vá GF SENDBLOCK nằm trong file `bridge.js` thuộc cây mã nguồn của Hermes
+→ **bản cập nhật có thể ghi đè mất chốt chặn**. Sau mỗi lần update:
+
+1. Kiểm tra chốt còn không:
+   `grep -n "GF SENDBLOCK" /home/hermes/.hermes/hermes-agent/scripts/whatsapp-bridge/bridge.js`
+2. Nếu mất: áp lại bản vá (đối chiếu với `bridge.js.pre-sendblock.bak` để
+   thấy đúng vị trí: đầu hàm `sendWithTimeout()` và endpoint `/typing`;
+   logic fail-closed trừ khi `GF_WA_SEND_BLOCK=0`; log vào
+   `gf-sendblock.log`), rồi `node --check bridge.js`.
+3. Kiểm tra lại các khóa cấu hình phạm vi trong `config.yaml` (mục 3.2) —
+   update có thể migrate config.
+4. Restart gateway; xác nhận bridge kết nối ở port 3010; theo dõi
+   `gf-sendblock.log` và group trong những ngày đầu (kỳ vọng: không tin gửi
+   ra nào; một dòng BLOCKED của thông báo khởi động là dấu hiệu chốt đang
+   hoạt động đúng).
+
+### 4.8. Xử lý sự cố
+
+| Triệu chứng | Nguyên nhân thường gặp | Cách xử lý |
+|---|---|---|
+| Gateway không chạy | Service dừng / máy vừa reboot mà linger chưa bật / lỗi config | `gateway status` → xem `logs/gateway.log` + `errors.log` → `gateway start`. Kiểm tra `loginctl show-user hermes -p Linger` = yes |
+| Gateway chạy nhưng không ghi bản ghi nào | Bridge mất kết nối WhatsApp; hoặc tin test do chính chủ tài khoản gửi (bị bỏ qua theo thiết kế); hoặc group chưa đúng JID | Xem log bridge trong `gateway.log` có "whatsapp connected" không; test bằng tin của **người khác**; đối chiếu JID ở mục 3.2 |
+| WhatsApp rớt phiên (log báo not connected / yêu cầu đăng nhập lại) | Phiên liên kết bị hủy từ điện thoại, hoặc WhatsApp ép đăng nhập lại | Ghép nối lại: mở tmux trên server (`sudo -u hermes -H tmux attach -t wa-pair` hoặc tạo phiên mới), chạy `hermes whatsapp`, chọn chế độ số cá nhân, quét QR bằng điện thoại (WhatsApp → Cài đặt → Thiết bị liên kết). **Đừng Ctrl+C** trong tmux; thoát bằng Ctrl+B rồi D |
+| Không SSH được vào server qua Tailscale nhưng máy vẫn sống trên LAN | `tailscaled` trên server bị treo (đã xảy ra 2026-11-18, kéo dài ~16 giờ trong khi ping LAN 10.0.0.114 vẫn 3/3) | Tại console máy hoặc SSH qua LAN: `sudo systemctl restart tailscaled` rồi `tailscale status`. VPS qua cùng đường tunnel vẫn đáp = lỗi nằm ở tailscaled của máy này, không phải đường truyền |
+| Bridge báo port bận / không kết nối được ở port 3000 | Port 3000 trên host đã bị một dịch vụ node không liên quan chiếm từ 10/2026 | Đang dùng **3010** qua khóa `platforms.whatsapp.extra.bridge_port` — **không** kill tiến trình ở port 3000 (không thuộc hệ thống này). Nếu 3010 cũng bận: đổi sang port trống khác trong config rồi restart gateway |
+| File bản ghi nằm trong `wa-outbox/failed/` | JSON hỏng hoặc ingest từ chối 10 lần liên tiếp | Đọc lý do ở `/var/log/gf-wa-relay.log` (dòng `FAIL`/`QUARANTINE`) → sửa nội dung file (hoặc sửa phía app nếu là lỗi ingest) → **đổi tên file** (để bộ đếm lần thử tính lại từ đầu; bộ đếm nằm ở `/var/lib/gf-wa-relay/state.json`) → thả lại vào thư mục gốc `wa-outbox/` → chờ relay chạy (≤1 phút) hoặc `systemctl start gf-wa-relay.service` |
+| Ingest trả 401 | Secret phía relay và phía app lệch nhau, hoặc `.env.wa` bị đổi | Đối chiếu biến `WA_BOT_SECRET` trong `/home/goldenfarmict/.env.wa` với cấu hình app (chỉ so khớp, không in giá trị ra nơi công khai); kiểm tra backend đã restart sau khi đổi secret chưa |
+| Ingest trả 503 | App chưa nạp được `WA_BOT_SECRET` | Kiểm tra file `.env.wa` tồn tại, quyền 600, và compose có `env_file` trỏ đúng; restart backend |
+| RAM host tăng cao | Gateway ~310–340 MB là bình thường; host vốn chật | Kiểm tra `MemoryCurrent` của service (mục 4.1); nếu gateway phình bất thường → restart gateway và theo dõi; không kill các container khác khi chưa rõ nguyên nhân |
+| **Cần ngắt khẩn cấp ngay** | Bot có hành vi lạ / nghi bị khóa số / sự cố bảo mật | **Kill switch 1 (nhanh nhất, phía điện thoại):** WhatsApp → Cài đặt → Thiết bị liên kết → gỡ thiết bị của Hermes — phiên chết ngay bất kể server ra sao. **Kill switch 2 (phía server):** `hermes -p gf-recorder gateway stop` |
+
+---
+
+## 5. Bảo mật
+
+### 5.1. Bí mật nằm ở đâu (chỉ vị trí — không có giá trị trong tài liệu này)
+
+| Bí mật | Vị trí | Quyền | Ghi chú |
+|---|---|---|---|
+| API key gateway 9Router của bot | Biến `GOLDENFARM_API_KEY` trong `/home/hermes/.hermes/profiles/gf-recorder/.env`; `config.yaml` chỉ tham chiếu qua `key_env` | File 600, chủ sở hữu `hermes` | Key **riêng cho bot**, tạo trong dashboard 9Router; không dùng chung với n8n/dịch vụ khác; không sao chép sang nơi khác |
+| Bot secret của ingest | Biến `WA_BOT_SECRET` trong `/home/goldenfarmict/.env.wa` | File 600, **không nằm trong git** (đã gitignore; compose nạp qua `env_file`) | Relay đọc trong tiến trình khi chạy; backend so khớp hằng-thời-gian; không in ra log |
+| Phiên WhatsApp (credentials Baileys) | `/home/hermes/.hermes/profiles/gf-recorder/whatsapp/session/` (`creds.json` 600) | Chỉ user `hermes` | Tương đương "mật khẩu đăng nhập" của thiết bị liên kết — mất thư mục này = phải quét QR lại; lộ thư mục này = người khác mạo danh được phiên |
+
+### 5.2. Ai truy cập được gì
+
+- **User `hermes`** (chạy agent + gateway + bridge): đọc được phiên WhatsApp,
+  `.env` của profile, workspace/outbox. Agent bị khóa ở 5 toolset, không có
+  terminal/browser/code-exec.
+- **Root**: chạy relay (`/usr/local/sbin/gf-wa-relay.py` root-owned — agent
+  không sửa được đường đẩy dữ liệu), đọc `.env.wa`, quản trị toàn hệ thống.
+- **App GoldenFarmICT**: ingest chỉ nhận bot-secret (không nhận session người
+  dùng); đọc/ghi module theo phân quyền — hiện chỉ admin (mục 3.6).
+- **Group pilot**: mọi thành viên đều được bot "nghe" (theo allowlist JID);
+  thành viên cần biết group có bot ghi nhận — nên thông báo một lần trong
+  group khi vận hành chính thức.
+- **Chủ tài khoản**: giữ kill switch phía điện thoại (gỡ thiết bị liên kết).
+
+### 5.3. Rủi ro còn lại & giảm thiểu đã áp
+
+- **Khóa số do cầu nối không chính thức:** giảm thiểu bằng im lặng tuyệt đối
+  + chốt chặn code + chỉ nghe một group; không triệt tiêu được. Đây là lý do
+  phải theo dõi sát những ngày đầu và giữ sẵn 2 kill switch (mục 4.8).
+- **Phiên nằm trên số chính:** phiên liên kết về nguyên tắc truy cập được
+  toàn bộ tài khoản; giảm thiểu bằng khóa intake (chỉ group pilot tới được
+  agent), DM disabled hai lớp, profile khóa công cụ, và chốt chặn gửi.
+- **Tin nhắn là dữ liệu không tin cậy:** nội dung group có thể chứa câu chữ
+  cố tình lừa agent (prompt injection). Giảm thiểu: agent không có công cụ
+  nguy hiểm, đầu ra duy nhất là file JSON theo schema cố định, relay + ingest
+  kiểm tra lại schema/type trước khi ghi DB, admin duyệt bản ghi trong app.
+- **`hermes update` ghi đè bản vá:** xem quy trình bắt buộc ở mục 4.7.
+
+---
+
+## 6. Trạng thái & việc còn lại
+
+### 6.1. Đã hoàn thành (kiểm chứng trên hệ thật)
+
+- ✅ Hermes v0.23.2 cài trên server nội bộ, profile `gf-recorder` khóa 5 toolset.
+- ✅ Ghép nối WhatsApp với số chính (2026-11-19 12:44), phiên đã kiểm chứng
+  kết nối lại thành công bằng chính credentials đã lưu.
+- ✅ Khóa phạm vi: chỉ group pilot `120363421346130787@g.us`, DM disabled,
+  require_mention=false.
+- ✅ Skill `wa-room-recorder` enabled; relay `gf-wa-relay.timer` chạy mỗi
+  phút, đã kiểm chứng đầu-cuối bằng bản ghi test.
+- ✅ Chốt chặn GF SENDBLOCK đã áp + test khô + **chặn thật** thông báo khởi
+  động của Hermes ở go-live.
+- ✅ API key riêng của bot đã cấu hình và kiểm chứng (GET /v1/models → 200,
+  `cx/gpt-5.6-sol` có trong danh sách; gateway warm-up nhận ngữ cảnh 372k token).
+- ✅ **Go-live 2026-11-19 13:30:44**: `hermes-gateway-gf-recorder.service`
+  active + enabled + linger; bridge kết nối ở port 3010; footprint
+  ~310–340 MB RAM.
+- ✅ Module "Thông báo WhatsApp" live trong app; phân quyền hiện chỉ admin.
+
+### 6.2. Dữ liệu test đang có trong bảng
+
+6 bản ghi **[TEST]** (ids **1–6**) được tạo trong quá trình xây dựng/kiểm
+chứng — đều ghi rõ [TEST], xóa tự do trong app:
+
+| id | Loại | Trạng thái | Nguồn gốc |
+|---|---|---|---|
+| 1 | datlich | daxuly | Test ingest + PATCH trạng thái lúc xây module |
+| 2 | checkin | moi | Test ingest (có tọa độ mẫu) |
+| 3 | baocao | moi | Test ingest (loại baocao — bot thật không tạo) |
+| 4 | checkout | moi | Test khi thêm loại checkout (không tọa độ) |
+| 5 | checkin | moi | Test check-in phòng họp không tọa độ |
+| 6 | datlich | moi | Test đầu-cuối qua relay (file → ingest) |
+
+### 6.3. Việc còn lại
+
+- ⏳ **Nghiệm thu tin thật** (mục 4.3): một tin mượn phòng/check-in/check-out
+  thật từ **thành viên khác** trong group pilot rơi vào module — đây là mốc
+  nghiệm thu cuối cùng còn thiếu.
+- ⏳ Theo dõi sát group + `gf-sendblock.log` + RAM trong tuần đầu vận hành.
+- ⏳ Thông báo một lần trong group pilot rằng group có bot ghi nhận (khuyến
+  nghị về minh bạch với thành viên).
+- ⏳ Khi ổn định: cân nhắc mở quyền xem module cho trưởng/phó phòng qua
+  trang Phân quyền (mục 4.5).
+
+### 6.4. Lịch sử commit liên quan (repo app, branch `wordcraft-viewer-151026`)
+
+| Commit | Nội dung |
+|---|---|
+| `68f0013` | Module "Thông báo WhatsApp": bảng `wa_records` + ingest bot (X-Bot-Secret) + trang feed |
+| `ffa1232` | Phân quyền qua trang Phân quyền; giai đoạn phát triển chỉ admin (gỡ defaults head/deputy) |
+| `e0e6375` | Thêm loại bản ghi `checkout` + nới tọa độ check-in thành tùy chọn + relay file→ingest + cập nhật hợp đồng ingest |
+
+Phía Hermes (profile/skill/send-block/relay) không nằm trong git của app —
+cấu hình chuẩn để tra cứu chính là tài liệu này + `OPS-WHATSAPP-RECORDER.md`
++ các file `.bak` cạnh file cấu hình trên server.
+
+---
+
+## 7. Phụ lục — bảng tra cứu nhanh
+
+| Hạng mục | Giá trị |
+|---|---|
+| Server | Nội bộ Golden Farm — LAN `10.0.0.114`, Tailscale `100.71.228.86`, AlmaLinux 9.8 |
+| Hermes | v0.23.2 (stable, commit `ae2a81ccc00e`), cài host tại `/home/hermes/.hermes/hermes-agent`, user `hermes` (uid 1003) |
+| Profile | `gf-recorder` — `/home/hermes/.hermes/profiles/gf-recorder` |
+| Toolsets được phép | `file, memory, skills, todo, session_search` (5/26) |
+| Gateway service | `hermes-gateway-gf-recorder.service` (systemd **user** service của `hermes`, enabled + linger; unit tại `~/.config/systemd/user/`) |
+| Lệnh gateway | `hermes -p gf-recorder gateway status\|start\|stop\|restart` (dưới user `hermes`) |
+| Bridge | `scripts/whatsapp-bridge/bridge.js` (trong cây hermes-agent), nghe `127.0.0.1:3010` (khóa `bridge_port`; port 3000 bận bởi dịch vụ lạ — không đụng) |
+| Phiên WhatsApp | `profiles/gf-recorder/whatsapp/session/` — ghép nối 2026-11-19 12:44, số chính của chủ tài khoản |
+| Group pilot | "GROUP GOLDEN FARM - VP (Không có NV Tỉnh)" — JID `120363421346130787@g.us` |
+| Khóa phạm vi chính | `group_policy=allowlist`, `dm_policy=disabled`, `require_mention=false`, `WHATSAPP_MODE=bot` (config.yaml `platforms.whatsapp.extra` + mirror trong profile `.env`) |
+| Model | Provider `goldenfarm`: `cx/gpt-5.6-sol` @ `https://api.goldenfarm.com.vn/v1` (9Router; dashboard `https://api.goldenfarm.com.vn/dashboard`) |
+| API key | Biến `GOLDENFARM_API_KEY`, profile `.env` (600) — key riêng của bot |
+| Skill | `wa-room-recorder` — `profiles/gf-recorder/skills/goldenfarm/wa-room-recorder/SKILL.md` (enabled) |
+| Outbox | `profiles/gf-recorder/workspace/wa-outbox/` (+ `sent/`, `failed/`) |
+| Relay | `/usr/local/sbin/gf-wa-relay.py` (root) + `gf-wa-relay.timer` (mỗi 1 phút); state `/var/lib/gf-wa-relay/state.json`; tối đa 10 lần thử |
+| Bot secret | Biến `WA_BOT_SECRET`, `/home/goldenfarmict/.env.wa` (600, ngoài git) |
+| Ingest | `POST /api/wa-records/ingest` (header `X-Bot-Secret`); relay gọi qua `http://localhost:8000` |
+| App | `/home/goldenfarmict`, branch `wordcraft-viewer-151026`; backend :8000, frontend :8088, PostgreSQL container `goldenfarm-postgres` db `goldenfarmict` |
+| Bảng dữ liệu | `wa_records` — loại: datlich/checkin/baocao/checkout; trạng thái: moi/daxuly/huy |
+| Module app | "Thông báo WhatsApp", key `wa-records`, route `/wa-records`; quyền hiện tại: chỉ admin |
+| Hợp đồng ingest | `/home/goldenfarmict/docs/wa_ingest_contract.md` |
+| Ghi chú vận hành rút gọn | `profiles/gf-recorder/workspace/OPS-WHATSAPP-RECORDER.md` |
+| Send-block | Vá trong `bridge.js` (đầu `sendWithTimeout()` + endpoint `/typing`); bật trừ khi `GF_WA_SEND_BLOCK=0`; bản gốc: `bridge.js.pre-sendblock.bak`; **áp lại sau mọi `hermes update`** |
+| Log gateway/agent | `profiles/gf-recorder/logs/gateway.log`, `agent.log`, `errors.log`; hoặc `journalctl --user -u hermes-gateway-gf-recorder.service` |
+| Log relay | `/var/log/gf-wa-relay.log` |
+| Log chốt chặn | `scripts/whatsapp-bridge/gf-sendblock.log` (timestamp, JID đích, độ dài payload — không nội dung) |
+| Kill switch | 1) Điện thoại: WhatsApp → Thiết bị liên kết → gỡ thiết bị Hermes. 2) Server: `hermes -p gf-recorder gateway stop` |
+
+---
+
+*Tài liệu được tổng hợp ngày 2026-11-19 từ trạng thái thật của hệ thống.
+Khi có thay đổi lớn (đổi group, đổi key, update Hermes, mở quyền module),
+cập nhật cả 3 bản sao của tài liệu này.*
