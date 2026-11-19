@@ -23,7 +23,7 @@ check-in khi vào phòng và check-out khi trả phòng bằng văn phong rất 
 tổng hợp lại các tin này.
 
 Hệ thống này dùng **Hermes Agent** (tác tử AI mã nguồn mở của Nous Research)
-ghép nối vào WhatsApp qua cầu nối Baileys, **nghe duy nhất một group pilot**,
+ghép nối vào WhatsApp qua cầu nối Baileys, **nghe 3 group trong phạm vi cho phép**,
 tự phân loại các tin liên quan và ghi thành bản ghi có cấu trúc vào module
 **"Thông báo WhatsApp"** của app GoldenFarmICT để admin theo dõi/xử lý.
 
@@ -45,10 +45,10 @@ phạm vi — loại này vẫn tồn tại trong schema của app nhưng bot kh
 |---|---|
 | **Dùng số WhatsApp chính** của chủ tài khoản để ghép nối (quyết định của chủ tài khoản ngày 2026-11-19, sau khi đã được trình bày rủi ro) | Các group cần ghi đã có sẵn số này là thành viên; không cần thêm số mới vào group |
 | **Bot im lặng tuyệt đối** — không bao giờ gửi bất kỳ tin WhatsApp nào (không xác nhận, không hỏi lại, không nhắc, không tổng hợp vào group) | Bot chỉ là thiết bị thu thập; mọi hiển thị/xử lý diễn ra trong app. Đây cũng là cơ sở để chấp nhận dùng số chính |
-| **Nghe tất cả tin trong group pilot rồi tự lọc** (không yêu cầu @mention) | Nhân viên giữ thói quen nhắn tự nhiên như cũ, không phải học cú pháp mới |
+| **Nghe tất cả tin trong các group thuộc phạm vi rồi tự lọc** (không yêu cầu @mention) | Nhân viên giữ thói quen nhắn tự nhiên như cũ, không phải học cú pháp mới |
 | **Ghi thẳng vào GoldenFarmICT**, không qua Google Sheet | Dữ liệu nằm trong hệ thống nội bộ, dùng chung cơ chế phân quyền sẵn có |
 | **Bot không có công cụ mạng/thực thi** — nó chỉ ghi file JSON; một relay độc lập phía server đẩy file vào app | Thu hẹp bề mặt rủi ro: kể cả khi agent bị lừa bởi nội dung tin nhắn, nó cũng không tự gọi được API hay chạy lệnh |
-| **Khóa phạm vi ở nhiều lớp** (cấu hình bridge + allowlist JID + skill) | Chỉ đúng 1 group được xử lý; DM và group khác bị loại ngay ở cổng |
+| **Khóa phạm vi ở nhiều lớp** (cấu hình bridge + allowlist JID + skill) | Chỉ đúng các group trong allowlist (hiện 3 group) được xử lý; DM và group khác bị loại ngay ở cổng |
 | **Chốt chặn gửi tin ở tầng code** (ngoài cấu hình và chỉ thị trong skill) | Hermes v0.23.2 không có công tắc "chỉ nghe" ở tầng cấu hình — chốt code là lớp đảm bảo cứng duy nhất (mục 3.3) |
 | **Đặt bot trên server nội bộ GoldenFarmICT** (không phải VPS) | Cùng máy với app đích; máy đã có sẵn Node; VPS chật đĩa hơn |
 
@@ -61,7 +61,7 @@ phạm vi — loại này vẫn tồn tại trong schema của app nhưng bot kh
   ~2,2 GB available) — gateway của bot dùng ~310–340 MB, cần để mắt tuần đầu.
 - Phiên WhatsApp là một **thiết bị liên kết** trên tài khoản chính: về nguyên
   tắc phiên nhìn thấy mọi cuộc trò chuyện của tài khoản; việc thu hẹp nằm ở
-  cấu hình xử lý (chỉ group pilot) + profile bị khóa công cụ (mục 5).
+  cấu hình xử lý (chỉ 3 group trong phạm vi) + profile bị khóa công cụ (mục 5).
 
 ---
 
@@ -72,13 +72,13 @@ phạm vi — loại này vẫn tồn tại trong schema của app nhưng bot kh
                           ┌────────────────────────────────────────────────────────────────────────────────┐
                           │                                                                                │
  [Group WhatsApp]         │   [Hermes Agent v0.23.2 — cài trực tiếp trên host, user `hermes`]              │
-  GROUP GOLDEN FARM       │    ┌──────────────────┐   WebSocket    ┌───────────────────────────────┐      │
+  3 group trong phạm vi:  │    ┌──────────────────┐   WebSocket    ┌───────────────────────────────┐      │
   - VP (Không có NV Tỉnh) │    │ Bridge Baileys   │◄──────────────►│ WhatsApp (thiết bị liên kết  │      │
-  JID 120363421346130787  │    │ bridge.js        │   (phiên đã    │ của số chính)                │      │
-  @g.us                   │    │ port 127.0.0.1:  │    ghép nối)   └───────────────────────────────┘      │
+  - GOLDEN FARM           │    │ bridge.js        │   (phiên đã    │ của số chính)                │      │
+  - Văn phòng             │    │ port 127.0.0.1:  │    ghép nối)   └───────────────────────────────┘      │
         │                 │    │ 3010             │                                                        │
         │ tin nhắn        │    └────────┬─────────┘                                                        │
-        ▼                 │             │ chỉ tin của group pilot mới qua cổng (allowlist JID,             │
+        ▼                 │             │ chỉ tin của 3 group trong phạm vi mới qua cổng (allowlist JID,             │
  ════════════════════════ │ ════════════╪══════════ DM disabled, require_mention=false) ══════════════════ │
    WhatsApp cloud         │             ▼                                                                  │
                           │    ┌──────────────────┐   gọi model (HTTPS)                                    │
@@ -118,7 +118,7 @@ Các chặng chính:
    Baileys (Node.js, trong thư mục `scripts/whatsapp-bridge` của Hermes) giữ
    kết nối WebSocket thường trực tới WhatsApp với tư cách thiết bị liên kết.
 2. **Bridge → Agent:** bridge chạy ở cổng nội bộ `127.0.0.1:3010`. Chỉ tin từ
-   JID group pilot mới được chuyển cho agent; DM bị vô hiệu ở cả hai lớp
+   JID thuộc allowlist (3 group) mới được chuyển cho agent; DM bị vô hiệu ở cả hai lớp
    (bridge và adapter).
 3. **Agent + Skill:** gateway (dịch vụ `hermes-gateway-gf-recorder.service`)
    chạy agent với skill `wa-room-recorder`; model `cx/gpt-5.6-sol` qua gateway
@@ -165,7 +165,7 @@ và được mirror trong `.env` của profile:
 |---|---|---|
 | `WHATSAPP_MODE` (.env) | `bot` | Bắt buộc: chế độ `self-chat` mặc định ban đầu loại bỏ mọi tin không phải của chính chủ → không thể ghi group |
 | `group_policy` | `allowlist` | Chỉ các group trong allowlist mới được xử lý |
-| `group_allow_from` | `["120363421346130787@g.us"]` | Đúng **một** JID: group pilot "GROUP GOLDEN FARM - VP (Không có NV Tỉnh)" |
+| `group_allow_from` | `["120363421346130787@g.us", "120363420637565910@g.us", "120363405283973589@g.us"]` | Đúng **ba** JID: "GROUP GOLDEN FARM - VP (Không có NV Tỉnh)", "GROUP GOLDEN FARM", "GROUP GOLDEN FARM - Văn phòng" |
 | `dm_policy` | `disabled` | Tin nhắn riêng bị tắt ở cả bridge lẫn adapter |
 | `whatsapp.unauthorized_dm_behavior` | `ignore` | DM lạ bị bỏ qua lặng lẽ (không trả lời mã ghép nối) |
 | `require_mention` | `false` | Nghe tất cả tin trong group rồi tự lọc (quyết định của chủ tài khoản) |
@@ -175,15 +175,16 @@ và được mirror trong `.env` của profile:
 | `reply_prefix` | `""` | Không tiền tố trả lời |
 | `home_channel` | chat của chính chủ tài khoản | Tránh việc Hermes đòi đặt home channel với người lạ |
 | `allow_admin_from` / `group_allow_admin_from` | JID của chủ tài khoản | Lệnh quản trị chỉ từ chủ tài khoản |
-| `WHATSAPP_ALLOWED_USERS` | **cố ý KHÔNG đặt** | Nếu đặt sender-allowlist thì từng thành viên group phải được liệt kê; không đặt thì allowlist theo JID group tự nó bao phủ **mọi thành viên** của group pilot, trong khi DM vẫn bị chặn bởi `dm_policy` |
+| `WHATSAPP_ALLOWED_USERS` | **cố ý KHÔNG đặt** | Nếu đặt sender-allowlist thì từng thành viên group phải được liệt kê; không đặt thì allowlist theo JID group tự nó bao phủ **mọi thành viên** của các group trong allowlist, trong khi DM vẫn bị chặn bởi `dm_policy` |
 
-Tài khoản có mặt trong 5 group; chỉ group pilot ở trên được mở cổng. Bốn group
-còn lại (2 group "GOLDEN FARM COMPANY", "GROUP GOLDEN FARM",
-"GROUP GOLDEN FARM - Văn phòng") không được xử lý.
+Tài khoản có mặt trong 5 group; 3 group ở trên được mở cổng (phạm vi ban đầu
+chỉ có group "GROUP GOLDEN FARM - VP (Không có NV Tỉnh)" làm pilot, mở rộng
+lên 3 group ngày 2026-11-19 theo yêu cầu của chủ tài khoản). Hai group còn
+lại (đều tên "GOLDEN FARM COMPANY") không được xử lý.
 
 ### 3.3. Im lặng tuyệt đối — 3 lớp + 1 chốt cứng
 
-1. **Lớp cổng (intake):** như mục 3.2 — ngoài group pilot, không tin nào tới
+1. **Lớp cổng (intake):** như mục 3.2 — ngoài 3 group trong phạm vi, không tin nào tới
    được agent; DM bị `ignore` nên không phát sinh phản hồi ghép nối.
 2. **Lớp hiển thị & hành vi:** tắt read receipts, tool progress, interim
    messages; và **Rule 0 trong skill** buộc câu trả lời cuối (final response)
@@ -218,7 +219,7 @@ còn lại (2 group "GOLDEN FARM COMPANY", "GROUP GOLDEN FARM",
   tin không phải bản ghi → không làm gì cả, kết thúc lượt trống; không bao
   giờ hỏi lại người gửi khi thiếu thông tin (ghi phần có được, admin đối
   chiếu trong app).
-- **Phân loại** mỗi tin trong group pilot vào đúng một trong: `datlich`,
+- **Phân loại** mỗi tin trong các group thuộc phạm vi vào đúng một trong: `datlich`,
   `checkin`, `checkout`, hoặc *không phải bản ghi* (hỏi "mai phòng có ai đặt
   chưa?" là câu hỏi, không phải đặt phòng → bỏ qua).
 - **Trích xuất theo văn phong lỏng tiếng Việt, không bao giờ bịa:**
@@ -408,7 +409,7 @@ Relay không cần thao tác thường ngày; khi cần chạy ngay một lượ
 
 ### 4.3. Quy trình nghiệm thu tin thật (acceptance)
 
-1. Nhờ **một thành viên khác** trong group pilot đăng một tin thật, ví dụ:
+1. Nhờ **một thành viên khác** trong một group thuộc phạm vi đăng một tin thật, ví dụ:
    *"Em mượn phòng họp tầng 2 từ 15h–16h hôm nay"* — **không** dùng tin của
    chính chủ tài khoản (bridge bỏ qua tin `from_me`, mục 3.1).
 2. Trong ~1–2 phút (agent xử lý + relay chu kỳ 1 phút), mở app bằng tài
@@ -421,9 +422,9 @@ Relay không cần thao tác thường ngày; khi cần chạy ngay một lượ
 5. Kiểm tra `gf-sendblock.log` không phát sinh dòng mới và group không nhận
    bất kỳ tin nào từ bot.
 
-### 4.4. Đổi group pilot
+### 4.4. Đổi/thêm/bớt group trong phạm vi
 
-Thiết kế hiện tại là **đúng một group**. Muốn chuyển sang group khác:
+Phạm vi hiện tại là **3 group** (danh sách ở mục 3.2). Muốn thêm/bớt/thay group:
 
 1. Lấy JID của group mới (dạng `120363...@g.us`) — liệt kê các group của tài
    khoản bằng một script Baileys dùng một lần với auth state đã lưu (cách đã
@@ -515,7 +516,7 @@ Bản vá GF SENDBLOCK nằm trong file `bridge.js` thuộc cây mã nguồn c�
   không sửa được đường đẩy dữ liệu), đọc `.env.wa`, quản trị toàn hệ thống.
 - **App GoldenFarmICT**: ingest chỉ nhận bot-secret (không nhận session người
   dùng); đọc/ghi module theo phân quyền — hiện chỉ admin (mục 3.6).
-- **Group pilot**: mọi thành viên đều được bot "nghe" (theo allowlist JID);
+- **Các group trong phạm vi**: mọi thành viên đều được bot "nghe" (theo allowlist JID);
   thành viên cần biết group có bot ghi nhận — nên thông báo một lần trong
   group khi vận hành chính thức.
 - **Chủ tài khoản**: giữ kill switch phía điện thoại (gỡ thiết bị liên kết).
@@ -523,10 +524,10 @@ Bản vá GF SENDBLOCK nằm trong file `bridge.js` thuộc cây mã nguồn c�
 ### 5.3. Rủi ro còn lại & giảm thiểu đã áp
 
 - **Khóa số do cầu nối không chính thức:** giảm thiểu bằng im lặng tuyệt đối
-  + chốt chặn code + chỉ nghe một group; không triệt tiêu được. Đây là lý do
+  + chốt chặn code + chỉ nghe 3 group trong phạm vi; không triệt tiêu được. Đây là lý do
   phải theo dõi sát những ngày đầu và giữ sẵn 2 kill switch (mục 4.8).
 - **Phiên nằm trên số chính:** phiên liên kết về nguyên tắc truy cập được
-  toàn bộ tài khoản; giảm thiểu bằng khóa intake (chỉ group pilot tới được
+  toàn bộ tài khoản; giảm thiểu bằng khóa intake (chỉ 3 group trong phạm vi tới được
   agent), DM disabled hai lớp, profile khóa công cụ, và chốt chặn gửi.
 - **Tin nhắn là dữ liệu không tin cậy:** nội dung group có thể chứa câu chữ
   cố tình lừa agent (prompt injection). Giảm thiểu: agent không có công cụ
@@ -543,7 +544,7 @@ Bản vá GF SENDBLOCK nằm trong file `bridge.js` thuộc cây mã nguồn c�
 - ✅ Hermes v0.23.2 cài trên server nội bộ, profile `gf-recorder` khóa 5 toolset.
 - ✅ Ghép nối WhatsApp với số chính (2026-11-19 12:44), phiên đã kiểm chứng
   kết nối lại thành công bằng chính credentials đã lưu.
-- ✅ Khóa phạm vi: chỉ group pilot `120363421346130787@g.us`, DM disabled,
+- ✅ Khóa phạm vi: 3 group trong allowlist (`120363421346130787@g.us`, `120363420637565910@g.us`, `120363405283973589@g.us`) — mở rộng từ 1 group ngày 2026-11-19, DM disabled,
   require_mention=false.
 - ✅ Skill `wa-room-recorder` enabled; relay `gf-wa-relay.timer` chạy mỗi
   phút, đã kiểm chứng đầu-cuối bằng bản ghi test.
@@ -573,10 +574,10 @@ chứng — đều ghi rõ [TEST], xóa tự do trong app:
 ### 6.3. Việc còn lại
 
 - ⏳ **Nghiệm thu tin thật** (mục 4.3): một tin mượn phòng/check-in/check-out
-  thật từ **thành viên khác** trong group pilot rơi vào module — đây là mốc
+  thật từ **thành viên khác** trong một group thuộc phạm vi rơi vào module — đây là mốc
   nghiệm thu cuối cùng còn thiếu.
 - ⏳ Theo dõi sát group + `gf-sendblock.log` + RAM trong tuần đầu vận hành.
-- ⏳ Thông báo một lần trong group pilot rằng group có bot ghi nhận (khuyến
+- ⏳ Thông báo một lần trong các group thuộc phạm vi rằng group có bot ghi nhận (khuyến
   nghị về minh bạch với thành viên).
 - ⏳ Khi ổn định: cân nhắc mở quyền xem module cho trưởng/phó phòng qua
   trang Phân quyền (mục 4.5).
@@ -607,7 +608,7 @@ cấu hình chuẩn để tra cứu chính là tài liệu này + `OPS-WHATSAPP-
 | Lệnh gateway | `hermes -p gf-recorder gateway status\|start\|stop\|restart` (dưới user `hermes`) |
 | Bridge | `scripts/whatsapp-bridge/bridge.js` (trong cây hermes-agent), nghe `127.0.0.1:3010` (khóa `bridge_port`; port 3000 bận bởi dịch vụ lạ — không đụng) |
 | Phiên WhatsApp | `profiles/gf-recorder/whatsapp/session/` — ghép nối 2026-11-19 12:44, số chính của chủ tài khoản |
-| Group pilot | "GROUP GOLDEN FARM - VP (Không có NV Tỉnh)" — JID `120363421346130787@g.us` |
+| Các group trong phạm vi | "GROUP GOLDEN FARM - VP (Không có NV Tỉnh)" — `120363421346130787@g.us`; "GROUP GOLDEN FARM" — `120363420637565910@g.us`; "GROUP GOLDEN FARM - Văn phòng" — `120363405283973589@g.us` |
 | Khóa phạm vi chính | `group_policy=allowlist`, `dm_policy=disabled`, `require_mention=false`, `WHATSAPP_MODE=bot` (config.yaml `platforms.whatsapp.extra` + mirror trong profile `.env`) |
 | Model | Provider `goldenfarm`: `cx/gpt-5.6-sol` @ `https://api.goldenfarm.com.vn/v1` (9Router; dashboard `https://api.goldenfarm.com.vn/dashboard`) |
 | API key | Biến `GOLDENFARM_API_KEY`, profile `.env` (600) — key riêng của bot |
