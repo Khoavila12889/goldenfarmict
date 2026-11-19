@@ -40,7 +40,6 @@ DEFAULT_ROLE_MODULE_PERMS = {
         "mail": {"can_view": True, "can_edit": True},
     },
     "head": {
-        "wa-records": {"can_view": True, "can_edit": True},
         "announcements": {"can_view": True, "can_edit": True},
         "password-reset": {"can_view": True, "can_edit": True},
         "reports": {"can_view": True, "can_edit": False},
@@ -48,7 +47,6 @@ DEFAULT_ROLE_MODULE_PERMS = {
         "mail": {"can_view": True, "can_edit": True},
     },
     "deputy": {
-        "wa-records": {"can_view": True, "can_edit": True},
         "announcements": {"can_view": True, "can_edit": True},
         "password-reset": {"can_view": True, "can_edit": True},
         "reports": {"can_view": True, "can_edit": False},

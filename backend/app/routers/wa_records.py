@@ -7,9 +7,10 @@ check-in vị trí / báo cáo). Hai mặt tách bạch:
   X-Bot-Secret so với biến môi trường WA_BOT_SECRET (file .env.wa trên server,
   không nằm trong git). Không dùng session người dùng cho đường này.
 - Đọc/ghi (app): GET list/detail + PATCH status, xác thực bằng session
-  X-User-* như các router khác. Mặc định chỉ admin/head/deputy (xem
-  DEFAULT_ROLE_MODULE_PERMS trong routers/auth.py); user thường không có quyền
-  cho tới khi admin cấp thêm ở trang Phân quyền.
+  X-User-* như các router khác. Quyền do trang Phân quyền quyết định hoàn
+  toàn (module "wa-records": xem cần can_view, sửa trạng thái cần can_edit;
+  admin luôn được phép). Giai đoạn phát triển chỉ cấp cho admin — trưởng/
+  phó phòng và user thường bị 403 cho tới khi admin cấp quyền ở Phân quyền.
 
 Hợp đồng ingest: docs/wa_ingest_contract.md.
 """
@@ -63,7 +64,7 @@ def _require_wa_user(
     perms = _get_effective_permissions(user["user_code"])
     perm = perms.get("wa-records") or {}
     if need_edit:
-        allowed = bool(perm.get("can_edit")) or (role in ("head", "deputy") and bool(perm.get("can_view")))
+        allowed = bool(perm.get("can_edit"))
     else:
         allowed = bool(perm.get("can_view") or perm.get("can_edit"))
     if not allowed:
