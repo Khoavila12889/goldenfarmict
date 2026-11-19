@@ -590,6 +590,23 @@ Bản vá GF SENDBLOCK nằm trong file `bridge.js` thuộc cây mã nguồn c�
 | RAM host tăng cao | Gateway ~310–340 MB là bình thường; host vốn chật | Kiểm tra `MemoryCurrent` của service (mục 4.1); nếu gateway phình bất thường → restart gateway và theo dõi; không kill các container khác khi chưa rõ nguyên nhân |
 | **Cần ngắt khẩn cấp ngay** | Bot có hành vi lạ / nghi bị khóa số / sự cố bảo mật | **Kill switch 1 (nhanh nhất, phía điện thoại):** WhatsApp → Cài đặt → Thiết bị liên kết → gỡ thiết bị của Hermes — phiên chết ngay bất kể server ra sao. **Kill switch 2 (phía server):** `hermes -p gf-recorder gateway stop` |
 
+### 4.9. Tối ưu vận hành bền bỉ — logrotate, restart hằng tuần, cảnh báo failed/ (bổ sung 2026-11-19)
+
+Ba cơ chế "cài rồi quên" được bổ sung cùng ngày go-live để hệ thống chạy lâu dài không cần ngó ngàng:
+
+**a) Cắt log tự động (logrotate).** Cấu hình: `/etc/logrotate.d/gf-hermes`. Chính sách cho mọi file log của hệ: **daily, giữ 7 bản, nén (compress), copytruncate** (gateway/bridge giữ file log đang mở — copytruncate cắt tại chỗ, không đổi inode nên tiến trình không bị mất log), `missingok`, `notifempty`. Phạm vi file:
+
+- `profiles/gf-recorder/logs/*.log` (gateway.log, agent.log, errors.log và các log chẩn đoán) — khối riêng có `su hermes hermes`;
+- `profiles/gf-recorder/whatsapp/bridge.log`, `profiles/gf-recorder/gateway-starts.log`;
+- `scripts/whatsapp-bridge/gf-sendblock.log`;
+- `/var/log/gf-wa-relay.log` (relay vẫn tự cắt ở ~5 MB như cũ — logrotate bổ sung giới hạn 7 ngày).
+
+Kiểm tra cấu hình mà không thay đổi thật: `logrotate -d /etc/logrotate.d/gf-hermes` (đã kiểm chứng 2026-11-19: exit 0, đủ 10 file log, không lỗi).
+
+**b) Restart gateway định kỳ — Chủ Nhật 03:00.** Unit hệ thống `gf-hermes-weekly-restart.timer` (+ `.service` oneshot đi kèm) tại `/etc/systemd/system/`, lịch `OnCalendar=Sun 03:00` giờ máy (Asia/Ho_Chi_Minh) cộng trễ ngẫu nhiên tối đa 120 giây. Service chạy đúng mẫu lệnh restart thủ công ở mục 4.2 nhưng từ root qua `runuser -u hermes` + `systemctl --user restart hermes-gateway-gf-recorder.service` (kèm `XDG_RUNTIME_DIR=/run/user/1003`). Mục đích: xả RAM cho cầu nối Baileys (giữ WebSocket 24/7, có xu hướng phình bộ nhớ sau vài tuần; toàn service ~310–340 MB). Hiện tượng kèm theo là **bình thường**: gateway ngắt kết nối WhatsApp vài chục giây rồi tự kết nối lại; thông báo khởi động gửi về số chủ tài khoản vẫn bị GF SENDBLOCK chặn như mọi lần restart. Xem lần chạy kế tiếp: `systemctl list-timers gf-hermes-weekly-restart.timer` (lần đầu: CN 2026-11-22 ~03:01 +07). Tắt cơ chế: `systemctl disable --now gf-hermes-weekly-restart.timer`.
+
+**c) Cảnh báo khi bản ghi kẹt ở failed/ (GF ALERT).** Relay `/usr/local/sbin/gf-wa-relay.py` đã vá (đánh dấu `GF ALERT` trong code; bản trước vá: `/usr/local/sbin/gf-wa-relay.py.bak-20261119152402`): **chỉ khi** một file bị chuyển vào `wa-outbox/failed/` (hết 10 lần thử), relay bắn đúng **một** POST tới webhook khai trong `/etc/gf-wa-relay-alert.conf` (root, quyền 600; dạng key=value: `WEBHOOK_URL=`, `CHAT_ID=` — CHAT_ID tùy chọn). Payload JSON tương thích Telegram Bot API: `{"text": "Báo động: Có bản ghi WhatsApp bị kẹt tại thư mục failed: <tên file>", "chat_id": "<CHAT_ID>"}` (trường `chat_id` chỉ có khi đã khai). Timeout 5 giây; mọi lỗi cảnh báo đều bị bắt và ghi vào log relay — **relay không bao giờ hỏng vì cảnh báo**. Khi `WEBHOOK_URL` để trống (trạng thái hiện tại): không POST đi đâu cả, log relay ghi một dòng `ALERT (chua cau hinh webhook): <tên file>` để người bảo trì vẫn thấy khi đọc log. Đã test đầu-cuối 2026-11-19 bằng listener HTTP nội bộ trên chính server (payload nhận đúng nguyên văn, cả hai nhánh có/không webhook) rồi dọn sạch dữ liệu test. Cách nối Telegram sau này: tạo bot qua @BotFather, lấy chat id của người nhận, điền `WEBHOOK_URL=https://api.telegram.org/bot<TOKEN>/sendMessage` và `CHAT_ID=<id>` vào file conf — không cần sửa code, hiệu lực ngay từ lần relay kế tiếp (relay đọc conf mỗi lần chạy). Zalo ZNS yêu cầu mẫu tin được duyệt trước nên không dùng được payload tự do này; webhook trung gian khác chỉ cần nhận POST JSON có trường `text`.
+
 ---
 
 ## 5. Bảo mật
@@ -744,6 +761,9 @@ cấu hình chuẩn để tra cứu chính là tài liệu này + `OPS-WHATSAPP-
 | Send-block | Vá trong `bridge.js` (đầu `sendWithTimeout()` + endpoint `/typing`); bật trừ khi `GF_WA_SEND_BLOCK=0`; bản gốc: `bridge.js.pre-sendblock.bak`; **áp lại sau mọi `hermes update`** |
 | Log gateway/agent | `profiles/gf-recorder/logs/gateway.log`, `agent.log`, `errors.log`; hoặc `journalctl --user -u hermes-gateway-gf-recorder.service` |
 | Log relay | `/var/log/gf-wa-relay.log` |
+| Logrotate | `/etc/logrotate.d/gf-hermes` — daily, giữ 7 bản, compress, copytruncate cho mọi log của hệ (mục 4.9) |
+| Restart định kỳ | `gf-hermes-weekly-restart.timer` (+ `.service`) — Chủ Nhật 03:00 giờ máy, trễ ngẫu nhiên ≤120 giây, restart gateway để xả RAM (mục 4.9) |
+| Cảnh báo failed/ | Hook `GF ALERT` trong relay; cấu hình `/etc/gf-wa-relay-alert.conf` (root, 600) — hiện **chưa nối webhook** (URL trống, chỉ ghi log); bản relay trước vá: `gf-wa-relay.py.bak-20261119152402` (mục 4.9) |
 | Log chốt chặn | `scripts/whatsapp-bridge/gf-sendblock.log` (timestamp, JID đích, độ dài payload — không nội dung) |
 | Kill switch | 1) Điện thoại: WhatsApp → Thiết bị liên kết → gỡ thiết bị Hermes. 2) Server: `hermes -p gf-recorder gateway stop` |
 
