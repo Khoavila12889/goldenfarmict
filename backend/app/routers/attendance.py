@@ -349,7 +349,7 @@ def export_xlsx(
     headers = [
         "Ngày", "Nhân viên", "Giờ IN", "Loại IN",
         "Giờ OUT", "Loại OUT", "Thời gian (giờ:phút)",
-        "Số sự kiện (CI/CO/Vị trí)", "Địa điểm",
+        "Số tin (check-in/check-out/vị trí)", "Địa điểm",
     ]
     for i, h in enumerate(headers, start=1):
         ws.cell(row=4, column=i, value=h)
