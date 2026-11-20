@@ -141,3 +141,12 @@
 .at-place-edit { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .at-place-edit input { flex: 1; min-width: 130px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 13px; }
 .at-place-edit .at-btn { padding: 6px 10px; font-size: 13px; }
+
+/* Box luot ghe o trang Chi tiet */
+.at-visit-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.at-visit-io { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; font-size: 14px; }
+.at-visit-place { margin-top: 6px; display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.at-signals { margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.at-signal { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13.5px; }
+.at-signal-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.at-signal-text { min-width: 0; overflow-wrap: anywhere; }

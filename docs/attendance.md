@@ -111,3 +111,9 @@ cửa hàng/điểm có tên cố định gắn với kinh độ/vĩ độ chu�
 chiếu toạ độ của tin với điểm cố định của cửa hàng được khai: nếu lệch xa
 (ví dụ về nhà vẫn chấm, sai kinh độ/vĩ độ) thì gắn **cảnh báo ⚠** trên box để
 người duyệt chú ý.
+
+Trang **Chi tiết sự kiện** cũng hiển thị theo box lượt ghé (endpoint
+`GET /api/attendance/visit-events`): mỗi box gồm tiêu đề lượt (nhân viên, giờ
+IN → OUT, tên cửa hàng sửa tay được như ở Tổng hợp) và danh sách từng tin gốc
+bên trong để đối chiếu. Các loại tin không thuộc chấm công (thông báo, đặt
+lịch, báo cáo) vẫn đứng riêng từng thẻ.

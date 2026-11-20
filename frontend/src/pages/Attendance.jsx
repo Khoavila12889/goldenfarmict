@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Search, RefreshCw, Download, MapPin, UserRound, Users, Speaker, LogIn, LogOut, CalendarDays, ClipboardList, Clock3, Link2, Unlink, Pencil } from 'lucide-react'
-import { apiErrorMessage, getAttendanceGroups, getAttendanceEvents, getAttendanceSummary, exportAttendanceXLSX, getAttendanceIdentities, updateAttendanceIdentity, updateAttendanceVisitPlace } from '../services/api'
+import { apiErrorMessage, getAttendanceGroups, getAttendanceVisitEvents, getAttendanceSummary, exportAttendanceXLSX, getAttendanceIdentities, updateAttendanceIdentity, updateAttendanceVisitPlace } from '../services/api'
 import './Attendance.css'
 
 const TYPE_META = {
@@ -118,7 +118,7 @@ export default function Attendance() {
     try {
       const res = view === 'summary'
         ? await getAttendanceSummary({ ...filters, page, page_size: pageSize })
-        : await getAttendanceEvents({ ...filters, page, page_size: pageSize })
+        : await getAttendanceVisitEvents({ ...filters, page, page_size: pageSize })
       setRows(res.data.data || [])
       setTotal(res.data.total || 0)
       setError('')
@@ -349,7 +349,7 @@ export default function Attendance() {
           <div className="at-context">
             <div className="at-context-group">{groupName || 'Tất cả group'}</div>
             <div className="at-context-sub">
-              {fmtDayInput(dateFrom)} → {fmtDayInput(dateTo)} · {total} {view === 'summary' ? 'lượt ghé' : 'tin ghi nhận'}
+              {fmtDayInput(dateFrom)} → {fmtDayInput(dateTo)} · {total} {view === 'summary' ? 'lượt ghé' : 'mục'}
             </div>
             {view === 'summary' && (
               <div className="at-rule">Mỗi lượt ghé cửa hàng = 1 box: các tin cách nhau dưới 45 phút gộp chung 1 lượt. Giờ IN = tín hiệu đầu lượt (vị trí 1), giờ OUT = tín hiệu cuối lượt (vị trí 2). Tên cửa hàng bấm nút bút chì để bổ sung/sửa.</div>
@@ -416,20 +416,51 @@ export default function Attendance() {
             </>
           ) : (
             <div className="at-list">
-              {rows.map(r => (
-                <article key={`${r.src}-${r.id}`} className="at-card">
-                  <div className="at-card-top">
-                    <TypeBadge type={r.record_type} />
-                    <span className={`at-status ${STATUS_META[r.status]?.cls || ''}`}>{STATUS_META[r.status]?.label || r.status}</span>
-                    <span className="at-card-time"><Clock3 size={13} /> {fmtDateTime(r.created_at)}</span>
+              {rows.map(item => item.kind === 'visit' ? (
+                <article key={`v-${item.day}-${item.src}-${item.sender_key}-${item.visit_no}`} className="at-card at-visit-box">
+                  <div className="at-visit-head">
+                    <span className="at-sum-name"><UserRound size={16} /> {displayName(item)}</span>
+                    <span className="at-card-time">{fmtDay(item.day)}{item.visit_total > 1 ? ` · Lượt ${item.visit_no}/${item.visit_total}` : ''}</span>
                   </div>
-                  <h3>{r.title || r.content?.slice(0, 90) || '(Không có tiêu đề)'}</h3>
-                  {r.title && r.content && <p className="at-card-content">{r.content}</p>}
+                  <div className="at-sub">{codeLine(item)}</div>
+                  <div className="at-visit-io">
+                    <span>IN <strong>{fmtTime(item.first_at)}</strong> <TypeChip type={item.first_type} /></span>
+                    <span>→</span>
+                    <span>OUT <strong>{fmtTime(item.last_at)}</strong> <TypeChip type={item.last_type} /></span>
+                    <span className="at-sub">{fmtDuration(item.duration_minutes)}</span>
+                  </div>
+                  <div className="at-visit-place"><MapPin size={13} /> {renderPlace(item)}</div>
+                  <div className="at-signals">
+                    {item.signals.map(sig => (
+                      <div key={sig.id} className="at-signal">
+                        <TypeBadge type={sig.record_type} />
+                        <span className="at-signal-time">{fmtTime(sig.created_at)}</span>
+                        <span className="at-signal-text">
+                          {sig.record_type === 'vitri'
+                            ? (sig.lat != null && sig.lng != null
+                              ? <a href={`https://www.google.com/maps?q=${sig.lat},${sig.lng}`} target="_blank" rel="noreferrer">{sig.lat}, {sig.lng}</a>
+                              : (sig.content || sig.title || ''))
+                            : (sig.title || sig.content || '')}
+                          {sig.place && sig.record_type !== 'vitri' ? <span className="at-sub"> · {sig.place}</span> : null}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              ) : (
+                <article key={`s-${item.record.src}-${item.record.id}`} className="at-card">
+                  <div className="at-card-top">
+                    <TypeBadge type={item.record.record_type} />
+                    <span className={`at-status ${STATUS_META[item.record.status]?.cls || ''}`}>{STATUS_META[item.record.status]?.label || item.record.status}</span>
+                    <span className="at-card-time"><Clock3 size={13} /> {fmtDateTime(item.record.created_at)}</span>
+                  </div>
+                  <h3>{item.record.title || item.record.content?.slice(0, 90) || '(Không có tiêu đề)'}</h3>
+                  {item.record.title && item.record.content && item.record.record_type !== 'vitri' && <p className="at-card-content">{item.record.content}</p>}
                   <div className="at-card-meta">
-                    {r.sender_name && <span><UserRound size={13} /> {displayName(r)}{r.employee_code ? ` · Mã ${r.employee_code}` : ''}</span>}
-                    {r.place && <span><MapPin size={13} /> {r.place}</span>}
-                    {(r.lat != null && r.lng != null) && (
-                      <span><MapPin size={13} /> <a href={`https://www.google.com/maps?q=${r.lat},${r.lng}`} target="_blank" rel="noreferrer">{r.lat}, {r.lng}</a></span>
+                    {item.record.sender_name && <span><UserRound size={13} /> {displayName(item.record)}{item.record.employee_code ? ` · Mã ${item.record.employee_code}` : ''}</span>}
+                    {item.record.place && <span><MapPin size={13} /> {item.record.place}</span>}
+                    {(item.record.lat != null && item.record.lng != null) && (
+                      <span><MapPin size={13} /> <a href={`https://www.google.com/maps?q=${item.record.lat},${item.record.lng}`} target="_blank" rel="noreferrer">{item.record.lat}, {item.record.lng}</a></span>
                     )}
                   </div>
                 </article>
@@ -439,7 +470,7 @@ export default function Attendance() {
 
           <div className="at-pagination">
             <button className="at-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>← Trước</button>
-            <span>Trang {page}/{totalPages} · {total} {view === 'summary' ? 'dòng' : 'tin'}</span>
+            <span>Trang {page}/{totalPages} · {total} {view === 'summary' ? 'dòng' : 'mục'}</span>
             <button className="at-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Sau →</button>
           </div>
         </>

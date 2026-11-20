@@ -369,6 +369,136 @@ def _suggestions(sender_name: str, emps: list) -> list:
     return (exact + fuzzy)[:5]
 
 
+def _vn_day_of(dt):
+    return dt.astimezone(ZoneInfo("Asia/Ho_Chi_Minh")).date()
+
+
+def _fetch_visit_feed(where: str, params: dict):
+    """Trang Chi tiết dạng BOX LƯỢT GHÉ: tín hiệu chấm công của một lượt nằm
+    chung một box (kèm từng tin gốc bên trong để đối chiếu); các loại tin
+    khác (thông báo, đặt lịch, báo cáo...) đứng riêng từng thẻ như cũ."""
+    events = _fetch_events(where, params, 3000, 0)
+    overrides = {
+        (o["source"], o["record_id"]): o["place"]
+        for o in fetchall(
+            "SELECT source, record_id, place FROM attendance_visit_notes", {}
+        )
+    }
+    signals = [
+        e for e in events
+        if e["record_type"] in ("checkin", "checkout", "vitri") and e["status"] != "huy"
+    ]
+    signals.sort(
+        key=lambda e: (
+            str(_vn_day_of(e["created_at"])), e["src"], e["group_name"],
+            e["sender_key"], e["created_at"],
+        )
+    )
+    boxes = []
+    counters = {}
+    consumed = set()
+    current = None
+    for sig in signals:
+        day = _vn_day_of(sig["created_at"])
+        key = (day, sig["src"], sig["group_name"], sig["sender_key"])
+        new_visit = current is None or current["_key"] != key
+        if not new_visit:
+            gap_min = (sig["created_at"] - current["_last_signal"]).total_seconds() / 60.0
+            new_visit = gap_min > VISIT_GAP_MINUTES
+        if new_visit:
+            counters[key] = counters.get(key, 0) + 1
+            current = {
+                "_key": key, "_last_signal": sig["created_at"],
+                "kind": "visit",
+                "first_record_id": sig["id"],
+                "day": day, "src": sig["src"],
+                "group_name": sig["group_name"], "sender_key": sig["sender_key"],
+                "sender_name": sig["sender_name"],
+                "employee_code": sig["employee_code"],
+                "employee_name": sig["employee_name"],
+                "employee_department": sig["employee_department"],
+                "visit_no": counters[key],
+                "first_at": sig["created_at"], "last_at": sig["created_at"],
+                "first_type": sig["record_type"], "last_type": sig["record_type"],
+                "events": 0, "checkins": 0, "checkouts": 0, "vitris": 0,
+                "_places": [], "lat": None, "lng": None,
+                "signals": [],
+            }
+            boxes.append(current)
+        current["_last_signal"] = sig["created_at"]
+        current["last_at"] = sig["created_at"]
+        current["last_type"] = sig["record_type"]
+        current["events"] += 1
+        if sig["record_type"] == "checkin":
+            current["checkins"] += 1
+        elif sig["record_type"] == "checkout":
+            current["checkouts"] += 1
+        elif sig["record_type"] == "vitri":
+            current["vitris"] += 1
+            if current["lat"] is None and sig["lat"] is not None:
+                current["lat"], current["lng"] = sig["lat"], sig["lng"]
+        place = (sig["place"] or "").strip()
+        if place and place not in current["_places"]:
+            current["_places"].append(place)
+        current["signals"].append({
+            "id": sig["id"], "record_type": sig["record_type"],
+            "title": sig["title"], "content": sig["content"],
+            "place": sig["place"], "lat": sig["lat"], "lng": sig["lng"],
+            "status": sig["status"], "created_at": sig["created_at"],
+        })
+        consumed.add((sig["src"], sig["id"]))
+    totals = {}
+    for b in boxes:
+        totals[b["_key"]] = totals.get(b["_key"], 0) + 1
+    feed = []
+    for b in boxes:
+        b["visit_total"] = totals[b["_key"]]
+        b["duration_minutes"] = int(
+            (b["last_at"] - b["first_at"]).total_seconds() // 60
+        )
+        override = overrides.get((b["src"], b["first_record_id"]))
+        b["place_edited"] = override is not None
+        b["places"] = override if override is not None else ("; ".join(b["_places"]) or None)
+        del b["_key"], b["_last_signal"], b["_places"]
+        feed.append(b)
+    for e in events:
+        if (e["src"], e["id"]) not in consumed:
+            feed.append({"kind": "single", "record": e})
+    feed.sort(
+        key=lambda item: item["last_at"] if item["kind"] == "visit" else item["record"]["created_at"],
+        reverse=True,
+    )
+    return feed
+
+
+@router.get("/visit-events")
+def list_visit_events(
+    source: str = "",
+    group_name: str = "",
+    q: str = "",
+    types: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    page: int = 1,
+    page_size: int = 20,
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token"),
+):
+    _auth(x_user_code, x_user_role, x_user_dept, x_user_token)
+    page = max(1, page)
+    page_size = max(1, min(page_size, MAX_PAGE_SIZE))
+    where, params = _build_filters(source, group_name, q, types, date_from, date_to)
+    feed = _fetch_visit_feed(where, params)
+    total = len(feed)
+    start = (page - 1) * page_size
+    return {
+        "data": feed[start:start + page_size],
+        "total": total, "page": page, "page_size": page_size,
+    }
+
+
 @router.get("/identities")
 def list_identities(
     x_user_code: Optional[str] = Header(None, alias="X-User-Code"),

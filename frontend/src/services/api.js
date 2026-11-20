@@ -172,6 +172,10 @@ export function getAttendanceEvents(params = {}) {
   return api.get('/attendance/events', { params, headers: orderAuthHeaders() })
 }
 
+export function getAttendanceVisitEvents(params = {}) {
+  return api.get('/attendance/visit-events', { params, headers: orderAuthHeaders() })
+}
+
 export function getAttendanceSummary(params = {}) {
   return api.get('/attendance/summary', { params, headers: orderAuthHeaders() })
 }
