@@ -686,6 +686,21 @@ Kiểm tra cấu hình mà không thay đổi thật: `logrotate -d /etc/logrota
 
 ### 6.1. Đã hoàn thành (kiểm chứng trên hệ thật)
 
+- ✅ **Đổi model 2026-11-20 (sau sự cố tin 08:47)**: lượt agent thật đầu
+  tiên (tin mượn phòng của Tuyển Dụng, group VP, 08:47 ngày 20/11) qua
+  được bridge + admission nhưng chết ở lần gọi model — 9Router trả
+  HTTP 400 "gpt-5.6-sol is not supported when using Codex with a
+  ChatGPT account" (route `cx/*` bị từ chối entitlement qua Chat
+  Completions; bài học: GET /v1/models + warm-up KHÔNG chứng minh
+  được một chat completion thật). Kiểm chứng trực tiếp bằng API key
+  của profile: `cx/gpt-5.6-sol` → 400, `ag/gemini-3.8-flash` → 200.
+  Đã đổi `model.default` + `providers.goldenfarm.models` trong
+  config.yaml sang `ag/gemini-3.8-flash` (cùng model classifier Zalo
+  đang chạy tốt qua cùng 9Router; bản sao lưu config kèm timestamp),
+  restart gateway 10:00 20/11 — log "✓ whatsapp connected" +
+  "Model context warmed: ag/gemini-3.8-flash". Tin 08:47 đã mất,
+  bot không tự bù — cần người gửi đăng lại. Bằng chứng sống cuối
+  cùng vẫn là một tin thật của thành viên chảy hết pipeline.
 - ✅ Hermes v0.23.2 cài trên server nội bộ, profile `gf-recorder` khóa 5 toolset.
 - ✅ Ghép nối WhatsApp với số chính (2026-11-19 12:44), phiên đã kiểm chứng
   kết nối lại thành công bằng chính credentials đã lưu.
@@ -792,7 +807,7 @@ cấu hình chuẩn để tra cứu chính là tài liệu này + `OPS-WHATSAPP-
 | Phiên WhatsApp | `profiles/gf-recorder/whatsapp/session/` — ghép nối 2026-11-19 12:44, số chính của chủ tài khoản |
 | Các group trong phạm vi | "GROUP GOLDEN FARM - VP (Không có NV Tỉnh)" — `120363421346130787@g.us`; "GROUP GOLDEN FARM" — `120363420637565910@g.us`; "GROUP GOLDEN FARM - Văn phòng" — `120363405283973589@g.us` |
 | Khóa phạm vi chính | `group_policy=allowlist`, `dm_policy=disabled`, `require_mention=false`, `WHATSAPP_MODE=bot` (config.yaml `platforms.whatsapp.extra` + mirror trong profile `.env`) |
-| Model | Provider `goldenfarm`: `cx/gpt-5.6-sol` @ `https://api.goldenfarm.com.vn/v1` (9Router; dashboard `https://api.goldenfarm.com.vn/dashboard`) |
+| Model | Provider `goldenfarm`: `ag/gemini-3.8-flash` @ `https://api.goldenfarm.com.vn/v1` (9Router; dashboard `https://api.goldenfarm.com.vn/dashboard`) — đổi từ `cx/gpt-5.6-sol` ngày 2026-11-20, xem mục 6.1 |
 | API key | Biến `GOLDENFARM_API_KEY`, profile `.env` (600) — key riêng của bot |
 | Skill | `wa-room-recorder` v1.3.0 — `profiles/gf-recorder/skills/goldenfarm/wa-room-recorder/SKILL.md` (enabled; đổi skill xong phải restart gateway để nạp bản mới) |
 | Outbox | `profiles/gf-recorder/workspace/wa-outbox/` (+ `sent/`, `failed/`) |
