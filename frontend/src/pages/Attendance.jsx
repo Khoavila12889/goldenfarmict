@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Search, RefreshCw, Download, MapPin, UserRound, Users, Speaker, LogIn, LogOut, CalendarDays, ClipboardList, Clock3 } from 'lucide-react'
+import { Search, RefreshCw, Download, MapPin, UserRound, Speaker, LogIn, LogOut, CalendarDays, ClipboardList, Clock3 } from 'lucide-react'
 import { apiErrorMessage, getAttendanceGroups, getAttendanceEvents, getAttendanceSummary, exportAttendanceXLSX } from '../services/api'
 import './Attendance.css'
 
@@ -46,11 +46,15 @@ const fmtDay = day => {
   const [y, m, d] = String(day).split('-')
   return d && m && y ? `${d}/${m}/${y}` : day
 }
+const fmtDayInput = value => {
+  if (!value) return '...'
+  const [y, m, d] = String(value).split('-')
+  return d && m && y ? `${d}/${m}/${y}` : value
+}
 
 export default function Attendance() {
   const [view, setView] = useState('summary')
   const [groups, setGroups] = useState([])
-  const [source, setSource] = useState('')
   const [groupName, setGroupName] = useState('')
   const [query, setQuery] = useState('')
   const [serverQuery, setServerQuery] = useState('')
@@ -71,18 +75,12 @@ export default function Attendance() {
       .catch(() => setGroups([]))
   }, [])
 
-  const groupOptions = useMemo(
-    () => groups.filter(g => !source || g.src === source),
-    [groups, source],
-  )
-
   const filters = useMemo(() => ({
-    source: source || undefined,
     group_name: groupName || undefined,
     q: serverQuery || undefined,
     date_from: dateFrom || undefined,
     date_to: dateTo || undefined,
-  }), [source, groupName, serverQuery, dateFrom, dateTo])
+  }), [groupName, serverQuery, dateFrom, dateTo])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -133,7 +131,7 @@ export default function Attendance() {
       <div className="at-header">
         <div>
           <h1>Chấm công Zalo & WhatsApp</h1>
-          <p>Tổng hợp check-in, check-out và vị trí nhân viên gửi trong các group Zalo & WhatsApp — theo nhân viên × ngày, đúng group dữ liệu.</p>
+          <p>Tổng hợp check-in, check-out và vị trí nhân viên gửi trong các group — theo nhân viên × ngày.</p>
         </div>
         <div className="at-header-actions">
           <button className="at-btn" onClick={load} disabled={loading}>
@@ -150,16 +148,11 @@ export default function Attendance() {
           <button className={view === 'summary' ? 'at-toggle-on' : ''} onClick={() => { setView('summary'); setPage(1) }}>Tổng hợp chấm công</button>
           <button className={view === 'events' ? 'at-toggle-on' : ''} onClick={() => { setView('events'); setPage(1) }}>Chi tiết sự kiện</button>
         </div>
-        <select value={source} onChange={e => { setSource(e.target.value); setGroupName(''); setPage(1) }}>
-          <option value="">Tất cả nguồn</option>
-          <option value="zalo">Zalo</option>
-          <option value="whatsapp">WhatsApp</option>
-        </select>
         <select value={groupName} onChange={resetPage(setGroupName)}>
           <option value="">Tất cả group</option>
-          {groupOptions.map(g => (
+          {groups.map(g => (
             <option key={`${g.src}-${g.group_name}`} value={g.group_name}>
-              {g.src === 'zalo' ? 'Zalo' : 'WhatsApp'} · {g.group_name} ({g.records})
+              {g.group_name} ({g.records})
             </option>
           ))}
         </select>
@@ -171,18 +164,10 @@ export default function Attendance() {
         </div>
       </div>
 
-      <div className="at-kpis">
-        <div className="at-kpi">
-          <span className="at-kpi-value">{total}</span>
-          <span className="at-kpi-label">{view === 'summary' ? 'nhân viên-ngày' : 'sự kiện'}</span>
-        </div>
-        <div className="at-kpi">
-          <span className="at-kpi-value">{groupOptions.length}</span>
-          <span className="at-kpi-label">group trong bộ lọc</span>
-        </div>
-        <div className="at-kpi">
-          <span className="at-kpi-value">{dateFrom || '...'} → {dateTo || '...'}</span>
-          <span className="at-kpi-label">khoảng ngày đang xem</span>
+      <div className="at-context">
+        <div className="at-context-group">{groupName || 'Tất cả group'}</div>
+        <div className="at-context-sub">
+          {fmtDayInput(dateFrom)} → {fmtDayInput(dateTo)} · {total} {view === 'summary' ? 'nhân viên-ngày' : 'sự kiện'}
         </div>
       </div>
 
@@ -193,33 +178,53 @@ export default function Attendance() {
       ) : rows.length === 0 ? (
         <div className="at-empty">Chưa có dữ liệu khớp bộ lọc.</div>
       ) : view === 'summary' ? (
-        <div className="at-table-wrap">
-          <table className="at-table">
-            <thead>
-              <tr>
-                <th>Ngày</th><th>Nhân viên</th><th>Group</th><th>Nguồn</th>
-                <th>Đầu ngày</th><th>Cuối ngày</th><th>Check-in</th><th>Check-out</th>
-                <th>Sự kiện</th><th>Địa điểm</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(r => (
-                <tr key={`${r.day}-${r.src}-${r.group_name}-${r.sender_key}`}>
-                  <td className="at-nowrap">{fmtDay(r.day)}</td>
-                  <td><UserRound size={13} /> {r.sender_name}</td>
-                  <td>{r.group_name}</td>
-                  <td>{r.src === 'zalo' ? 'Zalo' : 'WhatsApp'}</td>
-                  <td className="at-nowrap">{fmtTime(r.first_at)} <TypeChip type={r.first_type} /></td>
-                  <td className="at-nowrap">{fmtTime(r.last_at)} <TypeChip type={r.last_type} /></td>
-                  <td className="at-nowrap">{r.checkin_at ? fmtTime(r.checkin_at) : '—'}</td>
-                  <td className="at-nowrap">{r.checkout_at ? fmtTime(r.checkout_at) : '—'}</td>
-                  <td className="at-nowrap">{r.events} <span className="at-sub">({r.checkins} CI · {r.checkouts} CO · {r.vitris} VT)</span></td>
-                  <td>{r.places || '—'}</td>
+        <>
+          <div className="at-table-wrap">
+            <table className="at-table">
+              <thead>
+                <tr>
+                  <th>Ngày</th><th>Nhân viên</th>
+                  <th>Đầu ngày</th><th>Cuối ngày</th><th>Check-in</th><th>Check-out</th>
+                  <th>Sự kiện</th><th>Địa điểm</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {rows.map(r => (
+                  <tr key={`${r.day}-${r.src}-${r.group_name}-${r.sender_key}`}>
+                    <td className="at-nowrap">{fmtDay(r.day)}</td>
+                    <td><UserRound size={13} /> {r.sender_name}</td>
+                    <td className="at-nowrap">{fmtTime(r.first_at)} <TypeChip type={r.first_type} /></td>
+                    <td className="at-nowrap">{fmtTime(r.last_at)} <TypeChip type={r.last_type} /></td>
+                    <td className="at-nowrap">{r.checkin_at ? fmtTime(r.checkin_at) : '—'}</td>
+                    <td className="at-nowrap">{r.checkout_at ? fmtTime(r.checkout_at) : '—'}</td>
+                    <td className="at-nowrap">{r.events} <span className="at-sub">({r.checkins} CI · {r.checkouts} CO · {r.vitris} VT)</span></td>
+                    <td>{r.places || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="at-cards">
+            {rows.map(r => (
+              <article key={`${r.day}-${r.src}-${r.group_name}-${r.sender_key}`} className="at-sum-card">
+                <div className="at-sum-head">
+                  <span className="at-sum-name"><UserRound size={16} /> {r.sender_name}</span>
+                  <span className="at-sum-date">{fmtDay(r.day)}</span>
+                </div>
+                <div className="at-sum-times">
+                  <div><label>Đầu ngày</label><strong>{fmtTime(r.first_at)}</strong><TypeChip type={r.first_type} /></div>
+                  <div><label>Cuối ngày</label><strong>{fmtTime(r.last_at)}</strong><TypeChip type={r.last_type} /></div>
+                  <div><label>Check-in</label><strong>{r.checkin_at ? fmtTime(r.checkin_at) : '—'}</strong></div>
+                  <div><label>Check-out</label><strong>{r.checkout_at ? fmtTime(r.checkout_at) : '—'}</strong></div>
+                </div>
+                <div className="at-sum-foot">
+                  <span>{r.events} sự kiện ({r.checkins} CI · {r.checkouts} CO · {r.vitris} VT)</span>
+                  {r.places && <span><MapPin size={13} /> {r.places}</span>}
+                </div>
+              </article>
+            ))}
+          </div>
+        </>
       ) : (
         <div className="at-list">
           {rows.map(r => (
@@ -233,7 +238,6 @@ export default function Attendance() {
               {r.title && r.content && <p className="at-card-content">{r.content}</p>}
               <div className="at-card-meta">
                 {r.sender_name && <span><UserRound size={13} /> {r.sender_name}</span>}
-                {r.group_name && <span><Users size={13} /> {r.src === 'zalo' ? 'Zalo' : 'WhatsApp'} · {r.group_name}</span>}
                 {r.place && <span><MapPin size={13} /> {r.place}</span>}
                 {(r.lat != null && r.lng != null) && (
                   <span><MapPin size={13} /> <a href={`https://www.google.com/maps?q=${r.lat},${r.lng}`} target="_blank" rel="noreferrer">{r.lat}, {r.lng}</a></span>

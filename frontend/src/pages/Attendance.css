@@ -60,17 +60,16 @@
 .at-raw pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 13px; font-family: inherit; }
 .at-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
-/* ── Attendance additions: header actions, view toggle, KPI, table, chips ── */
+/* ── Attendance additions ── */
 .at-header-actions { display: flex; gap: 8px; align-items: center; }
 .at-btn-primary { background: #1f4e79; color: #fff; border-color: #1f4e79; }
 .at-btn-primary:hover { background: #2e75b6; }
 .at-view-toggle { display: inline-flex; border: 1px solid #d0d7de; border-radius: 8px; overflow: hidden; }
 .at-view-toggle button { padding: 7px 12px; border: 0; background: #fff; cursor: pointer; font-size: 13px; font-weight: 600; color: #44546a; }
 .at-view-toggle button.at-toggle-on { background: #1f4e79; color: #fff; }
-.at-kpis { display: flex; gap: 12px; flex-wrap: wrap; margin: 4px 0 14px; }
-.at-kpi { background: #fff; border: 1px solid #e3e8ee; border-radius: 12px; padding: 10px 16px; display: flex; flex-direction: column; min-width: 150px; }
-.at-kpi-value { font-size: 18px; font-weight: 700; color: #1f4e79; }
-.at-kpi-label { font-size: 12px; color: #66788c; }
+.at-context { margin: 2px 0 14px; }
+.at-context-group { font-size: 22px; font-weight: 800; color: #1f4e79; line-height: 1.25; }
+.at-context-sub { font-size: 13px; color: #66788c; margin-top: 2px; }
 .at-table-wrap { background: #fff; border: 1px solid #e3e8ee; border-radius: 12px; overflow-x: auto; }
 .at-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .at-table th { background: #1f4e79; color: #fff; text-align: left; padding: 10px 12px; font-weight: 600; white-space: nowrap; }
@@ -79,3 +78,37 @@
 .at-nowrap { white-space: nowrap; }
 .at-sub { color: #66788c; font-size: 12px; }
 .at-chip { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; margin-left: 4px; }
+.at-cards { display: none; }
+.at-sum-card { background: #fff; border: 1px solid #e3e8ee; border-radius: 12px; padding: 14px; }
+.at-sum-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+.at-sum-name { font-size: 16px; font-weight: 700; color: #1f2937; display: inline-flex; align-items: center; gap: 6px; }
+.at-sum-date { font-size: 13px; color: #66788c; white-space: nowrap; }
+.at-sum-times { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+.at-sum-times label { display: block; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #8496ab; margin-bottom: 2px; }
+.at-sum-times strong { font-size: 16px; color: #1f4e79; }
+.at-sum-foot { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #eef1f4; font-size: 13px; color: #44546a; }
+.at-sum-foot span { display: inline-flex; align-items: center; gap: 5px; }
+
+/* ── Mobile (chuẩn app: breakpoint 768px / 480px như dashboard, Documents) ── */
+@media (max-width: 768px) {
+  .at-page { padding: 12px; }
+  .at-header { flex-direction: column; align-items: stretch; gap: 10px; }
+  .at-header h1 { font-size: 20px; }
+  .at-header-actions { width: 100%; }
+  .at-header-actions .at-btn { flex: 1; justify-content: center; }
+  .at-filters { flex-direction: column; align-items: stretch; gap: 8px; }
+  .at-filters select, .at-filters .at-search { width: 100%; }
+  .at-view-toggle { width: 100%; }
+  .at-view-toggle button { flex: 1; padding: 9px 6px; }
+  .at-date { display: flex; align-items: center; gap: 8px; width: 100%; }
+  .at-date input { flex: 1; min-width: 0; }
+  .at-context-group { font-size: 19px; }
+  .at-table-wrap { display: none; }
+  .at-cards { display: flex; flex-direction: column; gap: 10px; }
+  .at-pagination { flex-wrap: wrap; justify-content: center; text-align: center; }
+}
+@media (max-width: 480px) {
+  .at-sum-times { gap: 8px 10px; }
+  .at-sum-name { font-size: 15px; }
+  .at-context-group { font-size: 17px; }
+}

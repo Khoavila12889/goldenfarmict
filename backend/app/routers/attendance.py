@@ -319,12 +319,10 @@ def export_xlsx(
             cell.border = thin_border
             cell.alignment = Alignment(horizontal="center", vertical="center")
 
-    src_label = {"zalo": "Zalo", "whatsapp": "WhatsApp"}.get(source, "Zalo + WhatsApp")
-    scope = f"Nguồn: {src_label}"
-    if group_name:
-        scope += f" | Group: {group_name}"
+    scope_parts = [f"Group: {group_name}" if group_name else "Tất cả group"]
     if date_from or date_to:
-        scope += f" | Từ {date_from or '...'} đến {date_to or '...'}"
+        scope_parts.append(f"Từ {date_from or '...'} đến {date_to or '...'}")
+    scope = " | ".join(scope_parts)
     exported_at = datetime.now(VN_TZ).strftime("%d/%m/%Y %H:%M")
 
     wb = Workbook()
@@ -333,14 +331,14 @@ def export_xlsx(
     ws = wb.active
     ws.title = "ChamCong"
     ws.sheet_properties.tabColor = "4472C4"
-    ws.merge_cells("A1:L1")
+    ws.merge_cells("A1:J1")
     ws["A1"] = "THỐNG KÊ CHẤM CÔNG — ZALO & WHATSAPP"
     ws["A1"].font = title_font
-    ws.merge_cells("A2:L2")
+    ws.merge_cells("A2:J2")
     ws["A2"] = f"{scope} | Ngày xuất: {exported_at}"
     ws["A2"].font = sub_font
     headers = [
-        "Ngày", "Nguồn", "Group", "Nhân viên", "Sự kiện đầu", "Loại đầu",
+        "Ngày", "Nhân viên", "Sự kiện đầu", "Loại đầu",
         "Sự kiện cuối", "Loại cuối", "Check-in đầu tiên", "Check-out cuối",
         "Số sự kiện (CI/CO/Vị trí)", "Địa điểm",
     ]
@@ -356,8 +354,6 @@ def export_xlsx(
         last_type = type_label.get(row.get("last_type"), "")
         values = [
             row["day"].strftime("%d/%m/%Y") if row.get("day") else "",
-            "Zalo" if row["src"] == "zalo" else "WhatsApp",
-            row["group_name"],
             row["sender_name"],
             first_vn.strftime("%H:%M") if first_vn else "",
             first_type,
@@ -372,20 +368,20 @@ def export_xlsx(
             cell = ws.cell(row=r, column=i, value=v)
             cell.border = thin_border
         r += 1
-    for col, w in zip("ABCDEFGHIJKL", [12, 11, 30, 24, 11, 11, 11, 11, 13, 12, 17, 34]):
+    for col, w in zip("ABCDEFGHIJ", [12, 24, 11, 11, 11, 11, 13, 12, 17, 34]):
         ws.column_dimensions[col].width = w
 
     # ── Sheet 2: Chi tiết sự kiện ──
     ws2 = wb.create_sheet("SuKien")
     ws2.sheet_properties.tabColor = "70AD47"
-    ws2.merge_cells("A1:I1")
+    ws2.merge_cells("A1:G1")
     ws2["A1"] = "CHI TIẾT SỰ KIỆN — ZALO & WHATSAPP"
     ws2["A1"].font = title_font
-    ws2.merge_cells("A2:I2")
+    ws2.merge_cells("A2:G2")
     ws2["A2"] = f"{scope} | Ngày xuất: {exported_at}"
     ws2["A2"].font = sub_font
     headers2 = [
-        "Thời gian", "Nguồn", "Group", "Nhân viên", "Loại",
+        "Thời gian", "Nhân viên", "Loại",
         "Tiêu đề / Nội dung", "Địa điểm", "Toạ độ", "Trạng thái",
     ]
     for i, h in enumerate(headers2, start=1):
@@ -405,8 +401,6 @@ def export_xlsx(
         content = row.get("title") or row.get("content") or ""
         values = [
             at.strftime("%d/%m/%Y %H:%M") if at else "",
-            "Zalo" if row["src"] == "zalo" else "WhatsApp",
-            row["group_name"],
             row["sender_name"],
             all_type_label.get(row["record_type"], row["record_type"]),
             content,
@@ -418,7 +412,7 @@ def export_xlsx(
             cell = ws2.cell(row=r, column=i, value=v)
             cell.border = thin_border
         r += 1
-    for col, w in zip("ABCDEFGHI", [17, 11, 30, 24, 12, 52, 30, 24, 11]):
+    for col, w in zip("ABCDEFG", [17, 24, 12, 52, 30, 24, 11]):
         ws2.column_dimensions[col].width = w
 
     buf = io.BytesIO()

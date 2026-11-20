@@ -30,11 +30,13 @@ thấy mặc định; cấp thêm qua Phân quyền — module `attendance`).
 `GET /api/attendance/export.xlsx` — theo đúng bộ lọc đang chọn, tối đa
 10.000 dòng mỗi phần. Hai sheet:
 
-- `ChamCong`: Ngày, Nguồn, Group, Nhân viên, Sự kiện đầu + Loại đầu,
-  Sự kiện cuối + Loại cuối, Check-in đầu tiên, Check-out cuối,
-  Số sự kiện (CI/CO/Vị trí), Địa điểm. Giờ theo Asia/Ho_Chi_Minh.
-- `SuKien`: Thời gian, Nguồn, Group, Nhân viên, Loại, Tiêu đề/Nội dung,
-  Địa điểm, Toạ độ, Trạng thái.
+- `ChamCong`: Ngày, Nhân viên, Sự kiện đầu + Loại đầu, Sự kiện cuối +
+  Loại cuối, Check-in đầu tiên, Check-out cuối, Số sự kiện (CI/CO/Vị
+  trí), Địa điểm. Giờ theo Asia/Ho_Chi_Minh. Không có cột Nguồn/Group —
+  group đang lọc nằm ở dòng phạm vi đầu sheet (chủ hệ thống yêu cầu
+  2026-11-20: nguồn/group hiển thị ở tiêu đề trang, không lặp theo dòng).
+- `SuKien`: Thời gian, Nhân viên, Loại, Tiêu đề/Nội dung, Địa điểm,
+  Toạ độ, Trạng thái.
 
 Style openpyxl như export module Công việc (todos). Tên file:
 `cham-cong-<date_from>-<date_to>.xlsx`.
