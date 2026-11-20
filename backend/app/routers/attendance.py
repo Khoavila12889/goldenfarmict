@@ -46,13 +46,15 @@ EXPORT_LIMIT = 10000
 _UNION = """
     SELECT 'zalo' AS src, id, record_type, sender_name, sender_id AS sender_key,
            group_name, title, content, place,
-           lat::float8 AS lat, lng::float8 AS lng, status, created_at
+           lat::float8 AS lat, lng::float8 AS lng, status,
+           COALESCE(msg_at, created_at) AS created_at
     FROM zalo_records
     UNION ALL
     SELECT 'whatsapp' AS src, id, record_type, sender_name,
            COALESCE(NULLIF(sender_phone, ''), sender_name) AS sender_key,
            group_name, title, content, place,
-           lat::float8 AS lat, lng::float8 AS lng, status, created_at
+           lat::float8 AS lat, lng::float8 AS lng, status,
+           COALESCE(msg_at, created_at) AS created_at
     FROM wa_records
 """
 

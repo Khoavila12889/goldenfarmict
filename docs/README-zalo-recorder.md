@@ -125,7 +125,7 @@ Lỗi ghi snapshot được nuốt trong try/catch — không bao giờ ảnh h�
   với `record_type` thuộc `thongbao|checkin|checkout|vitri`,
   `sender_name`/`sender_id` từ sự kiện tin, `group_name`/`group_id`,
   `title` (dòng đầu/tóm tắt trung thực từ LLM; vitri = "Vị trí của <tên>"),
-  `content` + `raw_message` nguyên văn, `place` (địa điểm trích từ tin,
+  `content` + `raw_message` nguyên văn, `msg_at` (giờ gửi tin gốc, từ `data.ts` của sự kiện zca-js — thêm 2026-11-20 để chấm công tính đúng giờ tin thật thay vì giờ relay nạp), `place` (địa điểm trích từ tin,
   có thể trống), `lat`/`lng` (chỉ loại vitri), `msg_id`, `source=zalo-bot`.
   Sự kiện zca-js **không có số điện thoại người gửi** → `sender_phone` bỏ
   trống, không bao giờ bịa.

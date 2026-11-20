@@ -26,6 +26,7 @@ Hợp đồng ingest: docs/zalo_ingest_contract.md.
 """
 import hmac
 import os
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException, Query
@@ -43,7 +44,7 @@ MAX_PAGE_SIZE = 100
 _COLS = """
     id, record_type, sender_name, sender_phone, sender_id, group_name,
     group_id, title, content, raw_message, place, lat, lng, msg_id, source,
-    status, created_at
+    status, created_at, msg_at
 """
 
 
@@ -97,6 +98,20 @@ def _auth_edit(
     x_user_token: Optional[str] = Header(None, alias="X-User-Token"),
 ) -> dict:
     return _require_zalo_user(x_user_code, x_user_role, x_user_dept, x_user_token, need_edit=True)
+
+
+def _parse_msg_at(value):
+    """msg_at = thời điểm gửi tin gốc (ISO 8601 do bot đính kèm). Sai/thiếu
+    -> None; tầng chấm công tự lùi về created_at khi msg_at trống."""
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def _parse_coord(value, minimum, maximum):
@@ -156,6 +171,7 @@ def ingest_record(body: dict, x_bot_secret: Optional[str] = Header(None, alias="
         "lng": _parse_coord(body.get("lng"), -180, 180),
         "msg_id": msg_id,
         "source": (body.get("source") or "zalo-bot").strip() or "zalo-bot",
+        "msg_at": _parse_msg_at(body.get("msg_at")),
     }
     try:
         new_id = insert(
@@ -163,11 +179,11 @@ def ingest_record(body: dict, x_bot_secret: Optional[str] = Header(None, alias="
             INSERT INTO zalo_records
                 (record_type, sender_name, sender_phone, sender_id, group_name,
                  group_id, title, content, raw_message, place, lat, lng,
-                 msg_id, source)
+                 msg_id, source, msg_at)
             VALUES
                 (:rtype, :sender_name, :sender_phone, :sender_id, :group_name,
                  :group_id, :title, :content, :raw_message, :place, :lat,
-                 :lng, :msg_id, :source)
+                 :lng, :msg_id, :source, :msg_at)
             RETURNING id
             """,
             params,

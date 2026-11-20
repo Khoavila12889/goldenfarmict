@@ -41,6 +41,7 @@ POST /api/zalo-records/ingest
 | `place` | string | | Địa điểm trích từ tin (checkin/checkout); tin vị trí có địa chỉ thì điền, không thì trống |
 | `lat` | number | | Vĩ độ — chỉ loại `vitri`, bot lấy từ sự kiện tin vị trí |
 | `lng` | number | | Kinh độ — chỉ loại `vitri` |
+| `msg_at` | string (ISO 8601) | | Thời điểm gửi tin gốc phía Zalo (từ `data.ts` của sự kiện zca-js). Module chấm công tính giờ IN/OUT theo trường này; thiếu/sai thì ingest lưu NULL và tầng đọc lùi về `created_at` |
 | `group_name` | string | | Tên group Zalo nguồn (bot tra từ snapshot/API) |
 | `group_id` | string | | ID group Zalo nguồn (`threadId`) |
 | `raw_message` | string | | Nguyên văn tin nhắn gốc trong group (phục vụ đối chiếu) |

@@ -8,6 +8,11 @@ thấy mặc định; cấp thêm qua Phân quyền — module `attendance`).
 
 ## Cách tổ chức dữ liệu
 
+Giờ giấc tính theo **giờ gửi tin gốc** `msg_at` khi có (Zalo: bot đính kèm
+từ `data.ts`; bản ghi cũ được backfill từ timestamp trong tên file outbox),
+thiếu thì lùi về `created_at` (giờ relay nạp tin, theo đợt ~1 phút — kém
+chính xác, chỉ còn ở bản ghi WhatsApp cũ/bản ghi lỗi).
+
 - **Tổng hợp chấm công** (`GET /api/attendance/summary`): mỗi dòng = một
   nhân viên × một ngày × một group × một nguồn. Ngày tính theo
   Asia/Ho_Chi_Minh từ `created_at`. Chỉ tính các loại sự kiện chấm công:
