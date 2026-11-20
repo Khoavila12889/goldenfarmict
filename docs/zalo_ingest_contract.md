@@ -32,12 +32,15 @@ POST /api/zalo-records/ingest
 
 | Trường | Kiểu | Bắt buộc | Ghi chú |
 |---|---|---|---|
-| `record_type` | string | ✔ | v1 chỉ chấp nhận `thongbao` |
+| `record_type` | string | ✔ | Chấp nhận `thongbao`, `checkin`, `checkout`, `vitri` (v2 từ 2026-11-20; v1 chỉ `thongbao`) |
 | `title` | string | ✔ | Tiêu đề thông báo — dòng tiêu đề/dòng đầu của tin hoặc tóm tắt ngắn trung thực. Thiếu/rỗng → `400` |
 | `content` | string | ✔ | Toàn văn tin nhắn nguyên văn. Thiếu/rỗng → `400` |
 | `sender_name` | string | | Tên hiển thị Zalo của người gửi (`dName` của sự kiện tin) |
 | `sender_id` | string | | Zalo user id của người gửi (`uidFrom`) — định danh ổn định phía Zalo |
 | `sender_phone` | string | | Sự kiện tin của zca-js **không** cung cấp số điện thoại → bot bỏ trống trường này, không bao giờ bịa |
+| `place` | string | | Địa điểm trích từ tin (checkin/checkout); tin vị trí có địa chỉ thì điền, không thì trống |
+| `lat` | number | | Vĩ độ — chỉ loại `vitri`, bot lấy từ sự kiện tin vị trí |
+| `lng` | number | | Kinh độ — chỉ loại `vitri` |
 | `group_name` | string | | Tên group Zalo nguồn (bot tra từ snapshot/API) |
 | `group_id` | string | | ID group Zalo nguồn (`threadId`) |
 | `raw_message` | string | | Nguyên văn tin nhắn gốc trong group (phục vụ đối chiếu) |
@@ -65,7 +68,7 @@ Ví dụ:
 
 - `200`: `{"success": true, "id": <id bản ghi>}`; nếu trùng `msg_id`:
   `{"success": true, "id": <id bản ghi đã có>, "duplicate": true}`.
-- `400`: dữ liệu không hợp lệ (`record_type` khác `thongbao`, thiếu/rỗng
+- `400`: dữ liệu không hợp lệ (`record_type` ngoài danh sách trên, thiếu/rỗng
   `title` hoặc `content`). Body: `{"detail": "..."}`.
 - `401`: thiếu hoặc sai `X-Bot-Secret`.
 - `503`: server chưa cấu hình `ZALO_BOT_SECRET`.
@@ -86,7 +89,7 @@ lời/phản ứng bất kỳ tin Zalo nào.
    gửi, kết luận, tiêu đề) vào `zalo-capture.log` cạnh bot — không ghi nội
    dung tin.
 2. Thông báo đạt chuẩn → ghi MỘT file JSON (đúng các trường ở bảng trên,
-   tên `zalo-<yyyymmddHHMMSS>-thongbao-<4 số>.json`) vào
+   tên `zalo-<yyyymmddHHMMSS>-<loại>-<4 số>.json`) vào
    `/home/zalo-personal-bot/zalo-outbox/`. Bot chống trùng bằng file
    `zalo-capture-seen.json` (danh sách msg_id đã xử lý, tối đa 5.000 mục).
 3. Dịch vụ `gf-zalo-relay` (systemd timer, mỗi 1 phút, script

@@ -15,9 +15,12 @@ Song sinh của module "Thông báo WhatsApp" (wa_records.py) — cùng khuôn:
   admin luôn được phép). Giai đoạn phát triển chỉ cấp cho admin — trưởng/
   phó phòng và user thường bị 403 cho tới khi admin cấp quyền ở Phân quyền.
 
-Khác phía WhatsApp: v1 chỉ có MỘT loại bản ghi 'thongbao' (thông báo chính
-thức do bot phân loại bằng LLM phía Zalo) và KHÔNG có định tuyến đăng thẳng
-Dashboard — mọi thông báo đều vào module này chờ admin xem.
+Khác phía WhatsApp: KHÔNG có định tuyến đăng thẳng Dashboard — mọi bản
+ghi đều vào module này chờ admin xem. v1 (2026-11-19) chỉ có MỘT loại bản
+ghi 'thongbao'. v2 (2026-11-20, theo yêu cầu chủ hệ thống khi thêm các
+group CHECK IN - ST): thêm 'checkin'/'checkout' (tin chữ do LLM phía Zalo
+phân loại) và 'vitri' (tin chia sẻ vị trí — toạ độ lấy thẳng từ tin Zalo,
+không qua LLM), kèm cột place/lat/lng.
 
 Hợp đồng ingest: docs/zalo_ingest_contract.md.
 """
@@ -33,13 +36,14 @@ from .auth import _get_effective_permissions
 
 router = APIRouter(prefix="/api/zalo-records", tags=["zalo-records"])
 
-RECORD_TYPES = ("thongbao",)
+RECORD_TYPES = ("thongbao", "checkin", "checkout", "vitri")
 STATUSES = ("moi", "daxuly", "huy")
 MAX_PAGE_SIZE = 100
 
 _COLS = """
     id, record_type, sender_name, sender_phone, sender_id, group_name,
-    group_id, title, content, raw_message, msg_id, source, status, created_at
+    group_id, title, content, raw_message, place, lat, lng, msg_id, source,
+    status, created_at
 """
 
 
@@ -95,6 +99,14 @@ def _auth_edit(
     return _require_zalo_user(x_user_code, x_user_role, x_user_dept, x_user_token, need_edit=True)
 
 
+def _parse_coord(value, minimum, maximum):
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return None
+    return num if minimum <= num <= maximum else None
+
+
 # ---------------------------------------------------------------------------
 # Ingest — bot Zalo ghi bản ghi (idempotent theo msg_id)
 # ---------------------------------------------------------------------------
@@ -111,10 +123,12 @@ def ingest_record(body: dict, x_bot_secret: Optional[str] = Header(None, alias="
 
     title = (body.get("title") or "").strip()
     if not title:
-        raise HTTPException(400, "Thông báo (thongbao) thiếu title")
+        raise HTTPException(400, "Bản ghi thiếu title")
     content = (body.get("content") or "").strip()
     if not content:
-        raise HTTPException(400, "Thông báo (thongbao) thiếu content")
+        content = (body.get("raw_message") or "").strip()
+    if not content:
+        raise HTTPException(400, "Bản ghi thiếu content")
 
     msg_id = (body.get("msg_id") or "").strip() or None
 
@@ -137,6 +151,9 @@ def ingest_record(body: dict, x_bot_secret: Optional[str] = Header(None, alias="
         "title": title,
         "content": content,
         "raw_message": body.get("raw_message") or "",
+        "place": (body.get("place") or "").strip(),
+        "lat": _parse_coord(body.get("lat"), -90, 90),
+        "lng": _parse_coord(body.get("lng"), -180, 180),
         "msg_id": msg_id,
         "source": (body.get("source") or "zalo-bot").strip() or "zalo-bot",
     }
@@ -145,10 +162,12 @@ def ingest_record(body: dict, x_bot_secret: Optional[str] = Header(None, alias="
             """
             INSERT INTO zalo_records
                 (record_type, sender_name, sender_phone, sender_id, group_name,
-                 group_id, title, content, raw_message, msg_id, source)
+                 group_id, title, content, raw_message, place, lat, lng,
+                 msg_id, source)
             VALUES
                 (:rtype, :sender_name, :sender_phone, :sender_id, :group_name,
-                 :group_id, :title, :content, :raw_message, :msg_id, :source)
+                 :group_id, :title, :content, :raw_message, :place, :lat,
+                 :lng, :msg_id, :source)
             RETURNING id
             """,
             params,

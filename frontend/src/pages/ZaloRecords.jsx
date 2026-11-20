@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Search, RefreshCw, X, Speaker, UserRound, Users, Clock3, Hash } from 'lucide-react'
+import { Search, RefreshCw, X, Speaker, UserRound, Users, Clock3, Hash, MapPin, LogIn, LogOut } from 'lucide-react'
 import { apiErrorMessage, getZaloRecords, getZaloRecord, updateZaloRecordStatus } from '../services/api'
 import './ZaloRecords.css'
 
@@ -13,8 +13,17 @@ const fmtDateTime = value => value
   ? new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
   : '—'
 
-function TypeBadge() {
-  return <span className="zl-badge zl-badge-thongbao"><Speaker size={13} /> Thông báo</span>
+const TYPE_META = {
+  thongbao: { label: 'Thông báo', cls: 'zl-badge-thongbao', Icon: Speaker },
+  checkin: { label: 'Check-in', cls: 'zl-badge-checkin', Icon: LogIn },
+  checkout: { label: 'Check-out', cls: 'zl-badge-checkout', Icon: LogOut },
+  vitri: { label: 'Vị trí', cls: 'zl-badge-vitri', Icon: MapPin },
+}
+
+function TypeBadge({ type }) {
+  const meta = TYPE_META[type] || TYPE_META.thongbao
+  const Icon = meta.Icon
+  return <span className={`zl-badge ${meta.cls}`}><Icon size={13} /> {meta.label}</span>
 }
 
 function StatusBadge({ status }) {
@@ -98,7 +107,7 @@ export default function ZaloRecords() {
       <div className="zl-header">
         <div>
           <h1>Thông báo Zalo</h1>
-          <p>Thông báo chính thức bot Zalo trích từ các group trong danh sách bắt tin, chờ admin xem và xử lý.</p>
+          <p>Thông báo, check-in/check-out và vị trí bot Zalo trích từ các group trong danh sách bắt tin, chờ admin xem và xử lý.</p>
         </div>
         <button className="zl-btn" onClick={load} disabled={loading}>
           <RefreshCw size={15} className={loading ? 'zl-spin' : ''} /> Làm mới
@@ -131,7 +140,7 @@ export default function ZaloRecords() {
           {records.map(r => (
             <article key={r.id} className="zl-card" onClick={() => openDetail(r.id)}>
               <div className="zl-card-top">
-                <TypeBadge />
+                <TypeBadge type={r.record_type} />
                 <StatusBadge status={r.status} />
                 <span className="zl-card-time"><Clock3 size={13} /> {fmtDateTime(r.created_at)}</span>
               </div>
@@ -140,6 +149,7 @@ export default function ZaloRecords() {
               <div className="zl-card-meta">
                 {r.sender_name && <span><UserRound size={13} /> {r.sender_name}{r.sender_phone ? ` · ${r.sender_phone}` : ''}</span>}
                 {r.group_name && <span><Users size={13} /> {r.group_name}</span>}
+                {r.place && <span><MapPin size={13} /> {r.place}</span>}
               </div>
             </article>
           ))}
@@ -161,7 +171,7 @@ export default function ZaloRecords() {
             ) : (
               <>
                 <div className="zl-card-top">
-                  <TypeBadge />
+                  <TypeBadge type={selected.record_type} />
                   <StatusBadge status={selected.status} />
                   <span className="zl-card-time">{fmtDateTime(selected.created_at)}</span>
                 </div>
@@ -171,6 +181,10 @@ export default function ZaloRecords() {
                   <dt>Người gửi</dt>
                   <dd>{selected.sender_name || '—'}{selected.sender_phone ? ` (${selected.sender_phone})` : ''}</dd>
                   {selected.sender_id && (<><dt>Zalo ID</dt><dd>{selected.sender_id}</dd></>)}
+                  {selected.place && (<><dt>Địa điểm</dt><dd>{selected.place}</dd></>)}
+                  {(selected.lat != null && selected.lng != null) && (
+                    <><dt>Toạ độ</dt><dd>{selected.lat}, {selected.lng} · <a href={`https://www.google.com/maps?q=${selected.lat},${selected.lng}`} target="_blank" rel="noreferrer">Mở Google Maps</a></dd></>
+                  )}
                   <dt>Group</dt>
                   <dd>{selected.group_name || '—'}</dd>
                   {selected.group_id && (<><dt>Group ID</dt><dd>{selected.group_id}</dd></>)}

@@ -106,6 +106,14 @@ Lỗi ghi snapshot được nuốt trong try/catch — không bao giờ ảnh h�
   hiệu lực, chữ ký phòng ban, văn bản có cấu trúc. Hỏi đáp/trò chuyện/đặt
   phòng họp/thông báo đơn hàng KHÔNG phải thông báo. Nghi ngờ → bỏ qua.
   Lỗi/timeout LLM → không ghi gì (fail-closed).
+  - **v2 (2026-11-20):** bộ phân loại trả thêm hai loại **checkin** /
+    **checkout** cho tin chữ (nhân viên báo đã đến / rời điểm làm việc,
+    kèm `place` trích nguyên văn địa điểm nêu trong tin). Tin **chia sẻ
+    vị trí** (`chat.location.new`) KHÔNG qua LLM: ghi thẳng loại **vitri**
+    với `lat`/`lng` lấy từ sự kiện zca-js — thực tế tin vị trí Zalo chỉ
+    mang toạ độ (địa chỉ chữ hiện trong app là do Zalo tự tra ngược).
+    Nghiệm thu sống 2026-11-20 16:41: tin vị trí trong 2 group
+    CHECK IN - ST vào module trong ~1 phút (id 3, 4, 5...).
   - ⚠️ **Model thực tế:** `cx/gpt-5.6-sol` có trong danh sách model của
     9Router instance này nhưng route `cx/*` (Codex) **từ chối Chat
     Completions** ("model is not supported when using Codex with a
@@ -113,10 +121,12 @@ Lỗi ghi snapshot được nuốt trong try/catch — không bao giờ ảnh h�
     `ZALO_CAPTURE_MODEL=ag/gemini-3.8-flash` — model mặc định sẵn có của
     bot, đã qua harness kiểm thử 4/4 (thông báo NS thật → bắt; chat thường
     → bỏ; đặt phòng → bỏ; văn bản giống thông báo đơn hàng → bỏ).
-- **Bản ghi:** một file `zalo-outbox/zalo-<yyyymmddHHMMSS>-thongbao-<4 số>.json`
-  với `record_type=thongbao`, `sender_name`/`sender_id` từ sự kiện tin,
-  `group_name`/`group_id`, `title` (dòng đầu/tóm tắt trung thực từ LLM),
-  `content` + `raw_message` nguyên văn, `msg_id`, `source=zalo-bot`.
+- **Bản ghi:** một file `zalo-outbox/zalo-<yyyymmddHHMMSS>-<loại>-<4 số>.json`
+  với `record_type` thuộc `thongbao|checkin|checkout|vitri`,
+  `sender_name`/`sender_id` từ sự kiện tin, `group_name`/`group_id`,
+  `title` (dòng đầu/tóm tắt trung thực từ LLM; vitri = "Vị trí của <tên>"),
+  `content` + `raw_message` nguyên văn, `place` (địa điểm trích từ tin,
+  có thể trống), `lat`/`lng` (chỉ loại vitri), `msg_id`, `source=zalo-bot`.
   Sự kiện zca-js **không có số điện thoại người gửi** → `sender_phone` bỏ
   trống, không bao giờ bịa.
 - **Log quyết định:** `zalo-capture.log` cạnh bot — chỉ metadata (thời gian,
