@@ -33,6 +33,7 @@ DEFAULT_ROLE_MODULE_PERMS = {
     "admin": {
         "wa-records": {"can_view": True, "can_edit": True},
         "zalo-records": {"can_view": True, "can_edit": True},
+        "attendance": {"can_view": True, "can_edit": True},
         "orders": {"can_view": True, "can_edit": False},
         "announcements": {"can_view": True, "can_edit": True},
         "password-reset": {"can_view": True, "can_edit": True},
@@ -364,6 +365,7 @@ ALL_MODULES = [
     {"key": "reports", "label": "Báo cáo", "group": "admin"},
     {"key": "wa-records", "label": "Thông báo WhatsApp", "group": "support"},
     {"key": "zalo-records", "label": "Thông báo Zalo", "group": "support"},
+    {"key": "attendance", "label": "Chấm công Zalo & WhatsApp", "group": "support"},
     {"key": "dashboard", "label": "Dashboard", "group": "support"},
     {"key": "announcements", "label": "Tạo thông báo Dashboard", "group": "support"},
     {"key": "password-reset", "label": "Reset mật khẩu", "group": "support"},

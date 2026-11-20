@@ -835,3 +835,5 @@ cấu hình chuẩn để tra cứu chính là tài liệu này + `OPS-WHATSAPP-
 *Tài liệu được tổng hợp ngày 2026-11-19 từ trạng thái thật của hệ thống.
 Khi có thay đổi lớn (đổi group, đổi key, update Hermes, mở quyền module),
 cập nhật cả 3 bản sao của tài liệu này.*
+
+> Dashboard tổng hợp dạng chấm công (Zalo + WhatsApp) và xuất .xlsx: xem `docs/attendance.md`.

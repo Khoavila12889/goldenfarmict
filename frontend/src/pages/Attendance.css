@@ -1,0 +1,81 @@
+.at-page { padding: 20px 24px; max-width: 980px; margin: 0 auto; }
+.at-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+.at-header h1 { font-size: 22px; margin: 0 0 4px; }
+.at-header p { margin: 0; color: #64748b; font-size: 13px; }
+.at-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border: 1px solid #cbd5e1; background: #fff; border-radius: 8px; cursor: pointer; font-size: 13px; }
+.at-btn:hover:not(:disabled) { background: #f1f5f9; }
+.at-btn:disabled { opacity: .5; cursor: default; }
+.at-btn-primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+.at-btn-primary:hover:not(:disabled) { background: #1d4ed8; }
+.at-btn-danger { color: #b91c1c; border-color: #fecaca; }
+.at-spin { animation: at-spin 1s linear infinite; }
+@keyframes at-spin { to { transform: rotate(360deg); } }
+
+.at-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
+.at-filters select, .at-filters input[type="date"] { padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; background: #fff; }
+.at-date { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #475569; }
+.at-search { display: inline-flex; align-items: center; gap: 6px; flex: 1; min-width: 200px; padding: 0 10px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; }
+.at-search input { border: none; outline: none; flex: 1; padding: 7px 0; font-size: 13px; }
+
+.at-error { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; }
+.at-empty { text-align: center; color: #64748b; padding: 40px 0; font-size: 14px; }
+
+.at-list { display: flex; flex-direction: column; gap: 10px; }
+.at-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; cursor: pointer; }
+.at-card:hover { border-color: #93c5fd; box-shadow: 0 2px 10px rgba(37, 99, 235, .08); }
+.at-card h3 { margin: 8px 0 4px; font-size: 15px; }
+.at-card-content { margin: 0 0 8px; color: #475569; font-size: 13px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.at-card-top { display: flex; align-items: center; gap: 8px; }
+.at-card-time { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: #94a3b8; font-size: 12px; }
+.at-card-meta { display: flex; flex-wrap: wrap; gap: 14px; color: #64748b; font-size: 12.5px; }
+.at-card-meta span, .at-map-link { display: inline-flex; align-items: center; gap: 4px; }
+.at-map-link { color: #2563eb; text-decoration: none; }
+.at-map-link:hover { text-decoration: underline; }
+
+.at-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.at-badge-datlich { background: #e0e7ff; color: #3730a3; }
+.at-badge-checkin { background: #dcfce7; color: #166534; }
+.at-badge-checkout { background: #ffe4e6; color: #9f1239; }
+.at-badge-baocao { background: #ffedd5; color: #9a3412; }
+.at-badge-thongbao { background: #dbeafe; color: #0043a8; }
+.at-badge-vitri { background: #ede9fe; color: #5b21b6; }
+.at-status { padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 500; }
+.at-status-moi { background: #fef9c3; color: #854d0e; }
+.at-status-daxuly { background: #e2e8f0; color: #334155; }
+.at-status-huy { background: #fee2e2; color: #991b1b; }
+
+.at-pagination { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 18px; font-size: 13px; color: #475569; }
+
+.at-modal-backdrop { position: fixed; inset: 0; background: rgba(15, 23, 42, .5); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
+.at-modal { background: #fff; border-radius: 14px; max-width: 640px; width: 100%; max-height: 88vh; overflow-y: auto; padding: 22px; position: relative; }
+.at-modal h2 { margin: 10px 0 6px; font-size: 18px; }
+.at-modal-close { position: absolute; top: 12px; right: 12px; border: none; background: none; cursor: pointer; color: #64748b; }
+.at-detail-content { color: #334155; font-size: 14px; white-space: pre-wrap; }
+.at-detail-grid { display: grid; grid-template-columns: 110px 1fr; gap: 6px 14px; font-size: 13.5px; margin: 14px 0; }
+.at-detail-grid dt { color: #64748b; }
+.at-detail-grid dd { margin: 0; }
+.at-detail-grid a { color: #2563eb; }
+.at-raw { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; }
+.at-raw-title { font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 6px; text-transform: uppercase; }
+.at-raw pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 13px; font-family: inherit; }
+.at-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* ── Attendance additions: header actions, view toggle, KPI, table, chips ── */
+.at-header-actions { display: flex; gap: 8px; align-items: center; }
+.at-btn-primary { background: #1f4e79; color: #fff; border-color: #1f4e79; }
+.at-btn-primary:hover { background: #2e75b6; }
+.at-view-toggle { display: inline-flex; border: 1px solid #d0d7de; border-radius: 8px; overflow: hidden; }
+.at-view-toggle button { padding: 7px 12px; border: 0; background: #fff; cursor: pointer; font-size: 13px; font-weight: 600; color: #44546a; }
+.at-view-toggle button.at-toggle-on { background: #1f4e79; color: #fff; }
+.at-kpis { display: flex; gap: 12px; flex-wrap: wrap; margin: 4px 0 14px; }
+.at-kpi { background: #fff; border: 1px solid #e3e8ee; border-radius: 12px; padding: 10px 16px; display: flex; flex-direction: column; min-width: 150px; }
+.at-kpi-value { font-size: 18px; font-weight: 700; color: #1f4e79; }
+.at-kpi-label { font-size: 12px; color: #66788c; }
+.at-table-wrap { background: #fff; border: 1px solid #e3e8ee; border-radius: 12px; overflow-x: auto; }
+.at-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.at-table th { background: #1f4e79; color: #fff; text-align: left; padding: 10px 12px; font-weight: 600; white-space: nowrap; }
+.at-table td { padding: 9px 12px; border-top: 1px solid #eef1f4; vertical-align: top; }
+.at-table tbody tr:hover { background: #f5f8fb; }
+.at-nowrap { white-space: nowrap; }
+.at-sub { color: #66788c; font-size: 12px; }
+.at-chip { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; margin-left: 4px; }

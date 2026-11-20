@@ -219,3 +219,5 @@ Lỗi ghi snapshot được nuốt trong try/catch — không bao giờ ảnh h�
   `/usr/local/sbin/gf-zalo-relay.py`, block logrotate trong
   `/etc/logrotate.d/gf-hermes`; `zalo-bot.service` đã disable (file unit
   giữ nguyên).
+
+> Dashboard tổng hợp dạng chấm công (Zalo + WhatsApp) và xuất .xlsx: xem `docs/attendance.md`.

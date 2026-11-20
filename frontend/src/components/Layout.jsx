@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Monitor, Key, Ticket, CheckCircle, 
   Settings, Calendar, Receipt, Folder, Shield, Menu, X, User, 
   Lock, Eye, EyeOff, CheckSquare, HelpCircle, Activity, MessageSquare,
-  CalendarOff, PenTool, Printer, FileSpreadsheet, Archive, ShoppingCart, Mail, BarChart3, BellRing
+  CalendarOff, PenTool, Printer, FileSpreadsheet, Archive, ShoppingCart, Mail, BarChart3, BellRing, ClipboardCheck
 } from 'lucide-react'
 import { changePassword, getProfile, apiUrl } from '../services/api'
 import { driver } from 'driver.js'
@@ -39,6 +39,7 @@ const iconMap = {
   reports: BarChart3,
   waRecords: BellRing,
   zaloRecords: BellRing,
+  attendance: ClipboardCheck,
 }
 
 const allNavItems = [
@@ -46,6 +47,7 @@ const allNavItems = [
   { path: '/reports', label: 'Báo cáo', icon: 'reports', roles: ['head', 'deputy', 'admin'] },
   { path: '/wa-records', label: 'Thông báo WhatsApp', icon: 'waRecords', roles: ['admin'] },
   { path: '/zalo-records', label: 'Thông báo Zalo', icon: 'zaloRecords', roles: ['admin'] },
+  { path: '/attendance', label: 'Chấm công Zalo & WhatsApp', icon: 'attendance', roles: ['admin'] },
   { path: '/todos', label: 'Công việc (Todos)', icon: 'todos', roles: ['user', 'head', 'deputy', 'admin'] },
   { path: '/chat', label: 'Chat', icon: 'chat', roles: ['user', 'head', 'deputy', 'admin'] },
   { path: '/mail', label: 'Mail', icon: 'mail', roles: ['user', 'head', 'deputy', 'admin'] },
@@ -82,6 +84,7 @@ const MODULE_MAP = {
   '/reports': 'reports',
   '/wa-records': 'wa-records',
   '/zalo-records': 'zalo-records',
+  '/attendance': 'attendance',
   '/orders': 'orders',
   '/approvals': 'approvals',
   '/workflows': 'workflows',

@@ -30,6 +30,7 @@ import Orders from './pages/Orders'
 import Reports from './pages/Reports'
 import WaRecords from './pages/WaRecords'
 import ZaloRecords from './pages/ZaloRecords'
+import Attendance from './pages/Attendance'
 import Layout from './components/Layout'
 
 function ProtectedRoute({ children }) {
@@ -103,6 +104,7 @@ export default function App() {
         <Route path="reports" element={<AdminRoute requiredModule="reports"><Reports /></AdminRoute>} />
         <Route path="wa-records" element={<AdminRoute requiredModule="wa-records"><WaRecords /></AdminRoute>} />
         <Route path="zalo-records" element={<AdminRoute requiredModule="zalo-records"><ZaloRecords /></AdminRoute>} />
+        <Route path="attendance" element={<AdminRoute requiredModule="attendance"><Attendance /></AdminRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

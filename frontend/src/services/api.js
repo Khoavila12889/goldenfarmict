@@ -164,6 +164,22 @@ export function updateZaloRecordStatus(id, status) {
   return api.patch(`/zalo-records/${id}/status`, { status }, { headers: orderAuthHeaders() })
 }
 
+export function getAttendanceGroups() {
+  return api.get('/attendance/groups', { headers: orderAuthHeaders() })
+}
+
+export function getAttendanceEvents(params = {}) {
+  return api.get('/attendance/events', { params, headers: orderAuthHeaders() })
+}
+
+export function getAttendanceSummary(params = {}) {
+  return api.get('/attendance/summary', { params, headers: orderAuthHeaders() })
+}
+
+export function exportAttendanceXLSX(params = {}) {
+  return api.get('/attendance/export.xlsx', { params, headers: orderAuthHeaders(), responseType: 'blob' })
+}
+
 export function getMonitorStats(config = {}) {
   return api.get('/monitor/stats', {
     ...config,
