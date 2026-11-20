@@ -133,3 +133,11 @@
   .at-map-form .at-btn { justify-content: center; }
   .at-map-current .at-btn { width: 100%; justify-content: center; }
 }
+
+/* Ten cua hang cua luot: xem + nut sua */
+.at-place-view { display: inline-flex; align-items: center; gap: 6px; }
+.at-icon-btn { border: none; background: none; color: var(--muted); cursor: pointer; padding: 2px; display: inline-flex; align-items: center; }
+.at-icon-btn:hover { color: #4472C4; }
+.at-place-edit { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.at-place-edit input { flex: 1; min-width: 130px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 13px; }
+.at-place-edit .at-btn { padding: 6px 10px; font-size: 13px; }

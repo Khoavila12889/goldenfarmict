@@ -86,3 +86,28 @@ nhân viên chuẩn** ngay từ khâu ghi nhận, để bản ghi chấm công m
 chính xác thay vì phải suy ra từ tên hiển thị như hiện tại. Khi đó
 `attendance_identities` chỉ còn là lớp dự phòng cho dữ liệu cũ; dữ liệu mới
 khớp nhân viên chính xác ngay từ nguồn.
+
+## Bản LƯỢT GHÉ + tên cửa hàng sửa tay (2026-11-20, thay bản "1 IN/1 OUT mỗi ngày")
+
+Theo cách nhân viên siêu thị làm việc thực tế (đến điểm: chia sẻ vị trí +
+check-in ghi tên cửa hàng; rời điểm: check-out + vị trí + tên cửa hàng), tổng
+hợp chấm công gộp tín hiệu theo **lượt ghé**: cùng người/group/ngày, hai tín
+hiệu liên tiếp cách nhau dưới **45 phút** là cùng một lượt — hiển thị **1 box
+cho 1 lượt**. Giờ IN = tín hiệu đầu lượt (vị trí 1), giờ OUT = tín hiệu cuối
+lượt (vị trí 2), Thời gian = OUT − IN của lượt. Một người đi nhiều cửa hàng
+trong ngày sẽ có nhiều box (đánh dấu Lượt 1/2, 2/2...). Tab Chi tiết sự kiện
+vẫn giữ từng tin gốc để đối chiếu.
+
+Tên cửa hàng của lượt: mặc định là tên trích từ tin check-in/check-out. Vì
+dữ kiện vị trí (chia sẻ định vị) không có tên, tên **bổ sung/sửa được về sau**
+bằng nút bút chì ngay trên box — lưu ở bảng `attendance_visit_notes` gắn theo
+(source, id bản ghi đầu lượt); xoá nội dung đã sửa thì quay về tên tự trích.
+File .xlsx xuất theo cùng dữ kiện lượt này.
+
+## Lộ trình: điểm chấm công cố định + cảnh báo sai vị trí (anh Khoa ghi chú 2026-11-20)
+
+Sau này, khi dữ kiện nhiều lên: xây danh mục **điểm chấm công cố định** — mỗi
+cửa hàng/điểm có tên cố định gắn với kinh độ/vĩ độ chuẩn. Khi chấm công, đối
+chiếu toạ độ của tin với điểm cố định của cửa hàng được khai: nếu lệch xa
+(ví dụ về nhà vẫn chấm, sai kinh độ/vĩ độ) thì gắn **cảnh báo ⚠** trên box để
+người duyệt chú ý.

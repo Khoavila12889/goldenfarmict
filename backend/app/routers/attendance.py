@@ -8,12 +8,13 @@ kèm sự kiện đầu/cuối ngày và mốc check-in/check-out rõ ràng (n�
 - Nguồn sự kiện chấm công: record_type checkin / checkout / vitri (tin chia
   sẻ vị trí phía Zalo). Các loại khác (datlich, baocao, thongbao) chỉ xuất
   hiện ở view chi tiết sự kiện, không tính vào tổng hợp chấm công.
-- QUY TẮC GIỜ IN / OUT (chủ hệ thống chốt 2026-11-20): mỗi user trong một
-  ngày có đúng MỘT giờ IN và MỘT giờ OUT. Giờ IN = tín hiệu chấm công ĐẦU
-  TIÊN trong ngày (tin check-in hoặc chia sẻ vị trí đầu tiên); giờ OUT =
-  tín hiệu chấm công CUỐI CÙNG trong ngày (tin check-out hoặc vị trí cuối).
-  Loại tín hiệu tạo IN/OUT luôn hiển thị kèm (cột first_type/last_type) để
-  đối chiếu. Thống kê kèm duration_minutes = OUT − IN.
+- QUY TẮC GIỜ IN / OUT (chủ hệ thống chốt 2026-11-20, bản LƯỢT GHÉ): tín
+  hiệu được gộp theo LƯỢT GHÉ cửa hàng — cùng user/group/ngày, hai tín hiệu
+  liên tiếp cách nhau dưới 45 phút là cùng một lượt (một lượt thường gồm
+  vị trí + check-in ghi tên cửa hàng lúc đến, check-out + vị trí lúc rời).
+  Giờ IN = tín hiệu ĐẦU lượt (vị trí 1); giờ OUT = tín hiệu CUỐI lượt
+  (vị trí 2). Tên cửa hàng của lượt bổ sung/sửa được về sau qua bảng
+  attendance_visit_notes (gắn theo bản ghi đầu lượt).
 - Ngày chấm công tính theo Asia/Ho_Chi_Minh từ created_at.
 - Bản ghi status='huy' bị loại khỏi tổng hợp và file xuất (vẫn xem được ở
   chi tiết sự kiện).
@@ -172,62 +173,97 @@ def _fetch_events(where: str, params: dict, limit: int, offset: int):
     )
 
 
-def _fetch_summary(where: str, params: dict, limit: int, offset: int):
+VISIT_GAP_MINUTES = 45
+
+
+def _fetch_visits(where: str, params: dict):
+    """Gộp tín hiệu chấm công thành từng LƯỢT GHÉ (một box = một lượt ghé
+    cửa hàng): cùng người, cùng group, cùng ngày; hai tín hiệu liên tiếp
+    cách nhau dưới VISIT_GAP_MINUTES phút thì cùng một lượt. Tên cửa hàng
+    hiển thị = tên đã sửa tay (attendance_visit_notes) nếu có, không thì
+    tên trích từ tin check-in/check-out trong lượt."""
     summary_where = (
         f"({where}) AND u.record_type IN ('checkin', 'checkout', 'vitri') "
         "AND u.status <> 'huy'"
     )
-    return fetchall(
+    signals = fetchall(
         f"""
-        SELECT (u.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AS day,
-               u.src, u.group_name, u.sender_key,
-               MAX(u.sender_name) AS sender_name,
-               MAX(e.employee_code) AS employee_code,
-               MAX(e.full_name) AS employee_name,
-               MAX(e.department) AS employee_department,
-               MIN(u.created_at) AS first_at,
-               MAX(u.created_at) AS last_at,
-               (ARRAY_AGG(u.record_type ORDER BY u.created_at ASC))[1] AS first_type,
-               (ARRAY_AGG(u.record_type ORDER BY u.created_at DESC))[1] AS last_type,
-               (EXTRACT(EPOCH FROM (MAX(u.created_at) - MIN(u.created_at)))::bigint / 60) AS duration_minutes,
-               COUNT(*) AS events,
-               COUNT(*) FILTER (WHERE u.record_type = 'checkin') AS checkins,
-               COUNT(*) FILTER (WHERE u.record_type = 'checkout') AS checkouts,
-               COUNT(*) FILTER (WHERE u.record_type = 'vitri') AS vitris,
-               MIN(u.created_at) FILTER (WHERE u.record_type = 'checkin') AS checkin_at,
-               MAX(u.created_at) FILTER (WHERE u.record_type = 'checkout') AS checkout_at,
-               STRING_AGG(DISTINCT NULLIF(u.place, ''), '; ') AS places
+        SELECT u.id, (u.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AS day,
+               u.src, u.group_name, u.sender_key, u.sender_name,
+               e.employee_code AS employee_code,
+               e.full_name AS employee_name,
+               e.department AS employee_department,
+               u.record_type, u.place, u.lat, u.lng, u.created_at
         FROM ({_UNION}) u {_JOINS}
         WHERE {summary_where}
-        GROUP BY day, u.src, u.group_name, u.sender_key
-        ORDER BY day DESC, u.group_name ASC, sender_name ASC
-        LIMIT :limit OFFSET :offset
-        """,
-        {**params, "limit": limit, "offset": offset},
-    )
-
-
-def _summary_total(where: str, params: dict) -> int:
-    summary_where = (
-        f"({where}) AND u.record_type IN ('checkin', 'checkout', 'vitri') "
-        "AND u.status <> 'huy'"
-    )
-    row = fetchone(
-        f"""
-        SELECT COUNT(*) AS total FROM (
-            SELECT 1 FROM ({_UNION}) u {_JOINS} WHERE {summary_where}
-            GROUP BY (u.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date,
-                     u.src, u.group_name, u.sender_key
-        ) g
+        ORDER BY day ASC, u.src, u.group_name, u.sender_key, u.created_at ASC
         """,
         params,
     )
-    return int((row or {}).get("total", 0))
+    overrides = {
+        (o["source"], o["record_id"]): o["place"]
+        for o in fetchall(
+            "SELECT source, record_id, place FROM attendance_visit_notes", {}
+        )
+    }
+    visits = []
+    counters = {}
+    current = None
+    for sig in signals:
+        key = (sig["day"], sig["src"], sig["group_name"], sig["sender_key"])
+        new_visit = current is None or current["_key"] != key
+        if not new_visit:
+            gap_min = (sig["created_at"] - current["_last_signal"]).total_seconds() / 60.0
+            new_visit = gap_min > VISIT_GAP_MINUTES
+        if new_visit:
+            counters[key] = counters.get(key, 0) + 1
+            current = {
+                "_key": key, "_last_signal": sig["created_at"],
+                "first_record_id": sig["id"],
+                "day": sig["day"], "src": sig["src"],
+                "group_name": sig["group_name"], "sender_key": sig["sender_key"],
+                "sender_name": sig["sender_name"],
+                "employee_code": sig["employee_code"],
+                "employee_name": sig["employee_name"],
+                "employee_department": sig["employee_department"],
+                "visit_no": counters[key],
+                "first_at": sig["created_at"], "last_at": sig["created_at"],
+                "first_type": sig["record_type"], "last_type": sig["record_type"],
+                "events": 0, "checkins": 0, "checkouts": 0, "vitris": 0,
+                "_places": [], "lat": None, "lng": None,
+            }
+            visits.append(current)
+        current["_last_signal"] = sig["created_at"]
+        current["last_at"] = sig["created_at"]
+        current["last_type"] = sig["record_type"]
+        current["events"] += 1
+        if sig["record_type"] == "checkin":
+            current["checkins"] += 1
+        elif sig["record_type"] == "checkout":
+            current["checkouts"] += 1
+        elif sig["record_type"] == "vitri":
+            current["vitris"] += 1
+            if current["lat"] is None and sig["lat"] is not None:
+                current["lat"], current["lng"] = sig["lat"], sig["lng"]
+        place = (sig["place"] or "").strip()
+        if place and place not in current["_places"]:
+            current["_places"].append(place)
+    totals = {}
+    for v in visits:
+        totals[v["_key"]] = totals.get(v["_key"], 0) + 1
+    for v in visits:
+        v["visit_total"] = totals[v["_key"]]
+        v["duration_minutes"] = int(
+            (v["last_at"] - v["first_at"]).total_seconds() // 60
+        )
+        override = overrides.get((v["src"], v["first_record_id"]))
+        v["place_edited"] = override is not None
+        v["places"] = override if override is not None else ("; ".join(v["_places"]) or None)
+        del v["_key"], v["_last_signal"], v["_places"]
+    visits.sort(key=lambda v: (str(v["day"]), v["group_name"], v["sender_name"], v["first_at"]))
+    visits.sort(key=lambda v: str(v["day"]), reverse=True)
+    return visits
 
-
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
 
 @router.get("/groups")
 def list_groups(
@@ -290,9 +326,13 @@ def list_summary(
     page = max(1, page)
     page_size = max(1, min(page_size, MAX_PAGE_SIZE))
     where, params = _build_filters(source, group_name, q, "", date_from, date_to)
-    total = _summary_total(where, params)
-    rows = _fetch_summary(where, params, page_size, (page - 1) * page_size)
-    return {"data": rows, "total": total, "page": page, "page_size": page_size}
+    visits = _fetch_visits(where, params)
+    total = len(visits)
+    start = (page - 1) * page_size
+    return {
+        "data": visits[start:start + page_size],
+        "total": total, "page": page, "page_size": page_size,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -427,6 +467,52 @@ def update_identity(
 
 
 # ---------------------------------------------------------------------------
+# Tên cửa hàng của lượt ghé: bổ sung / sửa tay (attendance_visit_notes)
+# ---------------------------------------------------------------------------
+
+class VisitPlaceUpdate(BaseModel):
+    source: str
+    record_id: int
+    place: Optional[str] = None
+
+
+@router.put("/visit-place")
+def update_visit_place(
+    body: VisitPlaceUpdate,
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token"),
+):
+    user = _auth(x_user_code, x_user_role, x_user_dept, x_user_token)
+    if user["user_role"] != "admin":
+        perms = _get_effective_permissions(user["user_code"])
+        if not (perms.get("attendance") or {}).get("can_edit"):
+            raise HTTPException(403, "Bạn không có quyền sửa tên cửa hàng")
+    if body.source not in ("zalo", "whatsapp"):
+        raise HTTPException(400, "source phải là zalo hoặc whatsapp")
+    place = (body.place or "").strip()
+    if place:
+        execute(
+            """
+            INSERT INTO attendance_visit_notes (source, record_id, place, updated_by, updated_at)
+            VALUES (:src, :rid, :place, :by, now())
+            ON CONFLICT (source, record_id) DO UPDATE SET
+                place = EXCLUDED.place,
+                updated_by = EXCLUDED.updated_by,
+                updated_at = now()
+            """,
+            {"src": body.source, "rid": body.record_id, "place": place, "by": user["user_code"]},
+        )
+    else:
+        execute(
+            "DELETE FROM attendance_visit_notes WHERE source = :src AND record_id = :rid",
+            {"src": body.source, "rid": body.record_id},
+        )
+    return {"success": True}
+
+
+# ---------------------------------------------------------------------------
 # Xuất Excel — cùng bộ lọc, 2 sheet: tổng hợp chấm công + chi tiết sự kiện
 # ---------------------------------------------------------------------------
 
@@ -453,7 +539,7 @@ def export_xlsx(
 ):
     _auth(x_user_code, x_user_role, x_user_dept, x_user_token)
     where, params = _build_filters(source, group_name, q, types, date_from, date_to)
-    summary_rows = _fetch_summary(where, params, EXPORT_LIMIT, 0)
+    summary_rows = _fetch_visits(where, params)
     event_rows = _fetch_events(where, params, EXPORT_LIMIT, 0)
 
     from openpyxl import Workbook

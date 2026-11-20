@@ -188,6 +188,10 @@ export function updateAttendanceIdentity(body) {
   return api.put('/attendance/identities', body, { headers: orderAuthHeaders() })
 }
 
+export function updateAttendanceVisitPlace(body) {
+  return api.put('/attendance/visit-place', body, { headers: orderAuthHeaders() })
+}
+
 export function getMonitorStats(config = {}) {
   return api.get('/monitor/stats', {
     ...config,

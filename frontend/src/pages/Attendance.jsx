@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Search, RefreshCw, Download, MapPin, UserRound, Users, Speaker, LogIn, LogOut, CalendarDays, ClipboardList, Clock3, Link2, Unlink } from 'lucide-react'
-import { apiErrorMessage, getAttendanceGroups, getAttendanceEvents, getAttendanceSummary, exportAttendanceXLSX, getAttendanceIdentities, updateAttendanceIdentity } from '../services/api'
+import { Search, RefreshCw, Download, MapPin, UserRound, Users, Speaker, LogIn, LogOut, CalendarDays, ClipboardList, Clock3, Link2, Unlink, Pencil } from 'lucide-react'
+import { apiErrorMessage, getAttendanceGroups, getAttendanceEvents, getAttendanceSummary, exportAttendanceXLSX, getAttendanceIdentities, updateAttendanceIdentity, updateAttendanceVisitPlace } from '../services/api'
 import './Attendance.css'
 
 const TYPE_META = {
@@ -93,6 +93,11 @@ export default function Attendance() {
   const [savingKey, setSavingKey] = useState('')
   const [mapMsg, setMapMsg] = useState('')
   const [mapLoading, setMapLoading] = useState(false)
+
+  // Sua ten cua hang cua luot ghe
+  const [editingPlace, setEditingPlace] = useState('')
+  const [placeDraft, setPlaceDraft] = useState('')
+  const [savingPlace, setSavingPlace] = useState(false)
 
   useEffect(() => {
     getAttendanceGroups()
@@ -194,6 +199,44 @@ export default function Attendance() {
       return
     }
     saveIdentity(row, code)
+  }
+
+  const savePlace = async r => {
+    setSavingPlace(true)
+    try {
+      await updateAttendanceVisitPlace({ source: r.src, record_id: r.first_record_id, place: placeDraft })
+      setEditingPlace('')
+      await load()
+    } catch (err) {
+      setError(apiErrorMessage(err))
+    } finally {
+      setSavingPlace(false)
+    }
+  }
+
+  const renderPlace = r => {
+    const key = `${r.day}|${r.src}|${r.sender_key}|${r.visit_no}`
+    if (editingPlace === key) {
+      return (
+        <span className="at-place-edit">
+          <input value={placeDraft} onChange={e => setPlaceDraft(e.target.value)} placeholder="Tên cửa hàng (để trống = tên tự trích)" />
+          <button className="at-btn" disabled={savingPlace} onClick={() => savePlace(r)}>Lưu</button>
+          <button className="at-btn" disabled={savingPlace} onClick={() => setEditingPlace('')}>Huỷ</button>
+        </span>
+      )
+    }
+    return (
+      <span className="at-place-view">
+        {r.places
+          ? <span>{r.places}{r.place_edited ? ' · đã sửa' : ''}</span>
+          : (r.lat != null && r.lng != null)
+            ? <a href={`https://www.google.com/maps?q=${r.lat},${r.lng}`} target="_blank" rel="noreferrer">Xem vị trí</a>
+            : <span className="at-sub">Chưa có tên cửa hàng</span>}
+        <button className="at-icon-btn" title="Bổ sung / sửa tên cửa hàng" onClick={() => { setEditingPlace(key); setPlaceDraft(r.places || '') }}>
+          <Pencil size={13} />
+        </button>
+      </span>
+    )
   }
 
   const switchView = v => { setView(v); setPage(1) }
@@ -306,10 +349,10 @@ export default function Attendance() {
           <div className="at-context">
             <div className="at-context-group">{groupName || 'Tất cả group'}</div>
             <div className="at-context-sub">
-              {fmtDayInput(dateFrom)} → {fmtDayInput(dateTo)} · {total} {view === 'summary' ? 'nhân viên-ngày' : 'tin ghi nhận'}
+              {fmtDayInput(dateFrom)} → {fmtDayInput(dateTo)} · {total} {view === 'summary' ? 'lượt ghé' : 'tin ghi nhận'}
             </div>
             {view === 'summary' && (
-              <div className="at-rule">Giờ IN = tín hiệu đầu tiên trong ngày (check-in hoặc chia sẻ vị trí). Giờ OUT = tín hiệu cuối cùng trong ngày. Thời gian = OUT − IN.</div>
+              <div className="at-rule">Mỗi lượt ghé cửa hàng = 1 box: các tin cách nhau dưới 45 phút gộp chung 1 lượt. Giờ IN = tín hiệu đầu lượt (vị trí 1), giờ OUT = tín hiệu cuối lượt (vị trí 2). Tên cửa hàng bấm nút bút chì để bổ sung/sửa.</div>
             )}
           </div>
 
@@ -332,7 +375,7 @@ export default function Attendance() {
                   </thead>
                   <tbody>
                     {rows.map(r => (
-                      <tr key={`${r.day}-${r.src}-${r.group_name}-${r.sender_key}`}>
+                      <tr key={`${r.day}-${r.src}-${r.group_name}-${r.sender_key}-${r.visit_no}`}>
                         <td className="at-nowrap">{fmtDay(r.day)}</td>
                         <td>
                           <div><UserRound size={13} /> {displayName(r)}</div>
@@ -342,7 +385,7 @@ export default function Attendance() {
                         <td className="at-nowrap">{fmtTime(r.last_at)} <TypeChip type={r.last_type} /></td>
                         <td className="at-nowrap">{fmtDuration(r.duration_minutes)}</td>
                         <td className="at-nowrap">{r.events} tin <span className="at-sub">({eventBreakdown(r)})</span></td>
-                        <td>{r.places || '—'}</td>
+                        <td>{renderPlace(r)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -350,13 +393,13 @@ export default function Attendance() {
               </div>
               <div className="at-cards">
                 {rows.map(r => (
-                  <article key={`${r.day}-${r.src}-${r.group_name}-${r.sender_key}`} className="at-sum-card">
+                  <article key={`${r.day}-${r.src}-${r.group_name}-${r.sender_key}-${r.visit_no}`} className="at-sum-card">
                     <div className="at-sum-head">
                       <div>
                         <span className="at-sum-name"><UserRound size={16} /> {displayName(r)}</span>
                         <div className="at-sub">{codeLine(r)}</div>
                       </div>
-                      <span className="at-sum-date">{fmtDay(r.day)}</span>
+                      <span className="at-sum-date">{fmtDay(r.day)}{r.visit_total > 1 ? ` · Lượt ${r.visit_no}/${r.visit_total}` : ''}</span>
                     </div>
                     <div className="at-sum-times">
                       <div><label>Giờ IN</label><strong>{fmtTime(r.first_at)}</strong><TypeChip type={r.first_type} /></div>
@@ -365,7 +408,7 @@ export default function Attendance() {
                     </div>
                     <div className="at-sum-foot">
                       <span>{r.events} tin ghi nhận: {eventBreakdown(r)}</span>
-                      {r.places && <span><MapPin size={13} /> {r.places}</span>}
+                      <span><MapPin size={13} /> {renderPlace(r)}</span>
                     </div>
                   </article>
                 ))}
