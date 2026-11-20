@@ -114,3 +114,22 @@
 }
 
 .at-rule { font-size: 12.5px; color: #66788c; font-style: italic; margin-top: 4px; }
+
+/* Gan ma nhan vien */
+.at-map-msg { margin: 0 0 12px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elev); color: var(--text); font-size: 14px; }
+.at-map-list { display: flex; flex-direction: column; gap: 10px; }
+.at-map-row { border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elev); padding: 12px 14px; }
+.at-map-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.at-map-head .at-sum-name { font-size: 16px; }
+.at-map-current { margin-top: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.at-map-assigned { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: #1a7f37; }
+.at-chips { margin-top: 10px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.at-chip-btn { border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 999px; padding: 5px 10px; font-size: 13px; cursor: pointer; }
+.at-chip-btn:hover { border-color: #4472C4; color: #4472C4; }
+.at-map-form { margin-top: 10px; display: flex; gap: 8px; }
+.at-map-form input { flex: 1; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 14px; min-width: 0; }
+@media (max-width: 480px) {
+  .at-map-form { flex-direction: column; }
+  .at-map-form .at-btn { justify-content: center; }
+  .at-map-current .at-btn { width: 100%; justify-content: center; }
+}

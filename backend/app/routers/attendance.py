@@ -24,15 +24,18 @@ kèm sự kiện đầu/cuối ngày và mốc check-in/check-out rõ ràng (n�
   export của module Công việc (todos).
 """
 import io
+import re
+import unicodedata
 from datetime import datetime
 from typing import Optional
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Header, HTTPException
+from pydantic import BaseModel
 from fastapi.responses import StreamingResponse
 
 from ..core.auth import verify_session
-from ..core.db import fetchall, fetchone
+from ..core.db import execute, fetchall, fetchone
 from .auth import _get_effective_permissions
 
 router = APIRouter(prefix="/api/attendance", tags=["attendance"])
@@ -59,8 +62,18 @@ _UNION = """
 """
 
 _EVENT_COLS = """
-    src, id, record_type, sender_name, sender_key, group_name, title,
-    content, place, lat, lng, status, created_at
+    u.src, u.id, u.record_type, u.sender_name, u.sender_key, u.group_name,
+    u.title, u.content, u.place, u.lat, u.lng, u.status, u.created_at,
+    e.employee_code AS employee_code, e.full_name AS employee_name,
+    e.department AS employee_department
+"""
+
+# Ánh xạ danh tính: (src, sender_key) -> employees.employee_code qua bảng
+# attendance_identities (trường dữ liệu chuẩn của nhân viên trong group).
+_JOINS = """
+    LEFT JOIN attendance_identities ai
+      ON ai.source = u.src AND ai.sender_key = u.sender_key
+    LEFT JOIN employees e ON e.employee_code = ai.employee_code
 """
 
 
@@ -115,16 +128,17 @@ def _build_filters(source: str, group_name: str, q: str, types: str,
     if source:
         if source not in ("zalo", "whatsapp"):
             raise HTTPException(400, "source phải là zalo hoặc whatsapp")
-        clauses.append("src = :source")
+        clauses.append("u.src = :source")
         params["source"] = source
     group_name = (group_name or "").strip()
     if group_name:
-        clauses.append("group_name = :group_name")
+        clauses.append("u.group_name = :group_name")
         params["group_name"] = group_name
     q = (q or "").strip()
     if q:
         clauses.append(
-            "(sender_name ILIKE :q OR title ILIKE :q OR content ILIKE :q OR place ILIKE :q)"
+            "(u.sender_name ILIKE :q OR u.title ILIKE :q OR u.content ILIKE :q "
+            "OR u.place ILIKE :q OR e.full_name ILIKE :q OR e.employee_code ILIKE :q)"
         )
         params["q"] = f"%{q}%"
     type_list = [t.strip() for t in (types or "").split(",") if t.strip()]
@@ -137,14 +151,14 @@ def _build_filters(source: str, group_name: str, q: str, types: str,
             key = f"type_{i}"
             placeholders.append(f":{key}")
             params[key] = t
-        clauses.append(f"record_type IN ({', '.join(placeholders)})")
+        clauses.append(f"u.record_type IN ({', '.join(placeholders)})")
     d_from = _parse_day(date_from, "date_from")
     d_to = _parse_day(date_to, "date_to")
     if d_from:
-        clauses.append("(created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= :date_from")
+        clauses.append("(u.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date >= :date_from")
         params["date_from"] = d_from
     if d_to:
-        clauses.append("(created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date <= :date_to")
+        clauses.append("(u.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date <= :date_to")
         params["date_to"] = d_to
     where = " AND ".join(clauses) if clauses else "1=1"
     return where, params
@@ -152,38 +166,41 @@ def _build_filters(source: str, group_name: str, q: str, types: str,
 
 def _fetch_events(where: str, params: dict, limit: int, offset: int):
     return fetchall(
-        f"SELECT {_EVENT_COLS} FROM ({_UNION}) u WHERE {where} "
-        "ORDER BY created_at DESC LIMIT :limit OFFSET :offset",
+        f"SELECT {_EVENT_COLS} FROM ({_UNION}) u {_JOINS} WHERE {where} "
+        "ORDER BY u.created_at DESC LIMIT :limit OFFSET :offset",
         {**params, "limit": limit, "offset": offset},
     )
 
 
 def _fetch_summary(where: str, params: dict, limit: int, offset: int):
     summary_where = (
-        f"({where}) AND record_type IN ('checkin', 'checkout', 'vitri') "
-        "AND status <> 'huy'"
+        f"({where}) AND u.record_type IN ('checkin', 'checkout', 'vitri') "
+        "AND u.status <> 'huy'"
     )
     return fetchall(
         f"""
-        SELECT (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AS day,
-               src, group_name, sender_key,
-               MAX(sender_name) AS sender_name,
-               MIN(created_at) AS first_at,
-               MAX(created_at) AS last_at,
-               (ARRAY_AGG(record_type ORDER BY created_at ASC))[1] AS first_type,
-               (ARRAY_AGG(record_type ORDER BY created_at DESC))[1] AS last_type,
-               (EXTRACT(EPOCH FROM (MAX(created_at) - MIN(created_at)))::bigint / 60) AS duration_minutes,
+        SELECT (u.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AS day,
+               u.src, u.group_name, u.sender_key,
+               MAX(u.sender_name) AS sender_name,
+               MAX(e.employee_code) AS employee_code,
+               MAX(e.full_name) AS employee_name,
+               MAX(e.department) AS employee_department,
+               MIN(u.created_at) AS first_at,
+               MAX(u.created_at) AS last_at,
+               (ARRAY_AGG(u.record_type ORDER BY u.created_at ASC))[1] AS first_type,
+               (ARRAY_AGG(u.record_type ORDER BY u.created_at DESC))[1] AS last_type,
+               (EXTRACT(EPOCH FROM (MAX(u.created_at) - MIN(u.created_at)))::bigint / 60) AS duration_minutes,
                COUNT(*) AS events,
-               COUNT(*) FILTER (WHERE record_type = 'checkin') AS checkins,
-               COUNT(*) FILTER (WHERE record_type = 'checkout') AS checkouts,
-               COUNT(*) FILTER (WHERE record_type = 'vitri') AS vitris,
-               MIN(created_at) FILTER (WHERE record_type = 'checkin') AS checkin_at,
-               MAX(created_at) FILTER (WHERE record_type = 'checkout') AS checkout_at,
-               STRING_AGG(DISTINCT NULLIF(place, ''), '; ') AS places
-        FROM ({_UNION}) u
+               COUNT(*) FILTER (WHERE u.record_type = 'checkin') AS checkins,
+               COUNT(*) FILTER (WHERE u.record_type = 'checkout') AS checkouts,
+               COUNT(*) FILTER (WHERE u.record_type = 'vitri') AS vitris,
+               MIN(u.created_at) FILTER (WHERE u.record_type = 'checkin') AS checkin_at,
+               MAX(u.created_at) FILTER (WHERE u.record_type = 'checkout') AS checkout_at,
+               STRING_AGG(DISTINCT NULLIF(u.place, ''), '; ') AS places
+        FROM ({_UNION}) u {_JOINS}
         WHERE {summary_where}
-        GROUP BY day, src, group_name, sender_key
-        ORDER BY day DESC, group_name ASC, sender_name ASC
+        GROUP BY day, u.src, u.group_name, u.sender_key
+        ORDER BY day DESC, u.group_name ASC, sender_name ASC
         LIMIT :limit OFFSET :offset
         """,
         {**params, "limit": limit, "offset": offset},
@@ -192,15 +209,15 @@ def _fetch_summary(where: str, params: dict, limit: int, offset: int):
 
 def _summary_total(where: str, params: dict) -> int:
     summary_where = (
-        f"({where}) AND record_type IN ('checkin', 'checkout', 'vitri') "
-        "AND status <> 'huy'"
+        f"({where}) AND u.record_type IN ('checkin', 'checkout', 'vitri') "
+        "AND u.status <> 'huy'"
     )
     row = fetchone(
         f"""
         SELECT COUNT(*) AS total FROM (
-            SELECT 1 FROM ({_UNION}) u WHERE {summary_where}
-            GROUP BY (created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date,
-                     src, group_name, sender_key
+            SELECT 1 FROM ({_UNION}) u {_JOINS} WHERE {summary_where}
+            GROUP BY (u.created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')::date,
+                     u.src, u.group_name, u.sender_key
         ) g
         """,
         params,
@@ -248,7 +265,7 @@ def list_events(
     page_size = max(1, min(page_size, MAX_PAGE_SIZE))
     where, params = _build_filters(source, group_name, q, types, date_from, date_to)
     total_row = fetchone(
-        f"SELECT COUNT(*) AS total FROM ({_UNION}) u WHERE {where}", params
+        f"SELECT COUNT(*) AS total FROM ({_UNION}) u {_JOINS} WHERE {where}", params
     )
     total = int((total_row or {}).get("total", 0))
     rows = _fetch_events(where, params, page_size, (page - 1) * page_size)
@@ -276,6 +293,137 @@ def list_summary(
     total = _summary_total(where, params)
     rows = _fetch_summary(where, params, page_size, (page - 1) * page_size)
     return {"data": rows, "total": total, "page": page, "page_size": page_size}
+
+
+# ---------------------------------------------------------------------------
+# Ánh xạ danh tính: (nguồn, sender_key) -> mã nhân viên (employees)
+# ---------------------------------------------------------------------------
+
+def _norm_name(value: str) -> str:
+    return re.sub(r"\s+", " ", (value or "").lower().strip())
+
+
+def _unaccent(value: str) -> str:
+    text = unicodedata.normalize("NFD", value or "")
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+    return text.replace("đ", "d").replace("Đ", "D").lower().strip()
+
+
+def _suggestions(sender_name: str, emps: list) -> list:
+    sn, su = _norm_name(sender_name), _unaccent(sender_name)
+    exact, fuzzy = [], []
+    for e in emps:
+        en, eu = _norm_name(e["full_name"]), _unaccent(e["full_name"])
+        item = {
+            "employee_code": e["employee_code"],
+            "full_name": e["full_name"],
+            "department": e["department"],
+        }
+        if en == sn or eu == su:
+            exact.append({**item, "match": "exact"})
+        elif (
+            en.endswith(" " + sn) or eu.endswith(" " + su)
+            or en.split(" ")[-1] == sn or eu.split(" ")[-1] == su
+        ):
+            fuzzy.append({**item, "match": "fuzzy"})
+    return (exact + fuzzy)[:5]
+
+
+@router.get("/identities")
+def list_identities(
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token"),
+):
+    _auth(x_user_code, x_user_role, x_user_dept, x_user_token)
+    senders = fetchall(
+        f"""
+        SELECT src, sender_key, MAX(sender_name) AS sender_name,
+               STRING_AGG(DISTINCT group_name, '; ') AS groups,
+               COUNT(*) AS records
+        FROM ({_UNION}) u
+        GROUP BY src, sender_key
+        ORDER BY sender_name
+        """,
+        {},
+    )
+    mappings = {
+        (m["source"], m["sender_key"]): m
+        for m in fetchall(
+            "SELECT source, sender_key, employee_code, origin FROM attendance_identities",
+            {},
+        )
+    }
+    emps = fetchall(
+        "SELECT employee_code, full_name, department FROM employees ORDER BY full_name",
+        {},
+    )
+    emp_by_code = {e["employee_code"]: e for e in emps}
+    out = []
+    for row in senders:
+        m = mappings.get((row["src"], row["sender_key"]))
+        code = m["employee_code"] if m else None
+        emp = emp_by_code.get(code) if code else None
+        out.append({
+            **row,
+            "employee_code": code,
+            "origin": m["origin"] if m else None,
+            "employee_name": emp["full_name"] if emp else None,
+            "employee_department": emp["department"] if emp else None,
+            "suggestions": [] if code else _suggestions(row["sender_name"], emps),
+        })
+    return {"data": out, "employees": emps}
+
+
+class IdentityUpdate(BaseModel):
+    source: str
+    sender_key: str
+    employee_code: Optional[str] = None
+
+
+@router.put("/identities")
+def update_identity(
+    body: IdentityUpdate,
+    x_user_code: Optional[str] = Header(None, alias="X-User-Code"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_dept: Optional[str] = Header(None, alias="X-User-Dept"),
+    x_user_token: Optional[str] = Header(None, alias="X-User-Token"),
+):
+    user = _auth(x_user_code, x_user_role, x_user_dept, x_user_token)
+    if user["user_role"] != "admin":
+        perms = _get_effective_permissions(user["user_code"])
+        if not (perms.get("attendance") or {}).get("can_edit"):
+            raise HTTPException(403, "Bạn không có quyền gán mã nhân viên")
+    if body.source not in ("zalo", "whatsapp"):
+        raise HTTPException(400, "source phải là zalo hoặc whatsapp")
+    code = (body.employee_code or "").strip()
+    if code:
+        emp = fetchone(
+            "SELECT employee_code FROM employees WHERE employee_code = :c",
+            {"c": code},
+        )
+        if not emp:
+            raise HTTPException(400, "Mã nhân viên không tồn tại trong bảng nhân viên")
+        execute(
+            """
+            INSERT INTO attendance_identities
+                (source, sender_key, employee_code, origin, updated_by, updated_at)
+            VALUES (:src, :sk, :code, 'manual', :by, now())
+            ON CONFLICT (source, sender_key) DO UPDATE SET
+                employee_code = EXCLUDED.employee_code,
+                origin = 'manual',
+                updated_by = EXCLUDED.updated_by,
+                updated_at = now()
+            """,
+            {"src": body.source, "sk": body.sender_key, "code": code, "by": user["user_code"]},
+        )
+    else:
+        execute(
+            "DELETE FROM attendance_identities WHERE source = :src AND sender_key = :sk",
+            {"src": body.source, "sk": body.sender_key},
+        )
+    return {"success": True}
 
 
 # ---------------------------------------------------------------------------
@@ -340,14 +488,14 @@ def export_xlsx(
     ws = wb.active
     ws.title = "ChamCong"
     ws.sheet_properties.tabColor = "4472C4"
-    ws.merge_cells("A1:I1")
+    ws.merge_cells("A1:J1")
     ws["A1"] = "THỐNG KÊ CHẤM CÔNG — ZALO & WHATSAPP"
     ws["A1"].font = title_font
-    ws.merge_cells("A2:I2")
+    ws.merge_cells("A2:J2")
     ws["A2"] = f"{scope} | Ngày xuất: {exported_at}"
     ws["A2"].font = sub_font
     headers = [
-        "Ngày", "Nhân viên", "Giờ IN", "Loại IN",
+        "Ngày", "Nhân viên", "Mã NV", "Giờ IN", "Loại IN",
         "Giờ OUT", "Loại OUT", "Thời gian (giờ:phút)",
         "Số tin (check-in/check-out/vị trí)", "Địa điểm",
     ]
@@ -365,7 +513,8 @@ def export_xlsx(
         dur_text = f"{int(dur) // 60}:{int(dur) % 60:02d}" if dur is not None else ""
         values = [
             row["day"].strftime("%d/%m/%Y") if row.get("day") else "",
-            row["sender_name"],
+            row.get("employee_name") or row["sender_name"],
+            row.get("employee_code") or "",
             first_vn.strftime("%H:%M") if first_vn else "",
             first_type,
             last_vn.strftime("%H:%M") if last_vn else "",
@@ -378,20 +527,20 @@ def export_xlsx(
             cell = ws.cell(row=r, column=i, value=v)
             cell.border = thin_border
         r += 1
-    for col, w in zip("ABCDEFGHI", [12, 24, 10, 11, 10, 11, 14, 17, 34]):
+    for col, w in zip("ABCDEFGHIJ", [12, 24, 10, 10, 11, 10, 11, 14, 17, 34]):
         ws.column_dimensions[col].width = w
 
     # ── Sheet 2: Chi tiết sự kiện ──
     ws2 = wb.create_sheet("SuKien")
     ws2.sheet_properties.tabColor = "70AD47"
-    ws2.merge_cells("A1:G1")
+    ws2.merge_cells("A1:H1")
     ws2["A1"] = "CHI TIẾT SỰ KIỆN — ZALO & WHATSAPP"
     ws2["A1"].font = title_font
-    ws2.merge_cells("A2:G2")
+    ws2.merge_cells("A2:H2")
     ws2["A2"] = f"{scope} | Ngày xuất: {exported_at}"
     ws2["A2"].font = sub_font
     headers2 = [
-        "Thời gian", "Nhân viên", "Loại",
+        "Thời gian", "Nhân viên", "Mã NV", "Loại",
         "Tiêu đề / Nội dung", "Địa điểm", "Toạ độ", "Trạng thái",
     ]
     for i, h in enumerate(headers2, start=1):
@@ -411,7 +560,8 @@ def export_xlsx(
         content = row.get("title") or row.get("content") or ""
         values = [
             at.strftime("%d/%m/%Y %H:%M") if at else "",
-            row["sender_name"],
+            row.get("employee_name") or row["sender_name"],
+            row.get("employee_code") or "",
             all_type_label.get(row["record_type"], row["record_type"]),
             content,
             row.get("place") or "",
@@ -422,7 +572,7 @@ def export_xlsx(
             cell = ws2.cell(row=r, column=i, value=v)
             cell.border = thin_border
         r += 1
-    for col, w in zip("ABCDEFG", [17, 24, 12, 52, 30, 24, 11]):
+    for col, w in zip("ABCDEFGH", [17, 24, 10, 12, 52, 30, 24, 11]):
         ws2.column_dimensions[col].width = w
 
     buf = io.BytesIO()

@@ -180,6 +180,14 @@ export function exportAttendanceXLSX(params = {}) {
   return api.get('/attendance/export.xlsx', { params, headers: orderAuthHeaders(), responseType: 'blob' })
 }
 
+export function getAttendanceIdentities() {
+  return api.get('/attendance/identities', { headers: orderAuthHeaders() })
+}
+
+export function updateAttendanceIdentity(body) {
+  return api.put('/attendance/identities', body, { headers: orderAuthHeaders() })
+}
+
 export function getMonitorStats(config = {}) {
   return api.get('/monitor/stats', {
     ...config,

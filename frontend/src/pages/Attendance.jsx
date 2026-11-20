@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { Search, RefreshCw, Download, MapPin, UserRound, Speaker, LogIn, LogOut, CalendarDays, ClipboardList, Clock3 } from 'lucide-react'
-import { apiErrorMessage, getAttendanceGroups, getAttendanceEvents, getAttendanceSummary, exportAttendanceXLSX } from '../services/api'
+import { Search, RefreshCw, Download, MapPin, UserRound, Users, Speaker, LogIn, LogOut, CalendarDays, ClipboardList, Clock3, Link2, Unlink } from 'lucide-react'
+import { apiErrorMessage, getAttendanceGroups, getAttendanceEvents, getAttendanceSummary, exportAttendanceXLSX, getAttendanceIdentities, updateAttendanceIdentity } from '../services/api'
 import './Attendance.css'
 
 const TYPE_META = {
@@ -46,6 +46,11 @@ const fmtDay = day => {
   const [y, m, d] = String(day).split('-')
   return d && m && y ? `${d}/${m}/${y}` : day
 }
+const fmtDayInput = value => {
+  if (!value) return '...'
+  const [y, m, d] = String(value).split('-')
+  return d && m && y ? `${d}/${m}/${y}` : value
+}
 const fmtDuration = mins => {
   if (mins == null) return '—'
   const m = parseInt(mins, 10)
@@ -58,11 +63,11 @@ const eventBreakdown = r => {
   if (r.vitris > 0) parts.push(`${r.vitris} vị trí`)
   return parts.join(' · ')
 }
-const fmtDayInput = value => {
-  if (!value) return '...'
-  const [y, m, d] = String(value).split('-')
-  return d && m && y ? `${d}/${m}/${y}` : value
-}
+const displayName = r => r.employee_name || r.sender_name
+const codeLine = r => r.employee_code
+  ? `Mã ${r.employee_code}${r.employee_department ? ' · ' + r.employee_department : ''}`
+  : 'Tên Zalo · chưa gán mã NV'
+const empLabel = e => `${e.employee_code} — ${e.full_name}${e.department ? ' — ' + e.department : ''}`
 
 export default function Attendance() {
   const [view, setView] = useState('summary')
@@ -81,6 +86,14 @@ export default function Attendance() {
   const pageSize = 20
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
+  // Gán mã nhân viên
+  const [identities, setIdentities] = useState([])
+  const [employees, setEmployees] = useState([])
+  const [picks, setPicks] = useState({})
+  const [savingKey, setSavingKey] = useState('')
+  const [mapMsg, setMapMsg] = useState('')
+  const [mapLoading, setMapLoading] = useState(false)
+
   useEffect(() => {
     getAttendanceGroups()
       .then(res => setGroups(res.data.data || []))
@@ -95,6 +108,7 @@ export default function Attendance() {
   }), [groupName, serverQuery, dateFrom, dateTo])
 
   const load = useCallback(async () => {
+    if (view === 'mapping') return
     setLoading(true)
     try {
       const res = view === 'summary'
@@ -117,6 +131,24 @@ export default function Attendance() {
     return () => clearTimeout(t)
   }, [query])
 
+  const loadIdentities = useCallback(async () => {
+    setMapLoading(true)
+    try {
+      const res = await getAttendanceIdentities()
+      setIdentities(res.data.data || [])
+      setEmployees(res.data.employees || [])
+      setError('')
+    } catch (err) {
+      setError(apiErrorMessage(err))
+    } finally {
+      setMapLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (view === 'mapping') loadIdentities()
+  }, [view, loadIdentities])
+
   const resetPage = fn => e => { fn(e.target.value); setPage(1) }
 
   const doExport = async () => {
@@ -138,6 +170,34 @@ export default function Attendance() {
     }
   }
 
+  const saveIdentity = async (row, code) => {
+    const key = `${row.src}|${row.sender_key}`
+    setSavingKey(key)
+    setMapMsg('')
+    try {
+      await updateAttendanceIdentity({ source: row.src, sender_key: row.sender_key, employee_code: code || null })
+      setMapMsg(code ? `Đã gán ${row.sender_name} → mã ${code}` : `Đã xoá gán mã của ${row.sender_name}`)
+      await loadIdentities()
+    } catch (err) {
+      setMapMsg(apiErrorMessage(err))
+    } finally {
+      setSavingKey('')
+    }
+  }
+
+  const savePick = row => {
+    const key = `${row.src}|${row.sender_key}`
+    const raw = (picks[key] || '').trim()
+    const code = raw.split('—')[0].trim()
+    if (!employees.some(e => e.employee_code === code)) {
+      setMapMsg('Mã nhân viên chưa đúng — hãy chọn từ danh sách gợi ý.')
+      return
+    }
+    saveIdentity(row, code)
+  }
+
+  const switchView = v => { setView(v); setPage(1) }
+
   return (
     <div className="at-page">
       <div className="at-header">
@@ -146,126 +206,201 @@ export default function Attendance() {
           <p>Tổng hợp check-in, check-out và vị trí nhân viên gửi trong các group — theo nhân viên × ngày.</p>
         </div>
         <div className="at-header-actions">
-          <button className="at-btn" onClick={load} disabled={loading}>
-            <RefreshCw size={15} className={loading ? 'at-spin' : ''} /> Làm mới
+          <button className="at-btn" onClick={view === 'mapping' ? loadIdentities : load} disabled={loading || mapLoading}>
+            <RefreshCw size={15} className={loading || mapLoading ? 'at-spin' : ''} /> Làm mới
           </button>
-          <button className="at-btn at-btn-primary" onClick={doExport} disabled={exporting}>
-            <Download size={15} /> {exporting ? 'Đang xuất...' : 'Xuất .xlsx'}
-          </button>
+          {view !== 'mapping' && (
+            <button className="at-btn at-btn-primary" onClick={doExport} disabled={exporting}>
+              <Download size={15} /> {exporting ? 'Đang xuất...' : 'Xuất .xlsx'}
+            </button>
+          )}
         </div>
       </div>
 
       <div className="at-filters">
         <div className="at-view-toggle">
-          <button className={view === 'summary' ? 'at-toggle-on' : ''} onClick={() => { setView('summary'); setPage(1) }}>Tổng hợp chấm công</button>
-          <button className={view === 'events' ? 'at-toggle-on' : ''} onClick={() => { setView('events'); setPage(1) }}>Chi tiết sự kiện</button>
+          <button className={view === 'summary' ? 'at-toggle-on' : ''} onClick={() => switchView('summary')}>Tổng hợp chấm công</button>
+          <button className={view === 'events' ? 'at-toggle-on' : ''} onClick={() => switchView('events')}>Chi tiết sự kiện</button>
+          <button className={view === 'mapping' ? 'at-toggle-on' : ''} onClick={() => switchView('mapping')}>Gán mã NV</button>
         </div>
-        <select value={groupName} onChange={resetPage(setGroupName)}>
-          <option value="">Tất cả group</option>
-          {groups.map(g => (
-            <option key={`${g.src}-${g.group_name}`} value={g.group_name}>
-              {g.group_name} ({g.records})
-            </option>
-          ))}
-        </select>
-        <label className="at-date">Từ <input type="date" value={dateFrom} onChange={resetPage(setDateFrom)} /></label>
-        <label className="at-date">Đến <input type="date" value={dateTo} onChange={resetPage(setDateTo)} /></label>
-        <div className="at-search">
-          <Search size={15} />
-          <input placeholder="Tìm nhân viên, nội dung, địa điểm..." value={query} onChange={e => setQuery(e.target.value)} />
-        </div>
-      </div>
-
-      <div className="at-context">
-        <div className="at-context-group">{groupName || 'Tất cả group'}</div>
-        <div className="at-context-sub">
-          {fmtDayInput(dateFrom)} → {fmtDayInput(dateTo)} · {total} {view === 'summary' ? 'nhân viên-ngày' : 'tin ghi nhận'}
-        </div>
-        {view === 'summary' && (
-          <div className="at-rule">Giờ IN = tín hiệu đầu tiên trong ngày (check-in hoặc chia sẻ vị trí). Giờ OUT = tín hiệu cuối cùng trong ngày. Thời gian = OUT − IN.</div>
+        {view !== 'mapping' && (
+          <>
+            <select value={groupName} onChange={resetPage(setGroupName)}>
+              <option value="">Tất cả group</option>
+              {groups.map(g => (
+                <option key={`${g.src}-${g.group_name}`} value={g.group_name}>
+                  {g.group_name} ({g.records})
+                </option>
+              ))}
+            </select>
+            <label className="at-date">Từ <input type="date" value={dateFrom} onChange={resetPage(setDateFrom)} /></label>
+            <label className="at-date">Đến <input type="date" value={dateTo} onChange={resetPage(setDateTo)} /></label>
+            <div className="at-search">
+              <Search size={15} />
+              <input placeholder="Tìm nhân viên, mã NV, nội dung, địa điểm..." value={query} onChange={e => setQuery(e.target.value)} />
+            </div>
+          </>
         )}
       </div>
 
-      {error && <div className="at-error">{error}</div>}
-
-      {loading ? (
-        <div className="at-empty">Đang tải...</div>
-      ) : rows.length === 0 ? (
-        <div className="at-empty">Chưa có dữ liệu khớp bộ lọc.</div>
-      ) : view === 'summary' ? (
+      {view === 'mapping' ? (
         <>
-          <div className="at-table-wrap">
-            <table className="at-table">
-              <thead>
-                <tr>
-                  <th>Ngày</th><th>Nhân viên</th>
-                  <th>Giờ IN</th><th>Giờ OUT</th><th>Thời gian</th>
-                  <th>Số tin</th><th>Địa điểm</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(r => (
-                  <tr key={`${r.day}-${r.src}-${r.group_name}-${r.sender_key}`}>
-                    <td className="at-nowrap">{fmtDay(r.day)}</td>
-                    <td><UserRound size={13} /> {r.sender_name}</td>
-                    <td className="at-nowrap">{fmtTime(r.first_at)} <TypeChip type={r.first_type} /></td>
-                    <td className="at-nowrap">{fmtTime(r.last_at)} <TypeChip type={r.last_type} /></td>
-                    <td className="at-nowrap">{fmtDuration(r.duration_minutes)}</td>
-                    <td className="at-nowrap">{r.events} tin <span className="at-sub">({eventBreakdown(r)})</span></td>
-                    <td>{r.places || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="at-context">
+            <div className="at-context-group">Gán mã nhân viên</div>
+            <div className="at-rule">Tên hiển thị trên Zalo thường thiếu họ tên đầy đủ. Gán 1 lần theo tài khoản người gửi — từ đó trang chấm công và file xuất dùng họ tên chuẩn + mã NV, và ô tìm kiếm lọc được theo mã NV / họ tên chuẩn.</div>
           </div>
-          <div className="at-cards">
-            {rows.map(r => (
-              <article key={`${r.day}-${r.src}-${r.group_name}-${r.sender_key}`} className="at-sum-card">
-                <div className="at-sum-head">
-                  <span className="at-sum-name"><UserRound size={16} /> {r.sender_name}</span>
-                  <span className="at-sum-date">{fmtDay(r.day)}</span>
-                </div>
-                <div className="at-sum-times">
-                  <div><label>Giờ IN</label><strong>{fmtTime(r.first_at)}</strong><TypeChip type={r.first_type} /></div>
-                  <div><label>Giờ OUT</label><strong>{fmtTime(r.last_at)}</strong><TypeChip type={r.last_type} /></div>
-                  <div><label>Thời gian</label><strong>{fmtDuration(r.duration_minutes)}</strong></div>
-                </div>
-                <div className="at-sum-foot">
-                  <span>{r.events} tin ghi nhận: {eventBreakdown(r)}</span>
-                  {r.places && <span><MapPin size={13} /> {r.places}</span>}
-                </div>
-              </article>
-            ))}
-          </div>
+          {mapMsg && <div className="at-map-msg">{mapMsg}</div>}
+          {error && <div className="at-error">{error}</div>}
+          {mapLoading ? (
+            <div className="at-empty">Đang tải...</div>
+          ) : (
+            <div className="at-map-list">
+              <datalist id="at-emp-list">
+                {employees.map(e => <option key={e.employee_code} value={empLabel(e)} />)}
+              </datalist>
+              {identities.map(row => {
+                const key = `${row.src}|${row.sender_key}`
+                const busy = savingKey === key
+                return (
+                  <article key={key} className="at-map-row">
+                    <div className="at-map-head">
+                      <span className="at-sum-name"><UserRound size={16} /> {row.sender_name}</span>
+                      <span className="at-sub">{row.groups} · {row.records} tin</span>
+                    </div>
+                    {row.employee_code ? (
+                      <div className="at-map-current">
+                        <span className="at-map-assigned"><Link2 size={14} /> {row.employee_code} · {row.employee_name}{row.employee_department ? ' · ' + row.employee_department : ''} <span className="at-sub">({row.origin === 'auto' ? 'tự khớp' : 'thủ công'})</span></span>
+                        <button className="at-btn" disabled={busy} onClick={() => saveIdentity(row, null)}><Unlink size={14} /> Xoá gán</button>
+                      </div>
+                    ) : (
+                      <>
+                        {row.suggestions?.length > 0 && (
+                          <div className="at-chips">
+                            <span className="at-sub">Ứng viên:</span>
+                            {row.suggestions.map(sug => (
+                              <button key={sug.employee_code} className="at-chip-btn" disabled={busy} onClick={() => saveIdentity(row, sug.employee_code)}>
+                                {sug.employee_code} · {sug.full_name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        <div className="at-map-form">
+                          <input
+                            list="at-emp-list"
+                            placeholder="Gõ mã NV hoặc họ tên để tìm..."
+                            value={picks[key] || ''}
+                            onChange={e => setPicks(prev => ({ ...prev, [key]: e.target.value }))}
+                          />
+                          <button className="at-btn at-btn-primary" disabled={busy} onClick={() => savePick(row)}>Lưu gán</button>
+                        </div>
+                      </>
+                    )}
+                  </article>
+                )
+              })}
+            </div>
+          )}
         </>
       ) : (
-        <div className="at-list">
-          {rows.map(r => (
-            <article key={`${r.src}-${r.id}`} className="at-card">
-              <div className="at-card-top">
-                <TypeBadge type={r.record_type} />
-                <span className={`at-status ${STATUS_META[r.status]?.cls || ''}`}>{STATUS_META[r.status]?.label || r.status}</span>
-                <span className="at-card-time"><Clock3 size={13} /> {fmtDateTime(r.created_at)}</span>
-              </div>
-              <h3>{r.title || r.content?.slice(0, 90) || '(Không có tiêu đề)'}</h3>
-              {r.title && r.content && <p className="at-card-content">{r.content}</p>}
-              <div className="at-card-meta">
-                {r.sender_name && <span><UserRound size={13} /> {r.sender_name}</span>}
-                {r.place && <span><MapPin size={13} /> {r.place}</span>}
-                {(r.lat != null && r.lng != null) && (
-                  <span><MapPin size={13} /> <a href={`https://www.google.com/maps?q=${r.lat},${r.lng}`} target="_blank" rel="noreferrer">{r.lat}, {r.lng}</a></span>
-                )}
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
+        <>
+          <div className="at-context">
+            <div className="at-context-group">{groupName || 'Tất cả group'}</div>
+            <div className="at-context-sub">
+              {fmtDayInput(dateFrom)} → {fmtDayInput(dateTo)} · {total} {view === 'summary' ? 'nhân viên-ngày' : 'tin ghi nhận'}
+            </div>
+            {view === 'summary' && (
+              <div className="at-rule">Giờ IN = tín hiệu đầu tiên trong ngày (check-in hoặc chia sẻ vị trí). Giờ OUT = tín hiệu cuối cùng trong ngày. Thời gian = OUT − IN.</div>
+            )}
+          </div>
 
-      <div className="at-pagination">
-        <button className="at-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>← Trước</button>
-        <span>Trang {page}/{totalPages} · {total} {view === 'summary' ? 'dòng' : 'tin'}</span>
-        <button className="at-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Sau →</button>
-      </div>
+          {error && <div className="at-error">{error}</div>}
+
+          {loading ? (
+            <div className="at-empty">Đang tải...</div>
+          ) : rows.length === 0 ? (
+            <div className="at-empty">Chưa có dữ liệu khớp bộ lọc.</div>
+          ) : view === 'summary' ? (
+            <>
+              <div className="at-table-wrap">
+                <table className="at-table">
+                  <thead>
+                    <tr>
+                      <th>Ngày</th><th>Nhân viên</th>
+                      <th>Giờ IN</th><th>Giờ OUT</th><th>Thời gian</th>
+                      <th>Số tin</th><th>Địa điểm</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map(r => (
+                      <tr key={`${r.day}-${r.src}-${r.group_name}-${r.sender_key}`}>
+                        <td className="at-nowrap">{fmtDay(r.day)}</td>
+                        <td>
+                          <div><UserRound size={13} /> {displayName(r)}</div>
+                          <div className="at-sub">{codeLine(r)}</div>
+                        </td>
+                        <td className="at-nowrap">{fmtTime(r.first_at)} <TypeChip type={r.first_type} /></td>
+                        <td className="at-nowrap">{fmtTime(r.last_at)} <TypeChip type={r.last_type} /></td>
+                        <td className="at-nowrap">{fmtDuration(r.duration_minutes)}</td>
+                        <td className="at-nowrap">{r.events} tin <span className="at-sub">({eventBreakdown(r)})</span></td>
+                        <td>{r.places || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="at-cards">
+                {rows.map(r => (
+                  <article key={`${r.day}-${r.src}-${r.group_name}-${r.sender_key}`} className="at-sum-card">
+                    <div className="at-sum-head">
+                      <div>
+                        <span className="at-sum-name"><UserRound size={16} /> {displayName(r)}</span>
+                        <div className="at-sub">{codeLine(r)}</div>
+                      </div>
+                      <span className="at-sum-date">{fmtDay(r.day)}</span>
+                    </div>
+                    <div className="at-sum-times">
+                      <div><label>Giờ IN</label><strong>{fmtTime(r.first_at)}</strong><TypeChip type={r.first_type} /></div>
+                      <div><label>Giờ OUT</label><strong>{fmtTime(r.last_at)}</strong><TypeChip type={r.last_type} /></div>
+                      <div><label>Thời gian</label><strong>{fmtDuration(r.duration_minutes)}</strong></div>
+                    </div>
+                    <div className="at-sum-foot">
+                      <span>{r.events} tin ghi nhận: {eventBreakdown(r)}</span>
+                      {r.places && <span><MapPin size={13} /> {r.places}</span>}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="at-list">
+              {rows.map(r => (
+                <article key={`${r.src}-${r.id}`} className="at-card">
+                  <div className="at-card-top">
+                    <TypeBadge type={r.record_type} />
+                    <span className={`at-status ${STATUS_META[r.status]?.cls || ''}`}>{STATUS_META[r.status]?.label || r.status}</span>
+                    <span className="at-card-time"><Clock3 size={13} /> {fmtDateTime(r.created_at)}</span>
+                  </div>
+                  <h3>{r.title || r.content?.slice(0, 90) || '(Không có tiêu đề)'}</h3>
+                  {r.title && r.content && <p className="at-card-content">{r.content}</p>}
+                  <div className="at-card-meta">
+                    {r.sender_name && <span><UserRound size={13} /> {displayName(r)}{r.employee_code ? ` · Mã ${r.employee_code}` : ''}</span>}
+                    {r.place && <span><MapPin size={13} /> {r.place}</span>}
+                    {(r.lat != null && r.lng != null) && (
+                      <span><MapPin size={13} /> <a href={`https://www.google.com/maps?q=${r.lat},${r.lng}`} target="_blank" rel="noreferrer">{r.lat}, {r.lng}</a></span>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+
+          <div className="at-pagination">
+            <button className="at-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>← Trước</button>
+            <span>Trang {page}/{totalPages} · {total} {view === 'summary' ? 'dòng' : 'tin'}</span>
+            <button className="at-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Sau →</button>
+          </div>
+        </>
+      )}
     </div>
   )
 }
