@@ -78,3 +78,11 @@ hoặc số điện thoại WhatsApp — định danh ổn định của tài kh
   Huy Vũ, 10482 Nguyễn Hồng Quân, 10199 Phạm Xuân Thêm. Phần còn lại chờ gán tay
   (tên gọi mơ hồ nhiều ứng viên, hoặc không có trong bảng nhân viên — ví dụ tài
   khoản cửa hàng dùng chung như GDF, Tk Viet).
+
+## Lộ trình nâng cấp dữ liệu (anh Khoa ghi chú 2026-11-20)
+
+Sau này bổ sung vào **định dạng nhận tin** (capture/ingest) thêm **dữ liệu ID
+nhân viên chuẩn** ngay từ khâu ghi nhận, để bản ghi chấm công mang sẵn mã NV/ID
+chính xác thay vì phải suy ra từ tên hiển thị như hiện tại. Khi đó
+`attendance_identities` chỉ còn là lớp dự phòng cho dữ liệu cũ; dữ liệu mới
+khớp nhân viên chính xác ngay từ nguồn.
