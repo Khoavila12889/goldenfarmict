@@ -112,3 +112,5 @@
   .at-sum-name { font-size: 15px; }
   .at-context-group { font-size: 17px; }
 }
+
+.at-rule { font-size: 12.5px; color: #66788c; font-style: italic; margin-top: 4px; }

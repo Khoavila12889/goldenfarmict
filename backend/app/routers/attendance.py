@@ -8,6 +8,12 @@ kèm sự kiện đầu/cuối ngày và mốc check-in/check-out rõ ràng (n�
 - Nguồn sự kiện chấm công: record_type checkin / checkout / vitri (tin chia
   sẻ vị trí phía Zalo). Các loại khác (datlich, baocao, thongbao) chỉ xuất
   hiện ở view chi tiết sự kiện, không tính vào tổng hợp chấm công.
+- QUY TẮC GIỜ IN / OUT (chủ hệ thống chốt 2026-11-20): mỗi user trong một
+  ngày có đúng MỘT giờ IN và MỘT giờ OUT. Giờ IN = tín hiệu chấm công ĐẦU
+  TIÊN trong ngày (tin check-in hoặc chia sẻ vị trí đầu tiên); giờ OUT =
+  tín hiệu chấm công CUỐI CÙNG trong ngày (tin check-out hoặc vị trí cuối).
+  Loại tín hiệu tạo IN/OUT luôn hiển thị kèm (cột first_type/last_type) để
+  đối chiếu. Thống kê kèm duration_minutes = OUT − IN.
 - Ngày chấm công tính theo Asia/Ho_Chi_Minh từ created_at.
 - Bản ghi status='huy' bị loại khỏi tổng hợp và file xuất (vẫn xem được ở
   chi tiết sự kiện).
@@ -164,6 +170,7 @@ def _fetch_summary(where: str, params: dict, limit: int, offset: int):
                MAX(created_at) AS last_at,
                (ARRAY_AGG(record_type ORDER BY created_at ASC))[1] AS first_type,
                (ARRAY_AGG(record_type ORDER BY created_at DESC))[1] AS last_type,
+               (EXTRACT(EPOCH FROM (MAX(created_at) - MIN(created_at)))::bigint / 60) AS duration_minutes,
                COUNT(*) AS events,
                COUNT(*) FILTER (WHERE record_type = 'checkin') AS checkins,
                COUNT(*) FILTER (WHERE record_type = 'checkout') AS checkouts,
@@ -331,15 +338,15 @@ def export_xlsx(
     ws = wb.active
     ws.title = "ChamCong"
     ws.sheet_properties.tabColor = "4472C4"
-    ws.merge_cells("A1:J1")
+    ws.merge_cells("A1:I1")
     ws["A1"] = "THỐNG KÊ CHẤM CÔNG — ZALO & WHATSAPP"
     ws["A1"].font = title_font
-    ws.merge_cells("A2:J2")
+    ws.merge_cells("A2:I2")
     ws["A2"] = f"{scope} | Ngày xuất: {exported_at}"
     ws["A2"].font = sub_font
     headers = [
-        "Ngày", "Nhân viên", "Sự kiện đầu", "Loại đầu",
-        "Sự kiện cuối", "Loại cuối", "Check-in đầu tiên", "Check-out cuối",
+        "Ngày", "Nhân viên", "Giờ IN", "Loại IN",
+        "Giờ OUT", "Loại OUT", "Thời gian (giờ:phút)",
         "Số sự kiện (CI/CO/Vị trí)", "Địa điểm",
     ]
     for i, h in enumerate(headers, start=1):
@@ -352,6 +359,8 @@ def export_xlsx(
         last_vn = _vn(row["last_at"])
         first_type = type_label.get(row.get("first_type"), "")
         last_type = type_label.get(row.get("last_type"), "")
+        dur = row.get("duration_minutes")
+        dur_text = f"{int(dur) // 60}:{int(dur) % 60:02d}" if dur is not None else ""
         values = [
             row["day"].strftime("%d/%m/%Y") if row.get("day") else "",
             row["sender_name"],
@@ -359,8 +368,7 @@ def export_xlsx(
             first_type,
             last_vn.strftime("%H:%M") if last_vn else "",
             last_type,
-            _vn(row["checkin_at"]).strftime("%H:%M") if row.get("checkin_at") else "",
-            _vn(row["checkout_at"]).strftime("%H:%M") if row.get("checkout_at") else "",
+            dur_text,
             f"{row['events']} ({row['checkins']}/{row['checkouts']}/{row['vitris']})",
             row.get("places") or "",
         ]
@@ -368,7 +376,7 @@ def export_xlsx(
             cell = ws.cell(row=r, column=i, value=v)
             cell.border = thin_border
         r += 1
-    for col, w in zip("ABCDEFGHIJ", [12, 24, 11, 11, 11, 11, 13, 12, 17, 34]):
+    for col, w in zip("ABCDEFGHI", [12, 24, 10, 11, 10, 11, 14, 17, 34]):
         ws.column_dimensions[col].width = w
 
     # ── Sheet 2: Chi tiết sự kiện ──

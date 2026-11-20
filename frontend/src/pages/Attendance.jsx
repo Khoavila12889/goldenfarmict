@@ -46,6 +46,11 @@ const fmtDay = day => {
   const [y, m, d] = String(day).split('-')
   return d && m && y ? `${d}/${m}/${y}` : day
 }
+const fmtDuration = mins => {
+  if (mins == null) return '—'
+  const m = parseInt(mins, 10)
+  return `${Math.floor(m / 60)}g${pad(m % 60)}`
+}
 const fmtDayInput = value => {
   if (!value) return '...'
   const [y, m, d] = String(value).split('-')
@@ -169,6 +174,9 @@ export default function Attendance() {
         <div className="at-context-sub">
           {fmtDayInput(dateFrom)} → {fmtDayInput(dateTo)} · {total} {view === 'summary' ? 'nhân viên-ngày' : 'sự kiện'}
         </div>
+        {view === 'summary' && (
+          <div className="at-rule">Giờ IN = tín hiệu đầu tiên trong ngày (check-in hoặc chia sẻ vị trí). Giờ OUT = tín hiệu cuối cùng trong ngày. Thời gian = OUT − IN.</div>
+        )}
       </div>
 
       {error && <div className="at-error">{error}</div>}
@@ -184,7 +192,7 @@ export default function Attendance() {
               <thead>
                 <tr>
                   <th>Ngày</th><th>Nhân viên</th>
-                  <th>Đầu ngày</th><th>Cuối ngày</th><th>Check-in</th><th>Check-out</th>
+                  <th>Giờ IN</th><th>Giờ OUT</th><th>Thời gian</th>
                   <th>Sự kiện</th><th>Địa điểm</th>
                 </tr>
               </thead>
@@ -195,8 +203,7 @@ export default function Attendance() {
                     <td><UserRound size={13} /> {r.sender_name}</td>
                     <td className="at-nowrap">{fmtTime(r.first_at)} <TypeChip type={r.first_type} /></td>
                     <td className="at-nowrap">{fmtTime(r.last_at)} <TypeChip type={r.last_type} /></td>
-                    <td className="at-nowrap">{r.checkin_at ? fmtTime(r.checkin_at) : '—'}</td>
-                    <td className="at-nowrap">{r.checkout_at ? fmtTime(r.checkout_at) : '—'}</td>
+                    <td className="at-nowrap">{fmtDuration(r.duration_minutes)}</td>
                     <td className="at-nowrap">{r.events} <span className="at-sub">({r.checkins} CI · {r.checkouts} CO · {r.vitris} VT)</span></td>
                     <td>{r.places || '—'}</td>
                   </tr>
@@ -212,10 +219,9 @@ export default function Attendance() {
                   <span className="at-sum-date">{fmtDay(r.day)}</span>
                 </div>
                 <div className="at-sum-times">
-                  <div><label>Đầu ngày</label><strong>{fmtTime(r.first_at)}</strong><TypeChip type={r.first_type} /></div>
-                  <div><label>Cuối ngày</label><strong>{fmtTime(r.last_at)}</strong><TypeChip type={r.last_type} /></div>
-                  <div><label>Check-in</label><strong>{r.checkin_at ? fmtTime(r.checkin_at) : '—'}</strong></div>
-                  <div><label>Check-out</label><strong>{r.checkout_at ? fmtTime(r.checkout_at) : '—'}</strong></div>
+                  <div><label>Giờ IN</label><strong>{fmtTime(r.first_at)}</strong><TypeChip type={r.first_type} /></div>
+                  <div><label>Giờ OUT</label><strong>{fmtTime(r.last_at)}</strong><TypeChip type={r.last_type} /></div>
+                  <div><label>Thời gian</label><strong>{fmtDuration(r.duration_minutes)}</strong></div>
                 </div>
                 <div className="at-sum-foot">
                   <span>{r.events} sự kiện ({r.checkins} CI · {r.checkouts} CO · {r.vitris} VT)</span>

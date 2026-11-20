@@ -11,10 +11,14 @@ thấy mặc định; cấp thêm qua Phân quyền — module `attendance`).
 - **Tổng hợp chấm công** (`GET /api/attendance/summary`): mỗi dòng = một
   nhân viên × một ngày × một group × một nguồn. Ngày tính theo
   Asia/Ho_Chi_Minh từ `created_at`. Chỉ tính các loại sự kiện chấm công:
-  `checkin`, `checkout`, `vitri` (tin chia sẻ vị trí phía Zalo). Cột: sự
-  kiện đầu ngày + loại, sự kiện cuối ngày + loại, mốc check-in đầu tiên,
-  mốc check-out cuối, tổng số sự kiện (kèm tách CI/CO/Vị trí), địa điểm
-  (`place` trích từ tin chữ). Bản ghi `status='huy'` bị loại.
+  `checkin`, `checkout`, `vitri` (tin chia sẻ vị trí phía Zalo).
+  **Quy tắc giờ IN/OUT (chốt 2026-11-20): mỗi user trong ngày có đúng một
+  giờ IN và một giờ OUT** — IN là tín hiệu chấm công đầu tiên trong ngày
+  (check-in chữ hoặc vị trí đầu tiên), OUT là tín hiệu cuối cùng (check-out
+  chữ hoặc vị trí cuối); loại tín hiệu luôn hiển thị kèm giờ. Thống kê có
+  thêm Thời gian = OUT − IN (`duration_minutes`), tổng số sự kiện (tách
+  CI/CO/Vị trí) và địa điểm (`place` trích từ tin chữ). Bản ghi
+  `status='huy'` bị loại.
 - **Chi tiết sự kiện** (`GET /api/attendance/events`): toàn bộ bản ghi hai
   nguồn (mọi loại, gồm `datlich`/`baocao`/`thongbao`), mới nhất trước.
 - **Danh sách group** (`GET /api/attendance/groups`): group theo nguồn +
@@ -30,9 +34,9 @@ thấy mặc định; cấp thêm qua Phân quyền — module `attendance`).
 `GET /api/attendance/export.xlsx` — theo đúng bộ lọc đang chọn, tối đa
 10.000 dòng mỗi phần. Hai sheet:
 
-- `ChamCong`: Ngày, Nhân viên, Sự kiện đầu + Loại đầu, Sự kiện cuối +
-  Loại cuối, Check-in đầu tiên, Check-out cuối, Số sự kiện (CI/CO/Vị
-  trí), Địa điểm. Giờ theo Asia/Ho_Chi_Minh. Không có cột Nguồn/Group —
+- `ChamCong`: Ngày, Nhân viên, Giờ IN + Loại IN, Giờ OUT + Loại OUT,
+  Thời gian (giờ:phút), Số sự kiện (CI/CO/Vị trí), Địa điểm. Giờ theo
+  Asia/Ho_Chi_Minh. Không có cột Nguồn/Group —
   group đang lọc nằm ở dòng phạm vi đầu sheet (chủ hệ thống yêu cầu
   2026-11-20: nguồn/group hiển thị ở tiêu đề trang, không lặp theo dòng).
 - `SuKien`: Thời gian, Nhân viên, Loại, Tiêu đề/Nội dung, Địa điểm,
