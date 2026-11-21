@@ -27,7 +27,7 @@ Hợp đồng ingest: docs/wa_ingest_contract.md.
 """
 import hmac
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException, Query
@@ -141,6 +141,20 @@ def _parse_coord(value, field, lo, hi):
     return num
 
 
+def _parse_msg_at(value):
+    """msg_at = thoi diem gui tin goc (ISO 8601 do bot dinh kem). Sai/thieu
+    -> None; tang cham cong tu lui ve created_at khi msg_at trong."""
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def _normalize_phone(value) -> str:
     """Chuẩn hoá số điện thoại về dạng chỉ-chữ-số, đầu 84 (Việt Nam).
 
@@ -247,10 +261,10 @@ def ingest_record(body: dict, x_bot_secret: Optional[str] = Header(None, alias="
         """
         INSERT INTO wa_records
             (record_type, sender_name, sender_phone, group_name, title, content,
-             scheduled_at, place, lat, lng, raw_message, source)
+             scheduled_at, place, lat, lng, raw_message, source, msg_at)
         VALUES
             (:rtype, :sender_name, :sender_phone, :group_name, :title, :content,
-             :scheduled_at, :place, :lat, :lng, :raw_message, :source)
+             :scheduled_at, :place, :lat, :lng, :raw_message, :source, :msg_at)
         RETURNING id
         """,
         {
@@ -266,6 +280,7 @@ def ingest_record(body: dict, x_bot_secret: Optional[str] = Header(None, alias="
             "lng": lng,
             "raw_message": body.get("raw_message") or "",
             "source": (body.get("source") or "hermes").strip() or "hermes",
+            "msg_at": _parse_msg_at(body.get("msg_at")),
         },
     )
     return {"success": True, "id": new_id}
