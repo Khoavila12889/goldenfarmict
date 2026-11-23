@@ -27,7 +27,8 @@ Hợp đồng ingest: docs/wa_ingest_contract.md.
 """
 import hmac
 import os
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException, Query
@@ -228,6 +229,120 @@ def _ingest_announcement(body: dict) -> dict:
     return {"success": True, "id": post_id, "forum_post_id": post_id}
 
 
+
+# ---------------------------------------------------------------------------
+# Tự động chuyển đặt lịch (datlich) sang module Booking
+# ---------------------------------------------------------------------------
+
+def _parse_time_range(title: str, content: str):
+    """Tìm khoảng giờ trong title (ưu tiên) rồi content.
+    Trả (start, end) dạng 'HH:MM' hoặc None."""
+    for text in (title, content):
+        if not text:
+            continue
+        m = re.search(r"(\d{1,2}):(\d{2})\s*[\u2013\-~]\s*(\d{1,2}):(\d{2})", text)
+        if m:
+            return (f"{int(m.group(1)):02d}:{m.group(2)}",
+                    f"{int(m.group(3)):02d}:{m.group(4)}")
+        m = re.search(r"(\d{1,2})h(\d{2})?\s*-\s*(\d{1,2})h(\d{2})?", text)
+        if m:
+            return (f"{int(m.group(1)):02d}:{m.group(2) or '00'}",
+                    f"{int(m.group(3)):02d}:{m.group(4) or '00'}")
+        m = re.search(r"(\d{1,2})\s*(am|pm)\s*-\s*(\d{1,2})\s*(am|pm)", text, re.I)
+        if m:
+            def _h(h, ap):
+                h = int(h) % 12
+                return h + 12 if ap.lower() == "pm" else h
+            return (f"{_h(m.group(1), m.group(2)):02d}:00",
+                    f"{_h(m.group(3), m.group(4)):02d}:00")
+    return None
+
+
+def _auto_create_booking(wa_id: int, body: dict, title: str, content: str, scheduled_at) -> None:
+    """Đặt lịch từ WhatsApp tự chảy sang module Booking ngay khi ingest.
+
+    Mọi lỗi chỉ ghi log, KHÔNG làm hỏng ingest. Các trường hợp sau GIỮ NGUYÊN
+    trạng thái 'moi' để admin xử lý tay trong module Thông báo WhatsApp:
+    tin HỦY lịch, thiếu scheduled_at, không tách được giờ kết thúc, hoặc
+    trùng giờ với một lịch đang active.
+    """
+    try:
+        if scheduled_at is None:
+            return
+        if "HỦY" in (title or "")[:40].upper() or (content or "").lstrip().upper().startswith("HỦY"):
+            return
+        if scheduled_at.tzinfo is None:
+            scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+        local = scheduled_at.astimezone(timezone(timedelta(hours=7)))
+        start_time = local.strftime("%H:%M")
+        book_date = local.strftime("%Y-%m-%d")
+        rng = _parse_time_range(title, content)
+        end_time = rng[1] if rng else None
+        if not end_time or end_time <= start_time:
+            return
+
+        rooms = fetchall("SELECT id, name FROM resources WHERE type='meeting_room' ORDER BY id")
+        if not rooms:
+            return
+        resource_id = None
+        m = re.search(r"tầng\s*\d+", ((body.get("place") or "") + " " + title).lower())
+        if m:
+            for r in rooms:
+                if m.group(0) in (r["name"] or "").lower():
+                    resource_id = r["id"]
+                    break
+        if resource_id is None:
+            resource_id = rooms[0]["id"]
+
+        clash = fetchone(
+            """
+            SELECT COUNT(*) AS cnt FROM bookings
+            WHERE resource_id=:rid AND book_date=:date AND status='active'
+            AND start_time < :et AND end_time > :st
+            """,
+            {"rid": resource_id, "date": book_date, "et": end_time, "st": start_time},
+        )
+        if clash and clash["cnt"] > 0:
+            return
+
+        sender = (body.get("sender_name") or "").strip()
+        name_part, _, dept_part = sender.partition(" - ")
+        name_part = name_part.strip() or sender
+        employee_id = None
+        full_name = name_part
+        department = dept_part.strip()
+        emp = fetchone(
+            "SELECT id, full_name, department FROM employees WHERE lower(full_name) = lower(:n)",
+            {"n": name_part},
+        )
+        if emp:
+            employee_id = emp["id"]
+            full_name = emp["full_name"]
+            department = emp["department"] or department
+
+        btitle = f"Mượn phòng họp — {department}" if department else "Mượn phòng họp (WhatsApp)"
+        notes = f"Đặt qua WhatsApp: \"{content or title}\" — nguồn wa_records #{wa_id}"
+        new_booking = insert(
+            """
+            INSERT INTO bookings (resource_id, title, employee_id, full_name, department,
+                                  book_date, start_time, end_time, status, notes, created_at)
+            VALUES (:rid, :title, :eid, :name, :dept, :date, :st, :et, 'active', :notes, CURRENT_TIMESTAMP)
+            RETURNING id
+            """,
+            {"rid": resource_id, "title": btitle, "eid": employee_id, "name": full_name,
+             "dept": department, "date": book_date, "st": start_time, "et": end_time,
+             "notes": notes},
+        )
+        execute("UPDATE wa_records SET status='daxuly' WHERE id=:id", {"id": wa_id})
+        try:
+            events.publish_sync("booking_created", {"id": new_booking})
+        except Exception:
+            pass
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("auto-booking failed for wa_records #%s", wa_id)
+
+
 @router.post("/ingest")
 def ingest_record(body: dict, x_bot_secret: Optional[str] = Header(None, alias="X-Bot-Secret")):
     _require_bot_secret(x_bot_secret)
@@ -283,6 +398,8 @@ def ingest_record(body: dict, x_bot_secret: Optional[str] = Header(None, alias="
             "msg_at": _parse_msg_at(body.get("msg_at")),
         },
     )
+    if record_type == "datlich":
+        _auto_create_booking(new_id, body, title, content, scheduled_at)
     return {"success": True, "id": new_id}
 
 
