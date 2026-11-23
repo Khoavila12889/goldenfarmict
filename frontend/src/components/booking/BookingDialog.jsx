@@ -3,6 +3,7 @@ import { today } from '../../utils/timeUtils'
 import { validateBookingForm, getResourceIcon } from '../../utils/bookingUtils'
 import { formatDate } from '../../utils/date'
 import DateSelector from './DateSelector'
+import { checkOverlap, getBookings } from '../../services/api'
 
 export default function BookingDialog({
   isOpen, onClose, onSubmit, resources, employee,
@@ -18,6 +19,8 @@ export default function BookingDialog({
   const [sending, setSending] = useState(false)
   const [formError, setFormError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
+  const [conflicts, setConflicts] = useState([])
+  const [busySlots, setBusySlots] = useState([])
 
   useEffect(() => {
     if (isOpen) {
@@ -31,6 +34,8 @@ export default function BookingDialog({
       setNotes('')
       setFormError('')
       setSuccessMsg('')
+      setConflicts([])
+      setBusySlots([])
       setSending(false)
     }
   }, [isOpen, initialDate, initialResourceId, resources])
@@ -42,6 +47,28 @@ export default function BookingDialog({
     document.addEventListener('keydown', handleEsc)
     return () => document.removeEventListener('keydown', handleEsc)
   }, [isOpen, onClose])
+
+  // Kiểm tra trùng giờ trực tiếp khi người dùng chọn tài nguyên/ngày/giờ,
+  // đồng thời tải các khung giờ đã đặt trong ngày để tránh đặt trùng.
+  useEffect(() => {
+    if (!isOpen || !resourceId || !date || !startTime || !endTime) return
+    let cancelled = false
+    const t = setTimeout(async () => {
+      try {
+        const [ov, day] = await Promise.all([
+          checkOverlap(parseInt(resourceId), date, startTime, endTime),
+          getBookings(date, 'all', 'active'),
+        ])
+        if (cancelled) return
+        setConflicts(ov.data?.conflicts || [])
+        const all = day.data?.data || []
+        setBusySlots(all.filter(b => String(b.resource_id) === String(resourceId)))
+      } catch {
+        if (!cancelled) { setConflicts([]); setBusySlots([]) }
+      }
+    }, 300)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [isOpen, resourceId, date, startTime, endTime])
 
   if (!isOpen) return null
 
@@ -111,6 +138,11 @@ export default function BookingDialog({
 
         {successMsg && <div className="bk-msg bk-msg-success">{successMsg}</div>}
         {formError && <div className="bk-msg bk-msg-error">{formError}</div>}
+        {conflicts.length > 0 && (
+          <div className="bk-msg bk-msg-error">
+            ⛔ Trùng giờ với lịch của {conflicts[0].full_name} ({conflicts[0].start_time}–{conflicts[0].end_time}). Vui lòng chọn khung giờ khác.
+          </div>
+        )}
 
         <form onSubmit={handleSubmit}>
           {employee && (
@@ -188,6 +220,22 @@ export default function BookingDialog({
             </div>
           </div>
 
+          {busySlots.length > 0 && (
+            <div className="bk-form-group">
+              <label className="bk-form-label">Khung giờ đã có người đặt ngày này</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                {busySlots.map(b => (
+                  <span key={b.id} style={{
+                    background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5',
+                    borderRadius: 999, padding: '0.15rem 0.6rem', fontSize: '0.78rem', fontWeight: 600,
+                  }}>
+                    {b.start_time}–{b.end_time} · {b.full_name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="bk-form-group">
             <label className="bk-form-label">Ghi chú</label>
             <textarea
@@ -202,9 +250,9 @@ export default function BookingDialog({
           <button
             type="submit"
             className="bk-submit-btn"
-            disabled={sending}
+            disabled={sending || conflicts.length > 0}
           >
-            {sending ? '⏳ Đang xử lý...' : '📤 Đặt lịch'}
+            {sending ? '⏳ Đang xử lý...' : conflicts.length > 0 ? '⛔ Khung giờ đã có người đặt' : '📤 Đặt lịch'}
           </button>
         </form>
       </div>

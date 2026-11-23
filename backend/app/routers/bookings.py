@@ -85,6 +85,22 @@ def create_booking(
         raise HTTPException(status_code=400, detail="Thiếu thông tin bắt buộc: resource_id, book_date, start_time, end_time")
     if not title:
         raise HTTPException(status_code=400, detail="Vui lòng nhập mục đích đặt lịch")
+    if start_time >= end_time:
+        raise HTTPException(status_code=400, detail="Giờ kết thúc phải sau giờ bắt đầu")
+
+    # Quy tắc chống trùng giờ: cùng tài nguyên, cùng ngày, lịch đang active.
+    # Hai khoảng [start, end) giao nhau khi start < end_kia AND end > start_kia.
+    conflict = fetchone("""
+        SELECT full_name, start_time, end_time FROM bookings
+        WHERE resource_id=:rid AND book_date=:date AND status='active'
+        AND start_time < :et AND end_time > :st
+        ORDER BY start_time LIMIT 1
+    """, {"rid": int(resource_id), "date": book_date, "et": end_time, "st": start_time})
+    if conflict:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Trùng giờ với lịch của {conflict['full_name'] or 'người khác'} ({conflict['start_time']}–{conflict['end_time']}). Vui lòng chọn khung giờ khác.",
+        )
 
     # Resolve employee info from user_code
     emp = fetchone(
@@ -184,9 +200,10 @@ def booking_dates():
 @router.get("/overlap")
 def check_overlap(resource_id: int = Query(...), date: str = Query(...),
                   start_time: str = Query(...), end_time: str = Query(...)):
-    row = fetchone("""
-        SELECT COUNT(*) as cnt FROM bookings
+    rows = fetchall("""
+        SELECT id, title, full_name, department, start_time, end_time FROM bookings
         WHERE resource_id=:rid AND book_date=:date AND status='active'
         AND start_time < :et AND end_time > :st
+        ORDER BY start_time
     """, {"rid": resource_id, "date": date, "et": end_time, "st": start_time})
-    return {"overlap": row["cnt"] > 0}
+    return {"overlap": len(rows) > 0, "conflicts": rows}
